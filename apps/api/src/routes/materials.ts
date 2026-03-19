@@ -14,8 +14,8 @@ const schema = z.object({
   category: z.string().nullish(),
   unitOfMeasure: z.string().default('pcs'),
   isActive: z.boolean().default(true),
-  purchasePrice: z.string().nullish(),
-  reorderPoint: z.string().nullish(),
+  purchasePrice: z.coerce.number().nullish(),
+  reorderPoint: z.coerce.number().nullish(),
   leadTimeDays: z.number().int().nullish(),
 });
 

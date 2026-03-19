@@ -14,7 +14,7 @@ router.post('/login', async (req, res) => {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
   if (!user.isActive) return res.status(403).json({ error: 'Account disabled' });
-  res.json({ accessToken: signToken(user.id, 'access'), refreshToken: signToken(user.id, 'refresh'), tokenType: 'bearer' });
+  res.json({ accessToken: signToken(user.id, 'access'), refreshToken: signToken(user.id, 'refresh'), tokenType: 'bearer', user: { id: user.id, email: user.email, fullName: user.fullName, isSuperuser: user.isSuperuser } });
 });
 
 router.post('/refresh', async (req, res) => {

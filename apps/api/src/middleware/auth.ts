@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../lib/jwt';
 import { prisma } from '../lib/prisma';
+import { createHash } from 'crypto';
 
 export interface AuthRequest extends Request {
   userId?: string;
@@ -8,7 +9,26 @@ export interface AuthRequest extends Request {
   isSuperuser?: boolean;
 }
 
+const hashKey = (key: string) => createHash('sha256').update(key).digest('hex');
+
 export async function authenticate(req: AuthRequest, res: Response, next: NextFunction) {
+  // 1. Check X-API-Key header
+  const apiKey = req.headers['x-api-key'] as string | undefined;
+  if (apiKey) {
+    const hashed = hashKey(apiKey);
+    const keyRecord = await prisma.apiKey.findFirst({ where: { keyHash: hashed, isActive: true } });
+    if (!keyRecord) return res.status(401).json({ error: 'Invalid API key' });
+    // Update last used
+    await prisma.apiKey.update({ where: { id: keyRecord.id }, data: { lastUsedAt: new Date() } });
+    const user = await prisma.user.findUnique({ where: { id: keyRecord.userId } });
+    if (!user || !user.isActive) return res.status(401).json({ error: 'User inactive' });
+    req.userId = user.id;
+    req.userEmail = user.email;
+    req.isSuperuser = user.isSuperuser;
+    return next();
+  }
+
+  // 2. Check Bearer JWT
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Missing or invalid token' });

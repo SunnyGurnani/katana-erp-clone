@@ -8,49 +8,94 @@ import { z } from 'zod';
 const router = Router();
 router.use(authenticate);
 
-// Stock Adjustments
+// ─── Stock Adjustments ───────────────────────────────────────────────────────
+// StockAdjustment has no Prisma relations — only raw ID fields
+
 router.get('/adjustments', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
-  const [items, total] = await Promise.all([prisma.stockAdjustment.findMany({ skip, take, orderBy: { createdAt: 'desc' } }), prisma.stockAdjustment.count()]);
+  const [items, total] = await Promise.all([
+    prisma.stockAdjustment.findMany({ skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.stockAdjustment.count(),
+  ]);
   res.json(paginated(items, total, page, pageSize));
 });
 
 router.post('/adjustments', async (req: AuthRequest, res) => {
-  const data = z.object({ variantId: z.string().uuid(), locationId: z.string().uuid(), qtyDelta: z.number().refine(n => n !== 0), reason: z.string(), note: z.string().nullish() }).parse(req.body);
+  const body = req.body;
+  // Accept both `qty` and `qtyDelta` from frontend
+  const rawQty = body.qtyDelta ?? body.qty;
+  const data = z.object({
+    variantId: z.string().uuid(),
+    locationId: z.string().uuid(),
+    qtyDelta: z.number().refine(n => n !== 0, { message: 'qtyDelta must be non-zero' }),
+    reason: z.string(),
+    note: z.string().nullish(),
+  }).parse({ ...body, qtyDelta: typeof rawQty === 'number' ? rawQty : Number(rawQty) });
+
+  let created: any;
   await prisma.$transaction(async (tx) => {
-    await adjustStock(tx, data.variantId, data.locationId, data.qtyDelta, 'adjustment', { referenceType: 'stock_adjustment', note: data.reason });
-    await tx.stockAdjustment.create({ data: { variantId: data.variantId, locationId: data.locationId, qtyDelta: data.qtyDelta, reason: data.reason, note: data.note ?? undefined, createdById: req.userId } });
+    await adjustStock(tx, data.variantId, data.locationId, data.qtyDelta, 'adjustment', {
+      referenceType: 'stock_adjustment', note: data.reason,
+    });
+    created = await tx.stockAdjustment.create({
+      data: {
+        variantId: data.variantId, locationId: data.locationId, qtyDelta: data.qtyDelta,
+        reason: data.reason, note: data.note ?? undefined, createdById: req.userId,
+      },
+    });
   });
-  res.status(201).json({ message: 'Adjustment applied' });
+  res.status(201).json(created);
 });
 
-// Stock Transfers
+// ─── Stock Transfers ──────────────────────────────────────────────────────────
+// StockTransfer has no Prisma relations — only raw ID fields
+
 router.get('/transfers', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
-  const [items, total] = await Promise.all([prisma.stockTransfer.findMany({ skip, take, orderBy: { createdAt: 'desc' } }), prisma.stockTransfer.count()]);
+  const [items, total] = await Promise.all([
+    prisma.stockTransfer.findMany({ skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.stockTransfer.count(),
+  ]);
   res.json(paginated(items, total, page, pageSize));
 });
 
 router.post('/transfers', async (req: AuthRequest, res) => {
-  const data = z.object({ variantId: z.string().uuid(), fromLocationId: z.string().uuid(), toLocationId: z.string().uuid(), qty: z.number().positive(), note: z.string().nullish() }).parse(req.body);
+  const data = z.object({
+    variantId: z.string().uuid(), fromLocationId: z.string().uuid(),
+    toLocationId: z.string().uuid(), qty: z.number().positive(), note: z.string().nullish(),
+  }).parse(req.body);
+
   const transfer = await prisma.$transaction(async (tx) => {
     await adjustStock(tx, data.variantId, data.fromLocationId, -data.qty, 'transfer_out', { referenceType: 'stock_transfer', note: data.note ?? undefined });
     await adjustStock(tx, data.variantId, data.toLocationId, data.qty, 'transfer_in', { referenceType: 'stock_transfer', note: data.note ?? undefined });
-    return tx.stockTransfer.create({ data: { variantId: data.variantId, fromLocationId: data.fromLocationId, toLocationId: data.toLocationId, qty: data.qty, note: data.note ?? undefined, createdById: req.userId } });
+    return tx.stockTransfer.create({
+      data: { variantId: data.variantId, fromLocationId: data.fromLocationId, toLocationId: data.toLocationId, qty: data.qty, note: data.note ?? undefined, createdById: req.userId },
+    });
   });
   res.status(201).json(transfer);
 });
 
-// Stocktakes
+// ─── Stocktakes ───────────────────────────────────────────────────────────────
+
 router.get('/stocktakes', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
-  const [items, total] = await Promise.all([prisma.stocktake.findMany({ include: { rows: true }, skip, take, orderBy: { createdAt: 'desc' } }), prisma.stocktake.count()]);
+  const [items, total] = await Promise.all([
+    prisma.stocktake.findMany({ include: { rows: true }, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.stocktake.count(),
+  ]);
   res.json(paginated(items, total, page, pageSize));
 });
 
 router.post('/stocktakes', async (req, res) => {
-  const { locationId, notes } = z.object({ locationId: z.string().uuid(), notes: z.string().nullish() }).parse(req.body);
-  const st = await prisma.stocktake.create({ data: { locationId, notes: notes ?? undefined }, include: { rows: true } });
+  const body = z.object({ locationId: z.string().uuid().nullish(), notes: z.string().nullish() }).parse(req.body);
+  let locationId = body.locationId;
+  if (!locationId) {
+    const loc = await prisma.location.findFirst({ where: { isDefault: true } })
+      ?? await prisma.location.findFirst({ orderBy: { createdAt: 'asc' } });
+    if (!loc) return res.status(422).json({ error: 'No location found. Create a location first.' });
+    locationId = loc.id;
+  }
+  const st = await prisma.stocktake.create({ data: { locationId, notes: body.notes ?? undefined }, include: { rows: true } });
   res.status(201).json(st);
 });
 
@@ -66,22 +111,29 @@ router.post('/stocktakes/:id/rows', async (req, res) => {
   if (!st || st.status !== 'draft') return res.status(422).json({ error: 'Stocktake is not in draft' });
   const level = await prisma.inventoryLevel.findUnique({ where: { variantId_locationId: { variantId, locationId: st.locationId } } });
   const systemQty = level ? Number(level.onHand) : 0;
-  const row = await prisma.stocktakeRow.create({ data: { stocktakeId: st.id, variantId, countedQty, systemQty, variance: countedQty - systemQty } });
+  const row = await prisma.stocktakeRow.create({
+    data: { stocktakeId: st.id, variantId, countedQty, systemQty, variance: countedQty - systemQty },
+  });
   res.status(201).json(row);
 });
 
-router.post('/stocktakes/:id/commit', async (req, res) => {
+async function commitStocktake(req: any, res: any) {
   const st = await prisma.stocktake.findUnique({ where: { id: req.params.id }, include: { rows: true } });
   if (!st || st.status !== 'draft') return res.status(422).json({ error: 'Stocktake is not in draft' });
   await prisma.$transaction(async (tx) => {
     for (const row of st.rows) {
       if (Number(row.variance) !== 0) {
-        await adjustStock(tx, row.variantId, st.locationId, Number(row.variance), 'stocktake_adjustment', { referenceType: 'stocktake', referenceId: st.id });
+        await adjustStock(tx, row.variantId, st.locationId, Number(row.variance), 'stocktake_adjustment', {
+          referenceType: 'stocktake', referenceId: st.id,
+        });
       }
     }
     await tx.stocktake.update({ where: { id: st.id }, data: { status: 'committed' } });
   });
-  res.json({ message: 'Stocktake committed' });
-});
+  res.json({ message: 'Stocktake committed', id: st.id });
+}
+
+router.post('/stocktakes/:id/commit', commitStocktake);
+router.post('/stocktakes/:id/complete', commitStocktake);
 
 export default router;

@@ -11,17 +11,21 @@ router.use(authenticate);
 const hashKey = (key: string) => createHash('sha256').update(key).digest('hex');
 
 router.get('/', async (req: AuthRequest, res) => {
-  const keys = await prisma.apiKey.findMany({ where: { userId: req.userId! }, orderBy: { createdAt: 'desc' }, select: { id: true, name: true, keyPrefix: true, isActive: true, lastUsedAt: true, expiresAt: true, createdAt: true } });
-  res.json(keys);
+  const keys = await prisma.apiKey.findMany({
+    where: { userId: req.userId! },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, name: true, keyPrefix: true, isActive: true, lastUsedAt: true, expiresAt: true, createdAt: true },
+  });
+  res.json({ data: keys, meta: { total: keys.length } });
 });
 
 router.post('/', async (req: AuthRequest, res) => {
   const { name, scopes } = z.object({ name: z.string(), scopes: z.string().optional() }).parse(req.body) as { name: string; scopes?: string };
   const plaintext = generateApiKey();
   const key = await prisma.apiKey.create({
-    data: { name, keyHash: hashKey(plaintext), keyPrefix: plaintext.slice(0, 12), isActive: true, userId: req.userId!, scopes: scopes },
+    data: { name, keyHash: hashKey(plaintext), keyPrefix: plaintext.slice(0, 12), isActive: true, userId: req.userId!, scopes },
   });
-  res.status(201).json({ id: key.id, name: key.name, keyPrefix: key.keyPrefix, isActive: key.isActive, createdAt: key.createdAt, key: plaintext });
+  res.status(201).json({ id: key.id, name: key.name, keyPrefix: key.keyPrefix, isActive: key.isActive, createdAt: key.createdAt, plainKey: plaintext });
 });
 
 router.delete('/:id', async (req: AuthRequest, res) => {
