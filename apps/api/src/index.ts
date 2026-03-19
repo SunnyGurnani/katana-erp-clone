@@ -1,0 +1,70 @@
+import 'express-async-errors';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import swaggerJsdoc from 'swagger-jsdoc';
+import swaggerUi from 'swagger-ui-express';
+import { env } from './env';
+import { auditMiddleware } from './middleware/audit';
+import { errorHandler } from './middleware/error';
+import authRouter from './routes/auth';
+import productsRouter from './routes/products';
+import materialsRouter from './routes/materials';
+import suppliersRouter from './routes/suppliers';
+import customersRouter from './routes/customers';
+import locationsRouter from './routes/locations';
+import inventoryRouter from './routes/inventory';
+import purchaseOrdersRouter from './routes/purchaseOrders';
+import salesOrdersRouter from './routes/salesOrders';
+import manufacturingRouter from './routes/manufacturing';
+import stockOpsRouter from './routes/stockOps';
+import apiKeysRouter from './routes/apiKeys';
+import webhooksRouter from './routes/webhooks';
+import dashboardRouter from './routes/dashboard';
+
+const app = express();
+
+app.use(helmet());
+app.use(cors({ origin: env.ALLOWED_ORIGINS.split(',').map(s => s.trim()), credentials: true }));
+app.use(express.json());
+app.use(morgan('dev'));
+app.use(auditMiddleware);
+
+app.get('/health', (_req, res) => res.json({ status: 'ok', app: 'ForgeERP' }));
+
+const swaggerSpec = swaggerJsdoc({
+  definition: {
+    openapi: '3.0.0',
+    info: { title: 'ForgeERP API', version: '1.0.0', description: 'Manufacturing ERP REST API' },
+    servers: [{ url: '/api/v1' }],
+    components: {
+      securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
+    },
+    security: [{ bearerAuth: [] }],
+  },
+  apis: [],
+});
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+const v1 = '/api/v1';
+app.use(`${v1}/auth`, authRouter);
+app.use(`${v1}/products`, productsRouter);
+app.use(`${v1}/materials`, materialsRouter);
+app.use(`${v1}/suppliers`, suppliersRouter);
+app.use(`${v1}/customers`, customersRouter);
+app.use(`${v1}/locations`, locationsRouter);
+app.use(`${v1}/inventory`, inventoryRouter);
+app.use(`${v1}/purchase-orders`, purchaseOrdersRouter);
+app.use(`${v1}/sales-orders`, salesOrdersRouter);
+app.use(`${v1}/manufacturing`, manufacturingRouter);
+app.use(`${v1}/stock`, stockOpsRouter);
+app.use(`${v1}/api-keys`, apiKeysRouter);
+app.use(`${v1}/webhooks`, webhooksRouter);
+app.use(`${v1}/dashboard`, dashboardRouter);
+
+app.use(errorHandler);
+
+app.listen(env.PORT, () => console.log(`ForgeERP API running on port ${env.PORT}`));
+
+export default app;
