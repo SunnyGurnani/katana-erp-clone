@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth';
 import { getPagination, paginated } from '../middleware/paginate';
 import { adjustStock } from '../lib/inventory';
 import { z } from 'zod';
+import soAddressesRouter from './soAddresses';
 
 const router = Router();
 router.use(authenticate);
@@ -147,5 +148,8 @@ router.post('/:id/fulfill', async (req, res) => {
   const updated = await prisma.salesOrder.update({ where: { id: so.id }, data: { status: newStatus }, include });
   res.json(normalizeSo(updated));
 });
+
+// SO Addresses sub-routes
+router.use(soAddressesRouter);
 
 export default router;

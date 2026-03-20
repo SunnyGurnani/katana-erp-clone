@@ -22,6 +22,15 @@ import stockOpsRouter from './routes/stockOps';
 import apiKeysRouter from './routes/apiKeys';
 import webhooksRouter from './routes/webhooks';
 import dashboardRouter from './routes/dashboard';
+import taxRatesRouter from './routes/taxRates';
+import supplierAddressesRouter from './routes/supplierAddresses';
+import customerAddressesRouter from './routes/customerAddresses';
+import priceListsRouter from './routes/priceLists';
+import servicesRouter from './routes/services';
+import salesReturnsRouter from './routes/salesReturns';
+import shippingFeesRouter from './routes/shippingFees';
+import demandForecastRouter from './routes/demandForecast';
+import factoryRouter from './routes/factory';
 
 const app = express();
 
@@ -62,6 +71,15 @@ app.use(`${v1}/stock`, stockOpsRouter);
 app.use(`${v1}/api-keys`, apiKeysRouter);
 app.use(`${v1}/webhooks`, webhooksRouter);
 app.use(`${v1}/dashboard`, dashboardRouter);
+app.use(`${v1}/tax-rates`, taxRatesRouter);
+app.use(v1, supplierAddressesRouter);
+app.use(v1, customerAddressesRouter);
+app.use(`${v1}/price-lists`, priceListsRouter);
+app.use(`${v1}/services`, servicesRouter);
+app.use(`${v1}/sales-returns`, salesReturnsRouter);
+app.use(v1, shippingFeesRouter);
+app.use(`${v1}/demand-forecast`, demandForecastRouter);
+app.use(`${v1}/factory`, factoryRouter);
 
 app.use(errorHandler);
 

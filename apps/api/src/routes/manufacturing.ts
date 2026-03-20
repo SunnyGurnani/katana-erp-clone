@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth';
 import { getPagination, paginated } from '../middleware/paginate';
 import { adjustStock } from '../lib/inventory';
 import { z } from 'zod';
+import moProductionsRouter from './moProductions';
 
 const router = Router();
 router.use(authenticate);
@@ -175,5 +176,8 @@ router.post('/orders/:id/produce', async (req, res) => {
   const updated = await prisma.manufacturingOrder.update({ where: { id: mo.id }, data: { qtyProduced: newProduced, status }, include: moInclude });
   res.json(normalizeMo(updated));
 });
+
+// MO Productions sub-routes
+router.use(moProductionsRouter);
 
 export default router;

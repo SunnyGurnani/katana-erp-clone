@@ -187,36 +187,38 @@ model InventoryMovement {
 }
 
 model Supplier {
-  id             String          @id @default(uuid())
+  id             String            @id @default(uuid())
   name           String
-  code           String?         @unique
+  code           String?           @unique
   email          String?
   phone          String?
   address        String?
-  currency       String          @default("USD")
-  paymentTerms   String?         @map("payment_terms")
+  currency       String            @default("USD")
+  paymentTerms   String?           @map("payment_terms")
   notes          String?
-  isActive       Boolean         @default(true) @map("is_active")
+  isActive       Boolean           @default(true) @map("is_active")
   purchaseOrders PurchaseOrder[]
-  createdAt      DateTime        @default(now()) @map("created_at")
-  updatedAt      DateTime        @updatedAt @map("updated_at")
+  addresses      SupplierAddress[]
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
   @@map("suppliers")
 }
 
 model Customer {
-  id           String       @id @default(uuid())
+  id           String            @id @default(uuid())
   name         String
-  code         String?      @unique
+  code         String?           @unique
   email        String?
   phone        String?
   address      String?
-  currency     String       @default("USD")
-  paymentTerms String?      @map("payment_terms")
+  currency     String            @default("USD")
+  paymentTerms String?           @map("payment_terms")
   notes        String?
-  isActive     Boolean      @default(true) @map("is_active")
+  isActive     Boolean           @default(true) @map("is_active")
   salesOrders  SalesOrder[]
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
+  addresses    CustomerAddress[]
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
   @@map("customers")
 }
 
@@ -265,20 +267,22 @@ model PurchaseOrderCostRow {
 }
 
 model SalesOrder {
-  id           String               @id @default(uuid())
-  number       String               @unique
-  customerId   String?              @map("customer_id")
-  customer     Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  status       String               @default("draft")
-  currency     String               @default("USD")
-  orderDate    DateTime?            @map("order_date") @db.Date
-  requiredDate DateTime?            @map("required_date") @db.Date
+  id           String                  @id @default(uuid())
+  number       String                  @unique
+  customerId   String?                 @map("customer_id")
+  customer     Customer?               @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  status       String                  @default("draft")
+  currency     String                  @default("USD")
+  orderDate    DateTime?               @map("order_date") @db.Date
+  requiredDate DateTime?               @map("required_date") @db.Date
   notes        String?
-  locationId   String?              @map("location_id")
+  locationId   String?                 @map("location_id")
   rows         SalesOrderRow[]
   fulfillments SalesOrderFulfillment[]
-  createdAt    DateTime             @default(now()) @map("created_at")
-  updatedAt    DateTime             @updatedAt @map("updated_at")
+  shippingFees SalesOrderShippingFee[]
+  addresses    SalesOrderAddress[]
+  createdAt    DateTime                @default(now()) @map("created_at")
+  updatedAt    DateTime                @updatedAt @map("updated_at")
   @@map("sales_orders")
 }
 
@@ -372,6 +376,7 @@ model ManufacturingOrder {
   notes         String?
   recipeRows    MORecipeRow[]
   operationRows MOOperationRow[]
+  productions   MOProduction[]
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
   @@map("manufacturing_orders")
@@ -469,6 +474,208 @@ model SerialNumber {
   notes        String?
   createdAt    DateTime @default(now()) @map("created_at")
   @@map("serial_numbers")
+}
+
+model TaxRate {
+  id        String   @id @default(uuid())
+  name      String
+  rate      Decimal  @db.Decimal(7, 4)
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@map("tax_rates")
+}
+
+model SupplierAddress {
+  id         String   @id @default(uuid())
+  supplierId String   @map("supplier_id")
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  type       String   @default("billing")
+  line1      String?  @map("line1")
+  line2      String?  @map("line2")
+  city       String?
+  state      String?
+  zip        String?
+  country    String?
+  isDefault  Boolean  @default(false) @map("is_default")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  @@map("supplier_addresses")
+}
+
+model CustomerAddress {
+  id         String   @id @default(uuid())
+  customerId String   @map("customer_id")
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type       String   @default("billing")
+  line1      String?  @map("line1")
+  line2      String?  @map("line2")
+  city       String?
+  state      String?
+  zip        String?
+  country    String?
+  isDefault  Boolean  @default(false) @map("is_default")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  @@map("customer_addresses")
+}
+
+model PriceList {
+  id        String              @id @default(uuid())
+  name      String
+  currency  String              @default("USD")
+  isDefault Boolean             @default(false) @map("is_default")
+  notes     String?
+  rows      PriceListRow[]
+  customers PriceListCustomer[]
+  createdAt DateTime            @default(now()) @map("created_at")
+  updatedAt DateTime            @updatedAt @map("updated_at")
+  @@map("price_lists")
+}
+
+model PriceListRow {
+  id          String    @id @default(uuid())
+  priceListId String    @map("price_list_id")
+  priceList   PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  variantId   String?   @map("variant_id")
+  serviceId   String?   @map("service_id")
+  price       Decimal   @db.Decimal(18, 4)
+  minQty      Decimal?  @map("min_qty") @db.Decimal(18, 4)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  @@map("price_list_rows")
+}
+
+model PriceListCustomer {
+  id          String    @id @default(uuid())
+  priceListId String    @map("price_list_id")
+  priceList   PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  customerId  String    @map("customer_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  @@map("price_list_customers")
+}
+
+model Service {
+  id          String   @id @default(uuid())
+  name        String
+  sku         String?  @unique
+  description String?
+  price       Decimal? @db.Decimal(18, 4)
+  taxRateId   String?  @map("tax_rate_id")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  @@map("services")
+}
+
+model SalesReturn {
+  id         String           @id @default(uuid())
+  number     String           @unique
+  orderId    String?          @map("order_id")
+  customerId String?          @map("customer_id")
+  status     String           @default("draft")
+  notes      String?
+  rows       SalesReturnRow[]
+  createdAt  DateTime         @default(now()) @map("created_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+  @@map("sales_returns")
+}
+
+model SalesReturnRow {
+  id           String      @id @default(uuid())
+  returnId     String      @map("return_id")
+  return       SalesReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  variantId    String?     @map("variant_id")
+  soRowId      String?     @map("so_row_id")
+  description  String?
+  qty          Decimal     @db.Decimal(18, 4)
+  unitPrice    Decimal?    @map("unit_price") @db.Decimal(18, 4)
+  returnReason String?     @map("return_reason")
+  locationId   String?     @map("location_id")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  @@map("sales_return_rows")
+}
+
+model SalesOrderShippingFee {
+  id          String     @id @default(uuid())
+  orderId     String     @map("order_id")
+  order       SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  description String     @default("Shipping")
+  amount      Decimal    @db.Decimal(18, 4)
+  taxRateId   String?    @map("tax_rate_id")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  @@map("sales_order_shipping_fees")
+}
+
+model DemandForecast {
+  id         String   @id @default(uuid())
+  variantId  String   @map("variant_id")
+  locationId String?  @map("location_id")
+  qty        Decimal  @db.Decimal(18, 4)
+  forecastAt DateTime @map("forecast_at") @db.Date
+  notes      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  @@map("demand_forecasts")
+}
+
+model Factory {
+  id        String   @id @default(uuid())
+  name      String
+  currency  String   @default("USD")
+  timezone  String   @default("UTC")
+  address   String?
+  logoUrl   String?  @map("logo_url")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@map("factory")
+}
+
+model MOProduction {
+  id          String                   @id @default(uuid())
+  moId        String                   @map("mo_id")
+  mo          ManufacturingOrder       @relation(fields: [moId], references: [id], onDelete: Cascade)
+  qty         Decimal                  @db.Decimal(18, 4)
+  locationId  String?                  @map("location_id")
+  status      String                   @default("planned")
+  producedAt  DateTime?                @map("produced_at")
+  notes       String?
+  ingredients MOProductionIngredient[]
+  createdAt   DateTime                 @default(now()) @map("created_at")
+  updatedAt   DateTime                 @updatedAt @map("updated_at")
+  @@map("mo_productions")
+}
+
+model MOProductionIngredient {
+  id           String       @id @default(uuid())
+  productionId String       @map("production_id")
+  production   MOProduction @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  recipeRowId  String?      @map("recipe_row_id")
+  variantId    String?      @map("variant_id")
+  materialId   String?      @map("material_id")
+  qtyRequired  Decimal      @map("qty_required") @db.Decimal(18, 4)
+  qtyConsumed  Decimal      @default(0) @map("qty_consumed") @db.Decimal(18, 4)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  @@map("mo_production_ingredients")
+}
+
+model SalesOrderAddress {
+  id        String     @id @default(uuid())
+  orderId   String     @map("order_id")
+  order     SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type      String     @default("shipping")
+  line1     String?    @map("line1")
+  line2     String?    @map("line2")
+  city      String?
+  state     String?
+  zip       String?
+  country   String?
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  @@map("sales_order_addresses")
 }
 
 model AuditLog {
