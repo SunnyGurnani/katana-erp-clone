@@ -693,3 +693,149 @@ model AuditLog {
   createdAt    DateTime @default(now()) @map("created_at")
   @@map("audit_logs")
 }
+
+// ─── Multi-Currency ───────────────────────────────────────────────────────────
+
+model Currency {
+  id        String   @id @default(uuid())
+  code      String   @unique  // ISO 4217 e.g. USD, EUR, GBP
+  name      String
+  symbol    String
+  isBase    Boolean  @default(false) @map("is_base")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  rates     ExchangeRate[] @relation("fromCurrency")
+  @@map("currencies")
+}
+
+model ExchangeRate {
+  id           String   @id @default(uuid())
+  fromCode     String   @map("from_code")  // e.g. USD
+  toCode       String   @map("to_code")    // e.g. EUR
+  rate         Decimal  @db.Decimal(18, 8)
+  source       String   @default("manual") // manual | openexchangerates | ecb
+  effectiveAt  DateTime @default(now()) @map("effective_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  fromCurrency Currency @relation("fromCurrency", fields: [fromCode], references: [code], onDelete: Restrict)
+  @@unique([fromCode, toCode, effectiveAt])
+  @@map("exchange_rates")
+}
+
+// ─── Accounting Integrations ──────────────────────────────────────────────────
+
+model AccountingIntegration {
+  id           String    @id @default(uuid())
+  provider     String    // quickbooks | xero
+  status       String    @default("disconnected") // disconnected | connected | error
+  accessToken  String?   @map("access_token")
+  refreshToken String?   @map("refresh_token")
+  tokenExpiry  DateTime? @map("token_expiry")
+  realmId      String?   @map("realm_id")  // QuickBooks company ID
+  tenantId     String?   @map("tenant_id") // Xero tenant ID
+  lastSyncAt   DateTime? @map("last_sync_at")
+  settings     String?   // JSON blob: account mappings, tax code mappings
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  syncLogs     AccountingSyncLog[]
+  @@unique([provider])
+  @@map("accounting_integrations")
+}
+
+model AccountingSyncLog {
+  id            String                @id @default(uuid())
+  integrationId String                @map("integration_id")
+  integration   AccountingIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  direction     String                // push | pull
+  entityType    String                @map("entity_type") // invoice | bill | contact | payment
+  entityId      String                @map("entity_id")   // local ID
+  externalId    String?               @map("external_id") // QB/Xero ID
+  status        String                // success | error | skipped
+  error         String?
+  payload       String?               // JSON
+  createdAt     DateTime              @default(now()) @map("created_at")
+  @@map("accounting_sync_logs")
+}
+
+// ─── E-Commerce Integrations ──────────────────────────────────────────────────
+
+model EcommerceIntegration {
+  id           String    @id @default(uuid())
+  provider     String    // shopify | woocommerce
+  status       String    @default("disconnected")
+  shopDomain   String?   @map("shop_domain")   // e.g. mystore.myshopify.com
+  accessToken  String?   @map("access_token")
+  apiKey       String?   @map("api_key")
+  apiSecret    String?   @map("api_secret")
+  webhookSecret String?  @map("webhook_secret")
+  settings     String?   // JSON: sync options (products, orders, inventory)
+  lastSyncAt   DateTime? @map("last_sync_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  syncLogs     EcommerceSyncLog[]
+  @@unique([provider])
+  @@map("ecommerce_integrations")
+}
+
+model EcommerceSyncLog {
+  id            String               @id @default(uuid())
+  integrationId String               @map("integration_id")
+  integration   EcommerceIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  direction     String               // push | pull
+  entityType    String               @map("entity_type") // product | order | inventory
+  entityId      String               @map("entity_id")
+  externalId    String?              @map("external_id")
+  status        String               // success | error | skipped
+  error         String?
+  payload       String?
+  createdAt     DateTime             @default(now()) @map("created_at")
+  @@map("ecommerce_sync_logs")
+}
+
+model EcommerceProductMapping {
+  id            String   @id @default(uuid())
+  integrationId String   @map("integration_id")
+  variantId     String   @map("variant_id")
+  externalId    String   @map("external_id")    // Shopify variant ID / WC product ID
+  externalSku   String?  @map("external_sku")
+  syncInventory Boolean  @default(true) @map("sync_inventory")
+  syncPrice     Boolean  @default(false) @map("sync_price")
+  lastSyncAt    DateTime? @map("last_sync_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  @@unique([integrationId, variantId])
+  @@map("ecommerce_product_mappings")
+}
+
+// ─── Custom Fields ────────────────────────────────────────────────────────────
+
+model CustomFieldDefinition {
+  id           String              @id @default(uuid())
+  entityType   String              @map("entity_type")  // product | variant | material | supplier | customer | purchase_order | sales_order | manufacturing_order
+  name         String
+  label        String
+  fieldType    String              @map("field_type")   // text | number | boolean | date | select | multiselect | url
+  options      String?             // JSON array for select/multiselect
+  isRequired   Boolean             @default(false) @map("is_required")
+  defaultValue String?             @map("default_value")
+  rank         Int                 @default(0)
+  isActive     Boolean             @default(true) @map("is_active")
+  values       CustomFieldValue[]
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+  @@unique([entityType, name])
+  @@map("custom_field_definitions")
+}
+
+model CustomFieldValue {
+  id          String                @id @default(uuid())
+  fieldId     String                @map("field_id")
+  field       CustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  entityType  String                @map("entity_type")
+  entityId    String                @map("entity_id")
+  value       String?               // always stored as string; cast on read
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+  @@unique([fieldId, entityId])
+  @@map("custom_field_values")
+}

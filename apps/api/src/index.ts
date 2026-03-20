@@ -31,6 +31,11 @@ import salesReturnsRouter from './routes/salesReturns';
 import shippingFeesRouter from './routes/shippingFees';
 import demandForecastRouter from './routes/demandForecast';
 import factoryRouter from './routes/factory';
+import currenciesRouter from './routes/currencies';
+import accountingRouter from './routes/accounting';
+import ecommerceRouter from './routes/ecommerce';
+import barcodesRouter from './routes/barcodes';
+import customFieldsRouter from './routes/customFields';
 
 const app = express();
 
@@ -80,6 +85,11 @@ app.use(`${v1}/sales-returns`, salesReturnsRouter);
 app.use(v1, shippingFeesRouter);
 app.use(`${v1}/demand-forecast`, demandForecastRouter);
 app.use(`${v1}/factory`, factoryRouter);
+app.use(`${v1}/currencies`, currenciesRouter);
+app.use(`${v1}/accounting`, accountingRouter);
+app.use(`${v1}/ecommerce`, ecommerceRouter);
+app.use(`${v1}/barcodes`, barcodesRouter);
+app.use(`${v1}/custom-fields`, customFieldsRouter);
 
 app.use(errorHandler);
 
