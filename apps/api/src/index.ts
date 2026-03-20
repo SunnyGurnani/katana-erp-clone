@@ -36,6 +36,13 @@ import accountingRouter from './routes/accounting';
 import ecommerceRouter from './routes/ecommerce';
 import barcodesRouter from './routes/barcodes';
 import customFieldsRouter from './routes/customFields';
+import batchesRouter from './routes/batches';
+import serialNumbersRouter from './routes/serialNumbers';
+import binLocationsRouter from './routes/binLocations';
+import usersRouter from './routes/users';
+import additionalCostsRouter from './routes/additionalCosts';
+import outsourcedPORouter from './routes/outsourcedPO';
+import accountingMetadataRouter from './routes/accountingMetadata';
 
 const app = express();
 
@@ -90,6 +97,13 @@ app.use(`${v1}/accounting`, accountingRouter);
 app.use(`${v1}/ecommerce`, ecommerceRouter);
 app.use(`${v1}/barcodes`, barcodesRouter);
 app.use(`${v1}/custom-fields`, customFieldsRouter);
+app.use(`${v1}/batches`, batchesRouter);
+app.use(`${v1}/serial-numbers`, serialNumbersRouter);
+app.use(`${v1}/bin-locations`, binLocationsRouter);
+app.use(`${v1}/users`, usersRouter);
+app.use(`${v1}/additional-costs`, additionalCostsRouter);
+app.use(`${v1}/outsourced-po-recipe-rows`, outsourcedPORouter);
+app.use(`${v1}/accounting-metadata`, accountingMetadataRouter);
 
 app.use(errorHandler);
 

@@ -57,3 +57,20 @@ router.get('/logs', async (req, res) => {
 });
 
 export default router;
+
+// POST /webhook_logs_export — export webhook logs as JSON array
+router.post('/logs/export', async (req: any, res) => {
+  const { webhookId, status, startDate, endDate } = (req.body || {});
+  const where: any = {};
+  if (webhookId) where.webhookId = webhookId;
+  if (status) where.status = status;
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) where.createdAt.gte = new Date(startDate);
+    if (endDate) where.createdAt.lte = new Date(endDate);
+  }
+  const logs = await prisma.webhookLog.findMany({ where, orderBy: { createdAt: 'desc' }, take: 10000 });
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', 'attachment; filename="webhook_logs.json"');
+  res.json(logs);
+});

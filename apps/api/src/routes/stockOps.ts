@@ -20,6 +20,23 @@ router.get('/adjustments', async (req, res) => {
   res.json(paginated(items, total, page, pageSize));
 });
 
+router.get('/adjustments/:id', async (req, res) => {
+  const item = await prisma.stockAdjustment.findUnique({ where: { id: req.params.id } });
+  if (!item) return res.status(404).json({ error: 'Not found' });
+  res.json(item);
+});
+
+router.patch('/adjustments/:id', async (req, res) => {
+  const data = z.object({ reason: z.string().optional(), note: z.string().nullish() }).parse(req.body);
+  const item = await prisma.stockAdjustment.update({ where: { id: req.params.id }, data });
+  res.json(item);
+});
+
+router.delete('/adjustments/:id', async (req, res) => {
+  await prisma.stockAdjustment.delete({ where: { id: req.params.id } });
+  res.status(204).send();
+});
+
 router.post('/adjustments', async (req: AuthRequest, res) => {
   const body = req.body;
   // Accept both `qty` and `qtyDelta` from frontend
@@ -57,6 +74,29 @@ router.get('/transfers', async (req, res) => {
     prisma.stockTransfer.count(),
   ]);
   res.json(paginated(items, total, page, pageSize));
+});
+
+router.get('/transfers/:id', async (req, res) => {
+  const item = await prisma.stockTransfer.findUnique({ where: { id: req.params.id } });
+  if (!item) return res.status(404).json({ error: 'Not found' });
+  res.json(item);
+});
+
+router.patch('/transfers/:id', async (req, res) => {
+  const data = z.object({ note: z.string().nullish(), status: z.string().optional() }).parse(req.body);
+  const item = await prisma.stockTransfer.update({ where: { id: req.params.id }, data });
+  res.json(item);
+});
+
+router.delete('/transfers/:id', async (req, res) => {
+  await prisma.stockTransfer.delete({ where: { id: req.params.id } });
+  res.status(204).send();
+});
+
+router.patch('/transfers/:id/status', async (req, res) => {
+  const { status } = z.object({ status: z.string() }).parse(req.body);
+  const item = await prisma.stockTransfer.update({ where: { id: req.params.id }, data: { status } });
+  res.json(item);
 });
 
 router.post('/transfers', async (req: AuthRequest, res) => {
@@ -135,5 +175,43 @@ async function commitStocktake(req: any, res: any) {
 
 router.post('/stocktakes/:id/commit', commitStocktake);
 router.post('/stocktakes/:id/complete', commitStocktake);
+
+router.patch('/stocktakes/:id', async (req, res) => {
+  const data = z.object({ notes: z.string().nullish(), locationId: z.string().uuid().optional() }).parse(req.body);
+  const item = await prisma.stocktake.update({ where: { id: req.params.id }, data, include: { rows: true } });
+  res.json(item);
+});
+
+router.delete('/stocktakes/:id', async (req, res) => {
+  await prisma.stocktake.delete({ where: { id: req.params.id } });
+  res.status(204).send();
+});
+
+router.get('/stocktakes/:id/rows', async (req, res) => {
+  const { page, pageSize, skip, take } = getPagination(req);
+  const where = { stocktakeId: req.params.id };
+  const [items, total] = await Promise.all([
+    prisma.stocktakeRow.findMany({ where, skip, take }),
+    prisma.stocktakeRow.count({ where }),
+  ]);
+  res.json(paginated(items, total, page, pageSize));
+});
+
+router.patch('/stocktake-rows/:id', async (req, res) => {
+  const { countedQty } = z.object({ countedQty: z.coerce.number().min(0) }).parse(req.body);
+  // Recalculate variance
+  const existing = await prisma.stocktakeRow.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  const item = await prisma.stocktakeRow.update({
+    where: { id: req.params.id },
+    data: { countedQty, variance: countedQty - Number(existing.systemQty) },
+  });
+  res.json(item);
+});
+
+router.delete('/stocktake-rows/:id', async (req, res) => {
+  await prisma.stocktakeRow.delete({ where: { id: req.params.id } });
+  res.status(204).send();
+});
 
 export default router;

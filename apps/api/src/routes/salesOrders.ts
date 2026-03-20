@@ -149,6 +149,46 @@ router.post('/:id/fulfill', async (req, res) => {
   res.json(normalizeSo(updated));
 });
 
+// GET /sales_orders/:id/returnable_items — fulfilled rows not yet fully returned
+router.get('/:id/returnable-items', async (req, res) => {
+  const order = await prisma.salesOrder.findUnique({
+    where: { id: req.params.id },
+    include: {
+      rows: { include: { fulfillments: true } },
+      fulfillments: true,
+    },
+  });
+  if (!order) return res.status(404).json({ error: 'Not found' });
+
+  const returns = await prisma.salesReturn.findMany({
+    where: { orderId: req.params.id },
+    select: { id: true },
+  });
+  const returnIds = returns.map((r: any) => r.id);
+  const returnedRows = returnIds.length
+    ? await prisma.salesReturnRow.findMany({ where: { returnId: { in: returnIds } } })
+    : [];
+  const returnedByRow: Record<string, number> = {};
+  for (const r of returnedRows) {
+    if (r.soRowId) returnedByRow[r.soRowId] = (returnedByRow[r.soRowId] || 0) + Number(r.qty);
+  }
+
+  const items = (order.rows || [])
+    .filter(r => Number(r.qtyFulfilled) > 0)
+    .map(r => ({
+      soRowId: r.id,
+      variantId: r.variantId,
+      description: r.description,
+      qtyFulfilled: Number(r.qtyFulfilled),
+      qtyReturned: returnedByRow[r.id] || 0,
+      qtyReturnable: Number(r.qtyFulfilled) - (returnedByRow[r.id] || 0),
+      unitPrice: r.unitPrice,
+    }))
+    .filter(r => r.qtyReturnable > 0);
+
+  res.json(items);
+});
+
 // SO Addresses sub-routes
 router.use(soAddressesRouter);
 

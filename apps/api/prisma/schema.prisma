@@ -86,18 +86,20 @@ model Location {
   storageBins     StorageBin[]
   inventoryLevels InventoryLevel[]
   inventoryMovements InventoryMovement[]
+  batchStocks     BatchStock[]
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
   @@map("locations")
 }
 
 model StorageBin {
-  id         String   @id @default(uuid())
-  name       String
-  locationId String   @map("location_id")
-  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id              String               @id @default(uuid())
+  name            String
+  locationId      String               @map("location_id")
+  location        Location             @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  variantBins     VariantBinLocation[]
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
   @@map("storage_bins")
 }
 
@@ -233,8 +235,9 @@ model PurchaseOrder {
   expectedDate DateTime?             @map("expected_date") @db.Date
   notes        String?
   locationId   String?               @map("location_id")
-  rows         PurchaseOrderRow[]
-  costRows     PurchaseOrderCostRow[]
+  rows                 PurchaseOrderRow[]
+  costRows             PurchaseOrderCostRow[]
+  outsourcedRecipeRows OutsourcedPORecipeRow[]
   createdAt    DateTime              @default(now()) @map("created_at")
   updatedAt    DateTime              @updatedAt @map("updated_at")
   @@map("purchase_orders")
@@ -456,12 +459,13 @@ model StocktakeRow {
 }
 
 model Batch {
-  id           String   @id @default(uuid())
-  variantId    String   @map("variant_id")
-  batchNumber  String   @map("batch_number")
-  expiryDate   DateTime? @map("expiry_date") @db.Date
+  id           String       @id @default(uuid())
+  variantId    String       @map("variant_id")
+  batchNumber  String       @map("batch_number")
+  expiryDate   DateTime?    @map("expiry_date") @db.Date
   notes        String?
-  createdAt    DateTime @default(now()) @map("created_at")
+  stocks       BatchStock[]
+  createdAt    DateTime     @default(now()) @map("created_at")
   @@unique([variantId, batchNumber])
   @@map("batches")
 }
@@ -838,4 +842,61 @@ model CustomFieldValue {
   updatedAt   DateTime              @updatedAt @map("updated_at")
   @@unique([fieldId, entityId])
   @@map("custom_field_values")
+}
+
+// ─── Batch Stock ───────────────────────────────────────────────────────────────
+
+model BatchStock {
+  id         String   @id @default(uuid())
+  batchId    String   @map("batch_id")
+  batch      Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  locationId String   @map("location_id")
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  onHand     Decimal  @default(0) @map("on_hand") @db.Decimal(18, 4)
+  allocated  Decimal  @default(0) @db.Decimal(18, 4)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  @@unique([batchId, locationId])
+  @@map("batch_stocks")
+}
+
+// ─── Variant Bin Location ─────────────────────────────────────────────────────
+
+model VariantBinLocation {
+  id           String     @id @default(uuid())
+  variantId    String     @map("variant_id")
+  storageBinId String     @map("storage_bin_id")
+  storageBin   StorageBin @relation(fields: [storageBinId], references: [id], onDelete: Cascade)
+  isPrimary    Boolean    @default(false) @map("is_primary")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  @@unique([variantId, storageBinId])
+  @@map("variant_bin_locations")
+}
+
+// ─── Additional Cost Types ────────────────────────────────────────────────────
+
+model AdditionalCost {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  @@map("additional_costs")
+}
+
+// ─── Outsourced PO Recipe Row ─────────────────────────────────────────────────
+
+model OutsourcedPORecipeRow {
+  id          String        @id @default(uuid())
+  poId        String        @map("po_id")
+  po          PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  materialId  String?       @map("material_id")
+  variantId   String?       @map("variant_id")
+  qtyRequired Decimal       @map("qty_required") @db.Decimal(18, 4)
+  qtyConsumed Decimal       @default(0) @map("qty_consumed") @db.Decimal(18, 4)
+  notes       String?
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  @@map("outsourced_po_recipe_rows")
 }

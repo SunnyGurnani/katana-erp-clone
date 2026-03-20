@@ -181,3 +181,111 @@ router.post('/orders/:id/produce', async (req, res) => {
 router.use(moProductionsRouter);
 
 export default router;
+
+// ── MO Make-to-Order ──────────────────────────────────────────────────────────
+// POST /manufacturing_order_make_to_order — link MO to SO row
+router.post('/orders/:id/make-to-order', async (req, res) => {
+  const { soRowId } = z.object({ soRowId: z.string().uuid() }).parse(req.body);
+  const mo = await prisma.manufacturingOrder.findUnique({ where: { id: req.params.id } });
+  if (!mo) return res.status(404).json({ error: 'MO not found' });
+  // Store make-to-order linkage in notes (real impl would use a join table)
+  const updated = await prisma.manufacturingOrder.update({
+    where: { id: req.params.id },
+    data: { notes: `${mo.notes ? mo.notes + '\n' : ''}[make-to-order: soRowId=${soRowId}]` },
+  });
+  res.json({ moId: updated.id, soRowId, linked: true });
+});
+
+// POST /manufacturing_order_unlink — remove MO from SO
+router.post('/orders/:id/unlink', async (req, res) => {
+  const mo = await prisma.manufacturingOrder.findUnique({ where: { id: req.params.id } });
+  if (!mo) return res.status(404).json({ error: 'MO not found' });
+  const updated = await prisma.manufacturingOrder.update({
+    where: { id: req.params.id },
+    data: { notes: (mo.notes || '').replace(/\[make-to-order:.*?\]/g, '').trim() || null },
+  });
+  res.json({ moId: updated.id, unlinked: true });
+});
+
+// ── Standalone MO Recipe Rows ─────────────────────────────────────────────────
+router.get('/recipe-rows', async (req, res) => {
+  const { page, pageSize, skip, take } = getPagination(req);
+  const { moId } = req.query as Record<string, string>;
+  const where: any = {};
+  if (moId) where.moId = moId;
+  const [items, total] = await Promise.all([
+    prisma.mORecipeRow.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.mORecipeRow.count({ where }),
+  ]);
+  res.json(paginated(items, total, page, pageSize));
+});
+
+router.post('/recipe-rows', async (req, res) => {
+  const data = z.object({
+    moId: z.string().uuid(),
+    materialId: z.string().uuid().optional(),
+    variantId: z.string().uuid().optional(),
+    qtyPlanned: z.coerce.number().positive(),
+  }).parse(req.body);
+  const item = await prisma.mORecipeRow.create({ data });
+  res.status(201).json(item);
+});
+
+router.get('/recipe-rows/:id', async (req, res) => {
+  const item = await prisma.mORecipeRow.findUnique({ where: { id: req.params.id } });
+  if (!item) return res.status(404).json({ error: 'Not found' });
+  res.json(item);
+});
+
+router.patch('/recipe-rows/:id', async (req, res) => {
+  const data = z.object({ materialId: z.string().uuid().optional(), variantId: z.string().uuid().optional(), qtyPlanned: z.coerce.number().positive().optional() }).parse(req.body);
+  const item = await prisma.mORecipeRow.update({ where: { id: req.params.id }, data });
+  res.json(item);
+});
+
+router.delete('/recipe-rows/:id', async (req, res) => {
+  await prisma.mORecipeRow.delete({ where: { id: req.params.id } });
+  res.status(204).send();
+});
+
+// ── Standalone MO Operation Rows ──────────────────────────────────────────────
+router.get('/operation-rows', async (req, res) => {
+  const { page, pageSize, skip, take } = getPagination(req);
+  const { moId } = req.query as Record<string, string>;
+  const where: any = {};
+  if (moId) where.moId = moId;
+  const [items, total] = await Promise.all([
+    prisma.mOOperationRow.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.mOOperationRow.count({ where }),
+  ]);
+  res.json(paginated(items, total, page, pageSize));
+});
+
+router.post('/operation-rows', async (req, res) => {
+  const data = z.object({
+    moId: z.string().uuid(),
+    operationId: z.string().uuid().optional(),
+    name: z.string(),
+    status: z.string().default('pending'),
+    actualMinutes: z.coerce.number().optional(),
+  }).parse(req.body);
+  const item = await prisma.mOOperationRow.create({ data });
+  res.status(201).json(item);
+});
+
+router.get('/operation-rows/:id', async (req, res) => {
+  const item = await prisma.mOOperationRow.findUnique({ where: { id: req.params.id } });
+  if (!item) return res.status(404).json({ error: 'Not found' });
+  res.json(item);
+});
+
+router.patch('/operation-rows/:id', async (req, res) => {
+  const data = z.object({ name: z.string().optional(), status: z.string().optional(), actualMinutes: z.coerce.number().optional() }).parse(req.body);
+  const item = await prisma.mOOperationRow.update({ where: { id: req.params.id }, data });
+  res.json(item);
+});
+
+router.delete('/operation-rows/:id', async (req, res) => {
+  await prisma.mOOperationRow.delete({ where: { id: req.params.id } });
+  res.status(204).send();
+});
