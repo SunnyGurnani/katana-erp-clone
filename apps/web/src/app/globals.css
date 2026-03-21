@@ -2,22 +2,73 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base { body { @apply bg-gray-50 text-gray-900 antialiased; } }
+@layer base {
+  body { @apply bg-gray-100 text-gray-900 antialiased; }
+}
 
 @layer components {
-  .btn { @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 cursor-pointer; }
-  .btn-primary { @apply btn bg-brand-600 text-white hover:bg-brand-700; }
+  /* Buttons */
+  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 cursor-pointer; }
+  .btn-primary { @apply btn bg-navy-800 text-white hover:bg-navy-900; }
   .btn-ghost { @apply btn border border-gray-300 bg-white text-gray-700 hover:bg-gray-50; }
   .btn-danger { @apply btn bg-red-600 text-white hover:bg-red-700; }
   .icon-btn { @apply p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors; }
-  .input { @apply w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500; }
+
+  /* Form */
+  .input { @apply w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white; }
   .label { @apply block text-xs font-medium text-gray-600 mb-1; }
-  .card { @apply rounded-xl border border-gray-200 bg-white shadow-sm; }
+
+  /* Card */
+  .card { @apply rounded-lg border border-gray-200 bg-white; }
+
+  /* General badge (pill) */
   .badge { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600; }
-  .table { @apply w-full text-sm; }
-  .table thead tr { @apply border-b border-gray-200; }
-  .table th { @apply px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide; }
-  .table td { @apply px-5 py-3 text-gray-700 border-b border-gray-100; }
+  .badge-green { @apply badge bg-emerald-100 text-emerald-700; }
+  .badge-red { @apply badge bg-red-100 text-red-700; }
+  .badge-yellow { @apply badge bg-amber-100 text-amber-700; }
+  .badge-blue { @apply badge bg-blue-100 text-blue-700; }
+  .badge-gray { @apply badge bg-gray-100 text-gray-600; }
+  .badge-purple { @apply badge bg-purple-100 text-purple-700; }
+
+  /* TABLE — Katana style: no uppercase headers, thin borders, compact */
+  .table { @apply w-full text-[13px]; }
+  .table thead tr { @apply border-b border-gray-200 bg-gray-50/50; }
+  .table th { @apply px-3 py-2.5 text-left text-[11px] font-medium text-gray-500 tracking-normal; }
+  .table td { @apply px-3 py-2.5 text-gray-700 border-b border-gray-100; }
   .table tbody tr:last-child td { @apply border-b-0; }
-  .table tbody tr { @apply hover:bg-gray-50 transition-colors; }
+  .table tbody tr { @apply hover:bg-blue-50/40 transition-colors; }
+
+  /* Katana-style status cells — full cell bg color */
+  .status-cell { @apply px-3 py-2.5 text-[12px] font-medium text-center whitespace-nowrap; }
+  .status-instock { @apply status-cell bg-[#2E7D32] text-white; }
+  .status-processed { @apply status-cell bg-[#43A047] text-white; }
+  .status-done { @apply status-cell bg-[#2E7D32] text-white; }
+  .status-not-available { @apply status-cell bg-[#E53935] text-white; }
+  .status-expected { @apply status-cell bg-[#FDD835] text-gray-900; }
+  .status-not-applicable { @apply status-cell bg-gray-100 text-gray-400; }
+  .status-not-started { @apply status-cell bg-white text-gray-600 border border-gray-200; }
+  .status-ready-packing { @apply status-cell bg-[#FFB300] text-gray-900; }
+  .status-packed { @apply status-cell bg-[#7B1FA2] text-white; }
+  .status-not-shipped { @apply status-cell bg-gray-100 text-gray-500; }
+  .status-not-invoiced { @apply status-cell bg-gray-100 text-gray-500; }
+  .status-make { @apply status-cell bg-[#1565C0] text-white; }
+  .status-picked { @apply status-cell bg-[#00897B] text-white; }
+  .status-in-progress { @apply status-cell bg-[#FDD835] text-gray-900; }
+  .status-blocked { @apply status-cell bg-[#E53935] text-white; }
+  .status-paused { @apply status-cell bg-[#EF6C00] text-white; }
+  .status-completed { @apply status-cell bg-[#2E7D32] text-white; }
+  .status-draft { @apply status-cell bg-gray-100 text-gray-500; }
+  .status-confirmed { @apply status-cell bg-[#1565C0] text-white; }
+  .status-partial { @apply status-cell bg-[#FFB300] text-gray-900; }
+  .status-cancelled { @apply status-cell bg-[#E53935] text-white; }
+  .status-fulfilled { @apply status-cell bg-[#2E7D32] text-white; }
+  .status-received { @apply status-cell bg-[#2E7D32] text-white; }
+  .status-sent { @apply status-cell bg-[#FDD835] text-gray-900; }
+  .status-accepted { @apply status-cell bg-[#2E7D32] text-white; }
+  .status-rejected { @apply status-cell bg-[#E53935] text-white; }
+  .status-expired { @apply status-cell bg-gray-200 text-gray-500; }
+  .status-active { @apply status-cell bg-[#2E7D32] text-white; }
+  .status-inactive { @apply status-cell bg-gray-200 text-gray-500; }
+  .status-pending { @apply status-cell bg-[#FDD835] text-gray-900; }
+  .status-planned { @apply status-cell bg-[#7B1FA2] text-white; }
 }

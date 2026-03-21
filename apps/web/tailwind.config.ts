@@ -4,6 +4,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        navy: { 700: '#3D4556', 800: '#2D3446', 900: '#1E2433' },
         brand: { 50:'#eff6ff',100:'#dbeafe',500:'#3b82f6',600:'#2563eb',700:'#1d4ed8',900:'#1e3a8a' },
       },
       fontFamily: { sans: ['Inter','system-ui','sans-serif'] },

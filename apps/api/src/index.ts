@@ -43,6 +43,9 @@ import usersRouter from './routes/users';
 import additionalCostsRouter from './routes/additionalCosts';
 import outsourcedPORouter from './routes/outsourcedPO';
 import accountingMetadataRouter from './routes/accountingMetadata';
+import quotesRouter from './routes/quotes';
+import insightsRouter from './routes/insights';
+import planningRouter from './routes/planning';
 
 const app = express();
 
@@ -104,6 +107,9 @@ app.use(`${v1}/users`, usersRouter);
 app.use(`${v1}/additional-costs`, additionalCostsRouter);
 app.use(`${v1}/outsourced-po-recipe-rows`, outsourcedPORouter);
 app.use(`${v1}/accounting-metadata`, accountingMetadataRouter);
+app.use(`${v1}/quotes`, quotesRouter);
+app.use(`${v1}/insights`, insightsRouter);
+app.use(`${v1}/planning`, planningRouter);
 
 app.use(errorHandler);
 
