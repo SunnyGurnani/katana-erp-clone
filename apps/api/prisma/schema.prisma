@@ -930,3 +930,33 @@ model OutsourcedPORecipeRow {
   updatedAt   DateTime      @updatedAt @map("updated_at")
   @@map("outsourced_po_recipe_rows")
 }
+
+// ─── Quotes ─────────────────────────────────────────────────────────────────
+
+model Quote {
+  id           String      @id @default(uuid())
+  number       String      @unique
+  customerId   String?     @map("customer_id")
+  status       String      @default("draft") // draft | sent | accepted | rejected | expired
+  currency     String      @default("USD")
+  validUntil   DateTime?   @map("valid_until") @db.Date
+  notes        String?
+  rows         QuoteRow[]
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  @@map("quotes")
+}
+
+model QuoteRow {
+  id          String   @id @default(uuid())
+  quoteId     String   @map("quote_id")
+  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  variantId   String?  @map("variant_id")
+  description String?
+  qty         Decimal  @db.Decimal(18, 4)
+  unitPrice   Decimal? @map("unit_price") @db.Decimal(18, 4)
+  taxRate     Decimal? @map("tax_rate") @db.Decimal(7, 4)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  @@map("quote_rows")
+}

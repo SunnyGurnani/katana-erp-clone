@@ -37,19 +37,13 @@ export default function SODetailPage() {
     onError: () => addToast("Error fulfilling order", "error"),
   });
 
-  const updateStatus = useMutation({
-    mutationFn: (status: string) => api.put(`/sales-orders/${id}`, { status }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["so", id] }); addToast("Status updated", "success"); },
-    onError: () => addToast("Error updating status", "error"),
-  });
-
-  if (isLoading) return <div className="p-6"><SkeletonRows rows={6} /></div>;
+  if (isLoading) return <div className="p-6"><table className="table"><tbody><SkeletonRows rows={6} /></tbody></table></div>;
   if (!so) return <div className="p-6 text-gray-500">SO not found.</div>;
 
   const canFulfill = ["draft", "confirmed", "partial"].includes(so.status);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="px-4 py-3 space-y-4">
       <div className="flex items-center gap-3">
         <Link href="/dashboard/sell" className="icon-btn"><ArrowLeft size={16} /></Link>
         <div className="flex-1">
@@ -57,12 +51,7 @@ export default function SODetailPage() {
           <p className="text-sm text-gray-500">{so.customer?.name || "No customer"}</p>
         </div>
         <StatusBadge status={so.status} />
-        {so.status === "draft" && (
-          <button className="btn btn-ghost" onClick={() => updateStatus.mutate("confirmed")}>Confirm</button>
-        )}
-        {canFulfill && (
-          <button className="btn btn-primary" onClick={() => setFulfillOpen(true)}><Truck size={15} className="mr-1" />Fulfill</button>
-        )}
+        {canFulfill && <button className="btn btn-primary" onClick={() => setFulfillOpen(true)}><Truck size={15} />Fulfill</button>}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -76,7 +65,7 @@ export default function SODetailPage() {
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <h2 className="font-semibold text-gray-800">Line Items</h2>
           {["draft", "confirmed"].includes(so.status) && (
-            <button className="btn btn-ghost text-sm" onClick={() => setRowOpen(true)}><Plus size={14} className="mr-1" />Add Row</button>
+            <button className="btn btn-ghost text-sm" onClick={() => setRowOpen(true)}><Plus size={14} />Add Row</button>
           )}
         </div>
         <table className="table">
@@ -89,7 +78,7 @@ export default function SODetailPage() {
                 <td>{r.qty}</td>
                 <td>${Number(r.salePrice || 0).toFixed(2)}</td>
                 <td>{r.fulfilledQty || 0}</td>
-                <td className="font-medium">${(Number(r.qty) * Number(r.salePrice || 0)).toFixed(2)}</td>
+                <td>${(Number(r.qty) * Number(r.salePrice || 0)).toFixed(2)}</td>
               </tr>
             ))}
             {!so.rows?.length && <tr><td colSpan={6} className="text-center text-gray-400 py-8">No line items yet</td></tr>}
@@ -111,7 +100,7 @@ export default function SODetailPage() {
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <button className="btn btn-ghost" onClick={() => setRowOpen(false)}>Cancel</button>
-          <button className="btn btn-primary" disabled={addRow.isPending} onClick={() => addRow.mutate()}>{addRow.isPending ? "Adding…" : "Add"}</button>
+          <button className="btn btn-primary" disabled={addRow.isPending} onClick={() => addRow.mutate()}>{addRow.isPending ? "Adding..." : "Add"}</button>
         </div>
       </Modal>
 
@@ -128,7 +117,7 @@ export default function SODetailPage() {
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <button className="btn btn-ghost" onClick={() => setFulfillOpen(false)}>Cancel</button>
-          <button className="btn btn-primary" disabled={fulfill.isPending || !fulfillLocationId} onClick={() => fulfill.mutate()}>{fulfill.isPending ? "Fulfilling…" : "Confirm Fulfill"}</button>
+          <button className="btn btn-primary" disabled={fulfill.isPending || !fulfillLocationId} onClick={() => fulfill.mutate()}>{fulfill.isPending ? "Fulfilling..." : "Confirm Fulfill"}</button>
         </div>
       </Modal>
     </div>

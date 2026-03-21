@@ -1,17 +1,14 @@
 "use client";
-import { useState } from "react";
-import { SkeletonRows } from "./Skeleton";
-import { useRouter } from "next/navigation";
-import { ChevronDown } from "lucide-react";
+import { useState, useMemo } from "react";
+import { ChevronUp, ChevronDown, ArrowUpDown } from "lucide-react";
 
 export interface Column<T = any> {
   key: string;
   header: string;
   render?: (row: T, index: number) => React.ReactNode;
-  className?: string;
   sortable?: boolean;
+  className?: string;
   filterable?: boolean;
-  /** If true, this column uses status-cell styling (full cell bg) */
   isStatus?: boolean;
 }
 
@@ -19,132 +16,155 @@ interface Props<T = any> {
   columns: Column<T>[];
   data: T[];
   isLoading?: boolean;
-  emptyMessage?: string;
   onRowClick?: (row: T) => void;
-  rowHref?: (row: T) => string;
-  skeletonRows?: number;
-  /** Show row count label, e.g. "24 orders" */
-  countLabel?: string;
-  /** Show total sum at top */
-  totalRow?: React.ReactNode;
-  /** Show rank/row number column */
+  emptyMessage?: string;
+  rowKey?: (row: T) => string;
   showRank?: boolean;
+  showFilters?: boolean;
+  totalLabel?: string;
+}
+
+function SkeletonTableRows({ cols, rows = 6 }: { cols: number; rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, i) => (
+        <tr key={i}>
+          {Array.from({ length: cols }).map((_, j) => (
+            <td key={j} className="px-3 py-2.5">
+              <div className="h-3.5 bg-gray-200 rounded animate-pulse" style={{ width: `${60 + (j * 17) % 30}%` }} />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
 }
 
 export function DataTable<T extends Record<string, any>>({
-  columns,
-  data,
-  isLoading,
-  emptyMessage = "No data",
-  onRowClick,
-  rowHref,
-  skeletonRows = 8,
-  countLabel,
-  totalRow,
-  showRank,
+  columns, data, isLoading, onRowClick, emptyMessage = "No data found", rowKey, showRank = false, showFilters = true, totalLabel,
 }: Props<T>) {
-  const router = useRouter();
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [filters, setFilters] = useState<Record<string, string>>({});
 
-  function handleRowClick(row: T) {
-    if (onRowClick) onRowClick(row);
-    else if (rowHref) router.push(rowHref(row));
+  function handleSort(key: string) {
+    if (sortCol === key) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortCol(key);
+      setSortDir("asc");
+    }
   }
 
-  const clickable = !!(onRowClick || rowHref);
+  const filtered = useMemo(() => {
+    let result = data;
+    for (const [key, val] of Object.entries(filters)) {
+      if (!val) continue;
+      const lower = val.toLowerCase();
+      result = result.filter(row => {
+        const cell = row[key];
+        return cell != null && String(cell).toLowerCase().includes(lower);
+      });
+    }
+    return result;
+  }, [data, filters]);
 
-  // Apply filters
-  const filtered = data.filter(row => {
-    return Object.entries(filters).every(([key, val]) => {
-      if (!val) return true;
-      const col = columns.find(c => c.key === key);
-      // Get display value for filtering
-      const raw = (row as any)[key];
-      const display = raw != null ? String(raw) : "";
-      return display.toLowerCase().includes(val.toLowerCase());
+  const sorted = useMemo(() => {
+    if (!sortCol) return filtered;
+    return [...filtered].sort((a, b) => {
+      const av = a[sortCol], bv = b[sortCol];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp = typeof av === "number" ? av - bv : String(av).localeCompare(String(bv));
+      return sortDir === "asc" ? cmp : -cmp;
     });
-  });
+  }, [filtered, sortCol, sortDir]);
+
+  const allCols = showRank
+    ? [{ key: "__rank", header: "#", className: "w-10 text-center" } as Column<T>, ...columns]
+    : columns;
 
   return (
-    <div className="card overflow-hidden">
-      {/* Count and total row */}
-      {(countLabel || totalRow) && !isLoading && (
-        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 text-[12px] text-gray-500">
-          {countLabel && <span>{filtered.length} {countLabel}</span>}
-          {totalRow}
+    <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
+      {totalLabel && (
+        <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-100">
+          {sorted.length} {totalLabel}
         </div>
       )}
-
-      {isLoading ? (
+      <div className="overflow-x-auto">
         <table className="table">
           <thead>
+            {/* Header row */}
             <tr>
-              {showRank && <th className="w-12">#</th>}
-              {columns.map(col => (
-                <th key={col.key}>{col.header}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <SkeletonRows rows={skeletonRows} cols={columns.length + (showRank ? 1 : 0)} />
-          </tbody>
-        </table>
-      ) : filtered.length === 0 ? (
-        <div className="py-16 text-center text-gray-400 text-sm">{emptyMessage}</div>
-      ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              {showRank && <th className="w-12">#</th>}
-              {columns.map(col => (
-                <th key={col.key} className={col.className}>
+              {allCols.map(col => (
+                <th
+                  key={col.key}
+                  className={`${col.className || ""} ${col.sortable ? "cursor-pointer select-none hover:text-gray-700" : ""}`}
+                  onClick={() => col.sortable && handleSort(col.key)}
+                >
                   <span className="inline-flex items-center gap-1">
                     {col.header}
-                    {col.sortable !== false && col.header && (
-                      <ChevronDown size={10} className="text-gray-400" />
+                    {col.sortable && (
+                      sortCol === col.key
+                        ? (sortDir === "asc" ? <ChevronUp size={10} /> : <ChevronDown size={10} />)
+                        : <ArrowUpDown size={10} className="opacity-30" />
                     )}
                   </span>
                 </th>
               ))}
             </tr>
             {/* Filter row */}
-            <tr className="border-b border-gray-200">
-              {showRank && <th className="px-3 py-1.5" />}
-              {columns.map(col => (
-                <th key={`filter-${col.key}`} className="px-2 py-1.5 font-normal">
-                  {col.filterable !== false && col.header ? (
-                    <input
-                      type="text"
-                      placeholder="Filter"
-                      value={filters[col.key] || ""}
-                      onChange={e => setFilters(f => ({ ...f, [col.key]: e.target.value }))}
-                      className="w-full text-[11px] font-normal text-gray-600 placeholder-gray-400 border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:border-brand-500"
-                    />
-                  ) : <div />}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((row, i) => (
-              <tr
-                key={row.id || i}
-                onClick={() => handleRowClick(row)}
-                className={clickable ? "cursor-pointer" : ""}
-              >
-                {showRank && (
-                  <td className="text-[12px] text-gray-400 text-center w-12">{i + 1}</td>
-                )}
-                {columns.map(col => (
-                  <td key={col.key} className={col.isStatus ? "!p-0" : col.className}>
-                    {col.render ? col.render(row, i) : (row as any)[col.key] ?? "—"}
-                  </td>
+            {showFilters && (
+              <tr className="border-b border-gray-200">
+                {allCols.map(col => (
+                  <th key={`f-${col.key}`} className="px-3 py-1.5 font-normal">
+                    {col.filterable !== false && col.key !== "__rank" && col.key !== "actions" && col.key !== "edit" && !col.isStatus ? (
+                      <input
+                        type="text"
+                        placeholder="Filter"
+                        className="w-full text-[11px] px-2 py-1 border border-gray-200 rounded font-normal text-gray-600 placeholder:text-gray-300 focus:outline-none focus:border-brand-500"
+                        value={filters[col.key] || ""}
+                        onChange={e => setFilters(f => ({ ...f, [col.key]: e.target.value }))}
+                      />
+                    ) : null}
+                  </th>
                 ))}
               </tr>
-            ))}
+            )}
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <SkeletonTableRows cols={allCols.length} />
+            ) : sorted.length === 0 ? (
+              <tr>
+                <td colSpan={allCols.length} className="text-center text-gray-400 py-12">
+                  {emptyMessage}
+                </td>
+              </tr>
+            ) : (
+              sorted.map((row, i) => (
+                <tr
+                  key={rowKey ? rowKey(row) : row.id || i}
+                  className={onRowClick ? "cursor-pointer" : ""}
+                  onClick={() => onRowClick?.(row)}
+                >
+                  {allCols.map(col => {
+                    if (col.key === "__rank") {
+                      return <td key={col.key} className="text-center text-gray-400 text-xs w-10">{i + 1}</td>;
+                    }
+                    return (
+                      <td key={col.key} className={col.isStatus ? "!p-0" : (col.className || "")}>
+                        {col.render ? col.render(row, i) : row[col.key] ?? "—"}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
-      )}
+      </div>
     </div>
   );
 }

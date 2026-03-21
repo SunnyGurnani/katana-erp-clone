@@ -1,70 +1,67 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
-import { getPagination, paginated } from '../middleware/paginate';
 
 const router = Router();
 router.use(authenticate);
 
-// ─── Forecast ────────────────────────────────────────────────────────────────
-
+// GET /forecast — projected stock per variant/location
 router.get('/forecast', async (req, res) => {
-  const { page, pageSize, skip, take } = getPagination(req);
-
-  // Current on-hand by variant+location
+  // Current on-hand levels
   const levels = await prisma.inventoryLevel.findMany({
-    select: {
-      variantId: true,
-      locationId: true,
-      onHand: true,
-      variant: { select: { sku: true, product: { select: { name: true } } } },
-      location: { select: { name: true } },
+    include: {
+      variant: { select: { id: true, sku: true, product: { select: { name: true } } } },
+      location: { select: { id: true, name: true } },
     },
   });
 
-  // Expected: from open POs (not cancelled, not fully received)
-  const openPORows = await prisma.purchaseOrderRow.findMany({
+  // Expected from open POs (draft, partial, confirmed — not cancelled or received)
+  const poRows = await prisma.purchaseOrderRow.findMany({
     where: {
-      order: { status: { in: ['draft', 'confirmed', 'partial'] } },
+      order: { status: { notIn: ['cancelled', 'received'] } },
       variantId: { not: null },
     },
     select: { variantId: true, qtyOrdered: true, qtyReceived: true, order: { select: { locationId: true } } },
   });
 
-  const expectedMap: Record<string, number> = {};
-  for (const r of openPORows) {
-    if (!r.variantId || !r.order.locationId) continue;
-    const key = `${r.variantId}|${r.order.locationId}`;
-    expectedMap[key] = (expectedMap[key] || 0) + (Number(r.qtyOrdered) - Number(r.qtyReceived));
-  }
-
-  // Committed: from open SOs (not cancelled, not fully fulfilled)
-  const openSORows = await prisma.salesOrderRow.findMany({
+  // Committed from open SOs (draft, partial — not fulfilled or cancelled)
+  const soRows = await prisma.salesOrderRow.findMany({
     where: {
-      order: { status: { in: ['draft', 'confirmed', 'partial'] } },
+      order: { status: { notIn: ['cancelled', 'fulfilled'] } },
       variantId: { not: null },
     },
     select: { variantId: true, qtyOrdered: true, qtyFulfilled: true, order: { select: { locationId: true } } },
   });
 
+  // Build expected map: key = variantId|locationId
+  const expectedMap: Record<string, number> = {};
+  for (const r of poRows) {
+    const locId = r.order.locationId;
+    if (!locId || !r.variantId) continue;
+    const key = `${r.variantId}|${locId}`;
+    expectedMap[key] = (expectedMap[key] || 0) + (Number(r.qtyOrdered) - Number(r.qtyReceived));
+  }
+
+  // Build committed map: key = variantId|locationId
   const committedMap: Record<string, number> = {};
-  for (const r of openSORows) {
-    if (!r.variantId || !r.order.locationId) continue;
-    const key = `${r.variantId}|${r.order.locationId}`;
+  for (const r of soRows) {
+    const locId = r.order.locationId;
+    if (!locId || !r.variantId) continue;
+    const key = `${r.variantId}|${locId}`;
     committedMap[key] = (committedMap[key] || 0) + (Number(r.qtyOrdered) - Number(r.qtyFulfilled));
   }
 
-  const forecast = levels.map(level => {
-    const key = `${level.variantId}|${level.locationId}`;
-    const onHand = Number(level.onHand);
+  const forecast = levels.map(l => {
+    const key = `${l.variantId}|${l.locationId}`;
+    const onHand = Number(l.onHand);
     const expected = expectedMap[key] || 0;
     const committed = committedMap[key] || 0;
     return {
-      variantId: level.variantId,
-      variantSku: level.variant.sku,
-      productName: level.variant.product.name,
-      locationId: level.locationId,
-      locationName: level.location.name,
+      variantId: l.variantId,
+      variantSku: l.variant.sku,
+      productName: l.variant.product.name,
+      locationId: l.locationId,
+      locationName: l.location.name,
       onHand,
       expected,
       committed,
@@ -72,109 +69,112 @@ router.get('/forecast', async (req, res) => {
     };
   });
 
-  // Paginate
-  const total = forecast.length;
-  const paged = forecast.slice(skip, skip + take);
-  res.json(paginated(paged, total, page, pageSize));
+  res.json(forecast);
 });
 
-// ─── Replenishment ───────────────────────────────────────────────────────────
-
+// GET /replenishment — suggest purchases for low-stock variants
 router.get('/replenishment', async (req, res) => {
-  const { page, pageSize, skip, take } = getPagination(req);
-
-  // Get all inventory levels with reorder points
+  // Get all inventory levels with reorder points set
   const levels = await prisma.inventoryLevel.findMany({
     where: { reorderPoint: { not: null } },
-    select: {
-      variantId: true,
-      locationId: true,
-      onHand: true,
-      reorderPoint: true,
-      reorderQty: true,
-      variant: { select: { sku: true, product: { select: { name: true } } } },
+    include: {
+      variant: { select: { id: true, sku: true, purchasePrice: true, product: { select: { name: true } } } },
+      location: { select: { id: true, name: true } },
     },
   });
 
-  // Expected from open POs
-  const openPORows = await prisma.purchaseOrderRow.findMany({
+  // Build expected/committed maps (same as forecast)
+  const poRows = await prisma.purchaseOrderRow.findMany({
     where: {
-      order: { status: { in: ['draft', 'confirmed', 'partial'] } },
+      order: { status: { notIn: ['cancelled', 'received'] } },
       variantId: { not: null },
     },
     select: { variantId: true, qtyOrdered: true, qtyReceived: true, order: { select: { locationId: true } } },
   });
 
-  const expectedMap: Record<string, number> = {};
-  for (const r of openPORows) {
-    if (!r.variantId || !r.order.locationId) continue;
-    const key = `${r.variantId}|${r.order.locationId}`;
-    expectedMap[key] = (expectedMap[key] || 0) + (Number(r.qtyOrdered) - Number(r.qtyReceived));
-  }
-
-  // Committed from open SOs
-  const openSORows = await prisma.salesOrderRow.findMany({
+  const soRows = await prisma.salesOrderRow.findMany({
     where: {
-      order: { status: { in: ['draft', 'confirmed', 'partial'] } },
+      order: { status: { notIn: ['cancelled', 'fulfilled'] } },
       variantId: { not: null },
     },
     select: { variantId: true, qtyOrdered: true, qtyFulfilled: true, order: { select: { locationId: true } } },
   });
 
+  const expectedMap: Record<string, number> = {};
+  for (const r of poRows) {
+    const locId = r.order.locationId;
+    if (!locId || !r.variantId) continue;
+    const key = `${r.variantId}|${locId}`;
+    expectedMap[key] = (expectedMap[key] || 0) + (Number(r.qtyOrdered) - Number(r.qtyReceived));
+  }
+
   const committedMap: Record<string, number> = {};
-  for (const r of openSORows) {
-    if (!r.variantId || !r.order.locationId) continue;
-    const key = `${r.variantId}|${r.order.locationId}`;
+  for (const r of soRows) {
+    const locId = r.order.locationId;
+    if (!locId || !r.variantId) continue;
+    const key = `${r.variantId}|${locId}`;
     committedMap[key] = (committedMap[key] || 0) + (Number(r.qtyOrdered) - Number(r.qtyFulfilled));
   }
 
-  // Find preferred supplier per variant (most recent PO supplier)
-  const variantIds = [...new Set(levels.map(l => l.variantId))];
+  // Find preferred supplier per variant (supplier with most PO rows for that variant)
+  const variantIds = levels.map(l => l.variantId);
   const supplierRows = variantIds.length
     ? await prisma.purchaseOrderRow.findMany({
         where: { variantId: { in: variantIds } },
-        select: { variantId: true, order: { select: { supplierId: true, supplier: { select: { id: true, name: true } }, createdAt: true } } },
-        orderBy: { order: { createdAt: 'desc' } },
+        select: { variantId: true, order: { select: { supplierId: true, supplier: { select: { id: true, name: true } } } } },
       })
     : [];
 
-  const preferredSupplierMap: Record<string, { id: string; name: string }> = {};
+  const supplierCount: Record<string, Record<string, { count: number; name: string }>> = {};
   for (const r of supplierRows) {
-    if (r.variantId && !preferredSupplierMap[r.variantId] && r.order.supplier) {
-      preferredSupplierMap[r.variantId] = { id: r.order.supplier.id, name: r.order.supplier.name };
+    if (!r.variantId || !r.order.supplierId) continue;
+    if (!supplierCount[r.variantId]) supplierCount[r.variantId] = {};
+    if (!supplierCount[r.variantId][r.order.supplierId]) {
+      supplierCount[r.variantId][r.order.supplierId] = { count: 0, name: r.order.supplier?.name || '' };
     }
+    supplierCount[r.variantId][r.order.supplierId].count += 1;
+  }
+
+  function getPreferredSupplier(variantId: string) {
+    const counts = supplierCount[variantId];
+    if (!counts) return null;
+    const entries = Object.entries(counts);
+    if (entries.length === 0) return null;
+    entries.sort((a, b) => b[1].count - a[1].count);
+    return { supplierId: entries[0][0], supplierName: entries[0][1].name };
   }
 
   const suggestions = levels
-    .map(level => {
-      const key = `${level.variantId}|${level.locationId}`;
-      const currentStock = Number(level.onHand);
+    .map(l => {
+      const key = `${l.variantId}|${l.locationId}`;
+      const onHand = Number(l.onHand);
       const expected = expectedMap[key] || 0;
       const committed = committedMap[key] || 0;
-      const projected = currentStock + expected - committed;
-      const reorderPoint = Number(level.reorderPoint);
-      const reorderQty = Number(level.reorderQty || 0);
+      const projected = onHand + expected - committed;
+      const reorderPoint = Number(l.reorderPoint);
+      const reorderQty = Number(l.reorderQty || 0);
 
       if (projected >= reorderPoint) return null;
 
       const deficit = reorderPoint - projected;
       const suggestedQty = Math.max(deficit, reorderQty);
+      const preferred = getPreferredSupplier(l.variantId);
 
       return {
-        variantId: level.variantId,
-        variantSku: level.variant.sku,
-        productName: level.variant.product.name,
-        currentStock,
+        variantId: l.variantId,
+        variantSku: l.variant.sku,
+        productName: l.variant.product.name,
+        locationId: l.locationId,
+        locationName: l.location.name,
+        currentStock: onHand,
         reorderPoint,
         suggestedQty,
-        preferredSupplier: preferredSupplierMap[level.variantId] || null,
+        preferredSupplier: preferred,
       };
     })
     .filter(Boolean);
 
-  const total = suggestions.length;
-  const paged = suggestions.slice(skip, skip + take);
-  res.json(paginated(paged, total, page, pageSize));
+  res.json(suggestions);
 });
 
 export default router;

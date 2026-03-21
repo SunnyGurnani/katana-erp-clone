@@ -1,36 +1,34 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { SubTabs } from "@/components/layout/SubTabs";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { StatusCell } from "@/components/ui/StatusBadge";
-
-const tabs = [
-  { label: "Forecast", href: "/dashboard/plan" },
-  { label: "Replenishment", href: "/dashboard/plan/replenishment" },
-];
 
 export default function ReplenishmentPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["planning-replenishment"],
-    queryFn: () => api.get("/planning/replenishment").then(r => r.data.data),
+    queryFn: () => api.get("/planning/replenishment").then(r => r.data),
   });
 
   const columns: Column[] = [
-    { key: "variantSku", header: "SKU", render: (r) => <span className="font-mono text-[13px]">{r.variantSku || "—"}</span> },
-    { key: "productName", header: "Product", render: (r) => <span className="font-medium">{r.productName || "—"}</span> },
-    { key: "currentStock", header: "Current stock" },
+    { key: "variantSku", header: "SKU", sortable: true, render: (r: any) => <span className="font-mono text-sm">{r.variantSku || "—"}</span> },
+    { key: "productName", header: "Product", sortable: true, render: (r: any) => <span className="font-medium">{r.productName}</span> },
+    { key: "locationName", header: "Location" },
+    { key: "currentStock", header: "Current stock", sortable: true },
     { key: "reorderPoint", header: "Reorder point" },
-    { key: "suggestedQty", header: "Suggested qty", isStatus: true, render: (r) => <StatusCell status="make" label={String(r.suggestedQty)} />, filterable: false },
-    { key: "preferredSupplier", header: "Preferred supplier", render: (r) => r.preferredSupplier?.name || "—" },
+    { key: "suggestedQty", header: "Suggested qty", sortable: true, render: (r: any) => (
+      <span className="font-bold text-brand-600">{r.suggestedQty}</span>
+    )},
+    { key: "preferredSupplier", header: "Preferred supplier", render: (r: any) => r.preferredSupplier?.supplierName || "—" },
+    { key: "urgency", header: "Urgency", isStatus: true, filterable: false, render: (r: any) => {
+      if (r.currentStock <= 0) return <StatusCell status="not_available" label="Critical" />;
+      return <StatusCell status="expected" label="Low" />;
+    }},
   ];
 
   return (
-    <>
-      <SubTabs tabs={tabs} />
-      <div className="px-4 py-3">
-        <DataTable columns={columns} data={data || []} isLoading={isLoading} emptyMessage="All items are above reorder points" showRank countLabel="suggestions" />
-      </div>
-    </>
+    <div className="px-4 py-3">
+      <DataTable columns={columns} data={data || []} isLoading={isLoading} emptyMessage="All items are adequately stocked" showRank totalLabel="items need restocking" />
+    </div>
   );
 }

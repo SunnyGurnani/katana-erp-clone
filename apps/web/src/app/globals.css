@@ -21,12 +21,12 @@
   /* Card */
   .card { @apply rounded-lg border border-gray-200 bg-white; }
 
-  /* General badge (pill) */
+  /* General badge */
   .badge { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600; }
-  .badge-green { @apply badge bg-emerald-100 text-emerald-700; }
-  .badge-red { @apply badge bg-red-100 text-red-700; }
-  .badge-yellow { @apply badge bg-amber-100 text-amber-700; }
-  .badge-blue { @apply badge bg-blue-100 text-blue-700; }
+  .badge-green { @apply badge bg-green-100 text-green-800; }
+  .badge-red { @apply badge bg-red-100 text-red-800; }
+  .badge-yellow { @apply badge bg-yellow-100 text-yellow-800; }
+  .badge-blue { @apply badge bg-blue-100 text-blue-800; }
   .badge-gray { @apply badge bg-gray-100 text-gray-600; }
   .badge-purple { @apply badge bg-purple-100 text-purple-700; }
 
@@ -57,18 +57,15 @@
   .status-blocked { @apply status-cell bg-[#E53935] text-white; }
   .status-paused { @apply status-cell bg-[#EF6C00] text-white; }
   .status-completed { @apply status-cell bg-[#2E7D32] text-white; }
-  .status-draft { @apply status-cell bg-gray-100 text-gray-500; }
-  .status-confirmed { @apply status-cell bg-[#1565C0] text-white; }
   .status-partial { @apply status-cell bg-[#FFB300] text-gray-900; }
-  .status-cancelled { @apply status-cell bg-[#E53935] text-white; }
-  .status-fulfilled { @apply status-cell bg-[#2E7D32] text-white; }
+  .status-draft { @apply status-cell bg-gray-100 text-gray-500; }
+  .status-sent { @apply status-cell bg-[#1565C0] text-white; }
   .status-received { @apply status-cell bg-[#2E7D32] text-white; }
-  .status-sent { @apply status-cell bg-[#FDD835] text-gray-900; }
+  .status-fulfilled { @apply status-cell bg-[#2E7D32] text-white; }
+  .status-cancelled { @apply status-cell bg-gray-200 text-gray-500 line-through; }
+  .status-released { @apply status-cell bg-[#1565C0] text-white; }
   .status-accepted { @apply status-cell bg-[#2E7D32] text-white; }
   .status-rejected { @apply status-cell bg-[#E53935] text-white; }
   .status-expired { @apply status-cell bg-gray-200 text-gray-500; }
-  .status-active { @apply status-cell bg-[#2E7D32] text-white; }
-  .status-inactive { @apply status-cell bg-gray-200 text-gray-500; }
-  .status-pending { @apply status-cell bg-[#FDD835] text-gray-900; }
-  .status-planned { @apply status-cell bg-[#7B1FA2] text-white; }
+  .status-confirmed { @apply status-cell bg-[#1565C0] text-white; }
 }

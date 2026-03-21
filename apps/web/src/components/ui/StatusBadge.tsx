@@ -1,15 +1,12 @@
-/* Badge map — small pill badges for use outside of tables */
 const badgeMap: Record<string, string> = {
-  fulfilled: "badge-green", done: "badge-green", completed: "badge-green",
-  received: "badge-green", available: "badge-green", active: "badge-green",
-  committed: "badge-green", accepted: "badge-green", in_stock: "badge-green",
-  cancelled: "badge-red", overdue: "badge-red", inactive: "badge-red",
-  rejected: "badge-red", expired: "badge-red", not_available: "badge-red",
-  draft: "badge-gray", pending: "badge-yellow", in_progress: "badge-yellow",
-  expected: "badge-yellow", sent: "badge-yellow",
-  partial: "badge-blue", confirmed: "badge-blue",
-  not_started: "badge-gray", sold: "badge-gray",
-  planned: "badge-purple",
+  draft: "badge-gray", confirmed: "badge-blue", partial: "badge-yellow",
+  received: "badge-green", fulfilled: "badge-green", cancelled: "badge-red",
+  in_progress: "badge-yellow", planned: "badge-purple", done: "badge-green",
+  committed: "badge-green", available: "badge-green", sold: "badge-gray",
+  active: "badge-green", inactive: "badge-red", completed: "badge-green",
+  sent: "badge-blue", accepted: "badge-green", rejected: "badge-red",
+  expired: "badge-red", released: "badge-blue", not_started: "badge-gray",
+  overdue: "badge-red", pending: "badge-yellow",
 };
 
 export function StatusBadge({ status }: { status: string }) {
@@ -17,51 +14,53 @@ export function StatusBadge({ status }: { status: string }) {
   return <span className={cls}>{status.replace(/_/g, " ")}</span>;
 }
 
-/* Cell map — Katana-style full-cell background colors for table columns */
-const cellMap: Record<string, { cls: string; label: string; chevron?: boolean }> = {
-  in_stock:       { cls: "status-instock",       label: "In stock" },
-  processed:      { cls: "status-processed",     label: "Processed" },
-  done:           { cls: "status-done",          label: "Done", chevron: true },
-  completed:      { cls: "status-completed",     label: "Completed" },
-  not_available:  { cls: "status-not-available", label: "Not available" },
-  expected:       { cls: "status-expected",      label: "Expected" },
-  not_applicable: { cls: "status-not-applicable",label: "N/A" },
-  not_started:    { cls: "status-not-started",   label: "Not started", chevron: true },
-  ready_packing:  { cls: "status-ready-packing", label: "Ready for packing" },
-  packed:         { cls: "status-packed",        label: "Packed" },
-  not_shipped:    { cls: "status-not-shipped",   label: "Not shipped" },
-  not_invoiced:   { cls: "status-not-invoiced",  label: "Not invoiced" },
-  make:           { cls: "status-make",          label: "Make..." },
-  picked:         { cls: "status-picked",        label: "Picked" },
-  in_progress:    { cls: "status-in-progress",   label: "In progress" },
-  blocked:        { cls: "status-blocked",       label: "Blocked" },
-  paused:         { cls: "status-paused",        label: "Paused" },
-  draft:          { cls: "status-draft",         label: "Draft" },
-  confirmed:      { cls: "status-confirmed",     label: "Confirmed" },
-  partial:        { cls: "status-partial",       label: "Partial" },
-  cancelled:      { cls: "status-cancelled",     label: "Cancelled" },
-  fulfilled:      { cls: "status-fulfilled",     label: "Fulfilled" },
-  received:       { cls: "status-received",      label: "Received" },
-  sent:           { cls: "status-sent",          label: "Sent" },
-  accepted:       { cls: "status-accepted",      label: "Accepted" },
-  rejected:       { cls: "status-rejected",      label: "Rejected" },
-  expired:        { cls: "status-expired",       label: "Expired" },
-  active:         { cls: "status-active",        label: "Active" },
-  inactive:       { cls: "status-inactive",      label: "Inactive" },
-  pending:        { cls: "status-pending",       label: "Pending" },
-  planned:        { cls: "status-planned",       label: "Planned" },
+/* Katana-style status cell configuration */
+interface StatusConfig {
+  cellClass: string;
+  label: string;
+  hasChevron?: boolean;
+}
+
+const statusCellMap: Record<string, StatusConfig> = {
+  in_stock:       { cellClass: "status-instock", label: "In stock" },
+  instock:        { cellClass: "status-instock", label: "In stock" },
+  processed:      { cellClass: "status-processed", label: "Processed" },
+  done:           { cellClass: "status-done", label: "Done", hasChevron: true },
+  completed:      { cellClass: "status-completed", label: "Done", hasChevron: true },
+  not_available:  { cellClass: "status-not-available", label: "Not available" },
+  expected:       { cellClass: "status-expected", label: "Expected" },
+  not_applicable: { cellClass: "status-not-applicable", label: "N/A" },
+  not_started:    { cellClass: "status-not-started", label: "Not started", hasChevron: true },
+  ready_packing:  { cellClass: "status-ready-packing", label: "Ready for packing" },
+  packed:         { cellClass: "status-packed", label: "Packed" },
+  not_shipped:    { cellClass: "status-not-shipped", label: "Not shipped" },
+  not_invoiced:   { cellClass: "status-not-invoiced", label: "Not invoiced" },
+  make:           { cellClass: "status-make", label: "Make..." },
+  picked:         { cellClass: "status-picked", label: "Picked" },
+  in_progress:    { cellClass: "status-in-progress", label: "In progress" },
+  blocked:        { cellClass: "status-blocked", label: "Blocked" },
+  paused:         { cellClass: "status-paused", label: "Paused" },
+  partial:        { cellClass: "status-partial", label: "Partial" },
+  draft:          { cellClass: "status-draft", label: "Draft" },
+  sent:           { cellClass: "status-sent", label: "Sent" },
+  received:       { cellClass: "status-received", label: "Received" },
+  fulfilled:      { cellClass: "status-fulfilled", label: "Fulfilled" },
+  cancelled:      { cellClass: "status-cancelled", label: "Cancelled" },
+  released:       { cellClass: "status-released", label: "Released" },
+  accepted:       { cellClass: "status-accepted", label: "Accepted" },
+  rejected:       { cellClass: "status-rejected", label: "Rejected" },
+  expired:        { cellClass: "status-expired", label: "Expired" },
+  confirmed:      { cellClass: "status-confirmed", label: "Confirmed" },
 };
 
-/**
- * StatusCell — Katana-style full-cell colored background for table columns.
- * Fills the entire td area with a status color.
- */
+/** Full-cell colored status for use in table columns — Katana style */
 export function StatusCell({ status, label, className }: { status: string; label?: string; className?: string }) {
-  const config = cellMap[status] || { cls: "status-not-applicable", label: status.replace(/_/g, " ") };
+  const config = statusCellMap[status] || { cellClass: "status-cell bg-gray-100 text-gray-500", label: status.replace(/_/g, " ") };
+  const displayLabel = label || config.label;
   return (
-    <div className={`${config.cls} ${className || ""}`}>
-      {label || config.label}
-      {config.chevron && <span className="ml-1">›</span>}
+    <div className={`${config.cellClass} ${className || ""}`}>
+      {displayLabel}
+      {config.hasChevron && <span className="ml-1 opacity-70">&rsaquo;</span>}
     </div>
   );
 }

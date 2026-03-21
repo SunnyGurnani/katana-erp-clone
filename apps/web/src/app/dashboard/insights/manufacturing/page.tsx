@@ -2,16 +2,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { SubTabs } from "@/components/layout/SubTabs";
 import { SkeletonRows } from "@/components/ui/Skeleton";
+import { Wrench, CheckCircle, Clock, DollarSign } from "lucide-react";
 
-const tabs = [
-  { label: "Sales", href: "/dashboard/insights" },
-  { label: "Manufacturing", href: "/dashboard/insights/manufacturing" },
-  { label: "Purchasing", href: "/dashboard/insights/purchasing" },
-];
-
-export default function MfgInsightsPage() {
+export default function ManufacturingInsightsPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
@@ -20,91 +14,83 @@ export default function MfgInsightsPage() {
     queryFn: () => api.get("/insights/manufacturing/summary", { params: { from: from || undefined, to: to || undefined } }).then(r => r.data),
   });
 
-  const { data: byProduct, isLoading: productLoading } = useQuery({
+  const { data: byProduct, isLoading: bpLoading } = useQuery({
     queryKey: ["insights-mfg-product", from, to],
     queryFn: () => api.get("/insights/manufacturing/by-product", { params: { from: from || undefined, to: to || undefined } }).then(r => r.data),
   });
 
   return (
-    <>
-      <SubTabs tabs={tabs} />
-      <div className="px-4 py-3 space-y-4">
-        <div className="flex items-center gap-4">
-          <h2 className="text-sm font-semibold text-gray-900 flex-1">Manufacturing Insights</h2>
-          <div className="flex items-center gap-2">
-            <input className="input w-36 text-[13px]" type="date" value={from} onChange={e => setFrom(e.target.value)} />
-            <span className="text-gray-400 text-[13px]">to</span>
-            <input className="input w-36 text-[13px]" type="date" value={to} onChange={e => setTo(e.target.value)} />
-          </div>
-        </div>
-
-        {isLoading ? <div className="card"><table className="table"><tbody><SkeletonRows rows={4} /></tbody></table></div> : data && (
-          <>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="card p-4">
-                <p className="text-[11px] text-gray-500 font-medium">Total MOs</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{data.totalMOs}</p>
-              </div>
-              <div className="card p-4">
-                <p className="text-[11px] text-gray-500 font-medium">Completed</p>
-                <p className="text-2xl font-bold text-green-600 mt-1">{data.completedMOs}</p>
-              </div>
-              <div className="card p-4">
-                <p className="text-[11px] text-gray-500 font-medium">Avg Production Time</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{Number(data.avgProductionTime).toFixed(0)}m</p>
-              </div>
-              <div className="card p-4">
-                <p className="text-[11px] text-gray-500 font-medium">Total Cost</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">${Number(data.costOverview?.totalCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="card">
-                <div className="px-4 py-3 border-b border-gray-200"><h3 className="font-semibold text-[13px] text-gray-800">Cost Breakdown</h3></div>
-                <div className="p-4 space-y-2.5 text-[13px]">
-                  <div className="flex justify-between"><span className="text-gray-600">Material Cost</span><span className="font-semibold">${Number(data.costOverview?.materialCost || 0).toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-600">Labor Cost</span><span className="font-semibold">${Number(data.costOverview?.laborCost || 0).toFixed(2)}</span></div>
-                  <div className="flex justify-between border-t border-gray-200 pt-2.5"><span className="font-semibold text-gray-900">Total</span><span className="font-bold">${Number(data.costOverview?.totalCost || 0).toFixed(2)}</span></div>
-                </div>
-              </div>
-
-              <div className="card">
-                <div className="px-4 py-3 border-b border-gray-200"><h3 className="font-semibold text-[13px] text-gray-800">Production by Month</h3></div>
-                <table className="table">
-                  <thead><tr><th>Month</th><th>MO count</th></tr></thead>
-                  <tbody>
-                    {(data.productionByMonth || []).map((m: any, i: number) => (
-                      <tr key={i}><td>{m.month}</td><td className="font-medium">{m.count}</td></tr>
-                    ))}
-                    {!data.productionByMonth?.length && <tr><td colSpan={2} className="text-center text-gray-400 py-4">No data</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
-        )}
-
-        <div className="card">
-          <div className="px-4 py-3 border-b border-gray-200"><h3 className="font-semibold text-[13px] text-gray-800">Manufacturing by Product</h3></div>
-          {productLoading ? <table className="table"><tbody><SkeletonRows rows={5} /></tbody></table> : (
-            <table className="table">
-              <thead><tr><th>Product</th><th>MO count</th><th>Qty planned</th><th>Qty produced</th></tr></thead>
-              <tbody>
-                {(byProduct || []).map((p: any, i: number) => (
-                  <tr key={i}>
-                    <td className="font-medium">{p.productName || "—"}</td>
-                    <td>{p.moCount}</td>
-                    <td>{p.qtyPlanned}</td>
-                    <td>{p.qtyProduced}</td>
-                  </tr>
-                ))}
-                {!(byProduct || []).length && <tr><td colSpan={4} className="text-center text-gray-400 py-8">No data</td></tr>}
-              </tbody>
-            </table>
-          )}
-        </div>
+    <div className="px-4 py-3 space-y-4">
+      <div className="flex items-center gap-3">
+        <div><label className="label">From</label><input className="input w-36" type="date" value={from} onChange={e => setFrom(e.target.value)} /></div>
+        <div><label className="label">To</label><input className="input w-36" type="date" value={to} onChange={e => setTo(e.target.value)} /></div>
       </div>
-    </>
+
+      {isLoading ? <table className="table"><tbody><SkeletonRows rows={3} /></tbody></table> : data && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="card p-4 flex items-center gap-3">
+              <div className="rounded-lg p-2.5 bg-[#7B1FA2]"><Wrench size={18} className="text-white" /></div>
+              <div><p className="text-xs text-gray-500">Total MOs</p><p className="text-xl font-bold">{data.totalMOs}</p></div>
+            </div>
+            <div className="card p-4 flex items-center gap-3">
+              <div className="rounded-lg p-2.5 bg-[#2E7D32]"><CheckCircle size={18} className="text-white" /></div>
+              <div><p className="text-xs text-gray-500">Completed</p><p className="text-xl font-bold">{data.completedMOs}</p></div>
+            </div>
+            <div className="card p-4 flex items-center gap-3">
+              <div className="rounded-lg p-2.5 bg-[#1565C0]"><Clock size={18} className="text-white" /></div>
+              <div><p className="text-xs text-gray-500">Avg Production (days)</p><p className="text-xl font-bold">{Number(data.avgProductionTime || 0).toFixed(1)}</p></div>
+            </div>
+            <div className="card p-4 flex items-center gap-3">
+              <div className="rounded-lg p-2.5 bg-[#EF6C00]"><DollarSign size={18} className="text-white" /></div>
+              <div><p className="text-xs text-gray-500">Total Cost</p><p className="text-xl font-bold">${Number(data.costOverview?.totalCost || 0).toFixed(2)}</p></div>
+            </div>
+          </div>
+
+          {data.costOverview && (
+            <div className="card p-4">
+              <h3 className="font-semibold text-sm text-gray-800 mb-3">Cost Breakdown</h3>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div><p className="text-gray-500 text-xs">Material Cost</p><p className="font-semibold">${Number(data.costOverview.materialCost).toFixed(2)}</p></div>
+                <div><p className="text-gray-500 text-xs">Labor Cost</p><p className="font-semibold">${Number(data.costOverview.laborCost).toFixed(2)}</p></div>
+              </div>
+            </div>
+          )}
+
+          {data.productionByMonth?.length > 0 && (
+            <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-200"><h2 className="font-semibold text-sm text-gray-800">Production by Month</h2></div>
+              <table className="table">
+                <thead><tr><th>Month</th><th>MOs</th></tr></thead>
+                <tbody>
+                  {data.productionByMonth.map((m: any) => (
+                    <tr key={m.month}><td>{m.month}</td><td className="font-semibold">{m.count}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {!bpLoading && byProduct?.length > 0 && (
+        <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-200"><h2 className="font-semibold text-sm text-gray-800">Manufacturing by Product</h2></div>
+          <table className="table">
+            <thead><tr><th>Product</th><th>MO Count</th><th>Qty Planned</th><th>Qty Produced</th></tr></thead>
+            <tbody>
+              {byProduct.map((p: any) => (
+                <tr key={p.productId}>
+                  <td className="font-medium">{p.productName || "—"}</td>
+                  <td>{p.moCount}</td>
+                  <td>{p.totalQtyPlanned}</td>
+                  <td className="font-semibold">{p.totalQtyProduced}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }

@@ -2,24 +2,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { SubTabs } from "@/components/layout/SubTabs";
-import { DataTable, Column } from "@/components/ui/DataTable";
+import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 
-const tabs = [
-  { label: "Inventory", href: "/dashboard/stock" },
-  { label: "Batches", href: "/dashboard/stock/batches" },
-  { label: "Adjustments", href: "/dashboard/stock/adjustments" },
-  { label: "Transfers", href: "/dashboard/stock/transfers" },
-  { label: "Stocktakes", href: "/dashboard/stock/stocktakes" },
-];
-
-function fmtDate(d: string | null | undefined) {
-  if (!d) return "—";
-  return new Date(d).toISOString().slice(0, 10);
-}
-
-export default function AdjustmentsPage() {
+export default function StockAdjustmentsPage() {
   const qc = useQueryClient();
   const { addToast } = useToast();
   const [variantId, setVariantId] = useState("");
@@ -43,52 +29,60 @@ export default function AdjustmentsPage() {
     ...(products || []).flatMap((p: any) => (p.variants || []).map((v: any) => ({ id: v.id, label: `${p.name} (${v.sku})` }))),
   ];
 
-  const columns: Column[] = [
-    { key: "item", header: "Item", render: (r) => r.variant?.material?.name || r.variant?.product?.name || r.variant?.sku || "—" },
-    { key: "location", header: "Location", render: (r) => r.location?.name || "—" },
-    { key: "qty", header: "Qty", render: (r) => <span className={Number(r.qty) < 0 ? "text-red-600 font-medium" : "text-green-600 font-medium"}>{Number(r.qty) > 0 ? "+" : ""}{r.qty}</span> },
-    { key: "reason", header: "Reason", render: (r) => <span className="badge">{r.reason}</span> },
-    { key: "createdAt", header: "Date", render: (r) => fmtDate(r.createdAt) },
-  ];
-
   return (
-    <>
-      <SubTabs tabs={tabs} />
-      <div className="px-4 py-3 space-y-4">
-        <div className="card p-4">
-          <h2 className="font-semibold text-gray-800 mb-3 text-sm">New Adjustment</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-            <div>
-              <label className="label">Item</label>
-              <select className="input" value={variantId} onChange={e => setVariantId(e.target.value)}>
-                <option value="">— Select —</option>
-                {allVariants.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Location</label>
-              <select className="input" value={locationId} onChange={e => setLocationId(e.target.value)}>
-                <option value="">— Select —</option>
-                {(locations || []).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Qty (± delta)</label>
-              <input className="input" type="number" value={qty} onChange={e => setQty(e.target.value)} placeholder="e.g. -5 or +10" />
-            </div>
-            <div>
-              <label className="label">Reason</label>
-              <select className="input" value={reason} onChange={e => setReason(e.target.value)}>
-                {["correction", "damaged", "expired", "found", "other"].map(r => <option key={r}>{r}</option>)}
-              </select>
-            </div>
+    <div className="px-4 py-3 space-y-4">
+      <div className="card p-5">
+        <h2 className="font-semibold text-gray-800 mb-4">New Adjustment</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label className="label">Item</label>
+            <select className="input" value={variantId} onChange={e => setVariantId(e.target.value)}>
+              <option value="">— Select —</option>
+              {allVariants.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+            </select>
           </div>
-          <button className="btn-primary px-4 py-2 rounded-lg text-sm font-medium" disabled={adjust.isPending || !variantId || !locationId || !qty} onClick={() => adjust.mutate()}>
-            {adjust.isPending ? "Posting…" : "Post Adjustment"}
-          </button>
+          <div>
+            <label className="label">Location</label>
+            <select className="input" value={locationId} onChange={e => setLocationId(e.target.value)}>
+              <option value="">— Select —</option>
+              {(locations || []).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Qty (+ delta)</label>
+            <input className="input" type="number" value={qty} onChange={e => setQty(e.target.value)} placeholder="e.g. -5 or +10" />
+          </div>
+          <div>
+            <label className="label">Reason</label>
+            <select className="input" value={reason} onChange={e => setReason(e.target.value)}>
+              {["correction", "damaged", "expired", "found", "other"].map(r => <option key={r}>{r}</option>)}
+            </select>
+          </div>
         </div>
-        <DataTable columns={columns} data={data || []} isLoading={isLoading} emptyMessage="No adjustments" showRank countLabel="adjustments" />
+        <button className="btn btn-primary" disabled={adjust.isPending || !variantId || !locationId || !qty} onClick={() => adjust.mutate()}>
+          {adjust.isPending ? "Posting..." : "Post Adjustment"}
+        </button>
       </div>
-    </>
+
+      <div className="card">
+        <div className="px-5 py-4 border-b border-gray-200"><h2 className="font-semibold text-gray-800">History</h2></div>
+        {isLoading ? <table className="table"><tbody><SkeletonRows rows={5} /></tbody></table> : (
+          <table className="table">
+            <thead><tr><th>Item</th><th>Location</th><th>Qty</th><th>Reason</th><th>Date</th></tr></thead>
+            <tbody>
+              {(data || []).map((a: any) => (
+                <tr key={a.id}>
+                  <td>{a.variant?.material?.name || a.variant?.product?.name || a.variant?.sku || "—"}</td>
+                  <td>{a.location?.name || "—"}</td>
+                  <td className={Number(a.qty) < 0 ? "text-red-600 font-medium" : "text-green-600 font-medium"}>{a.qty > 0 ? "+" : ""}{a.qty}</td>
+                  <td><span className="badge">{a.reason}</span></td>
+                  <td className="text-gray-500 text-sm">{new Date(a.createdAt).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
   );
 }

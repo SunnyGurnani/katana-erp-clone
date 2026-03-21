@@ -45,7 +45,7 @@ export default function SettingsPage() {
   });
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="px-4 py-3 space-y-4">
       <div><h1 className="text-2xl font-bold text-gray-900">Settings</h1><p className="text-sm text-gray-500">API keys & integrations</p></div>
 
       <div className="flex gap-1 border-b border-gray-200">

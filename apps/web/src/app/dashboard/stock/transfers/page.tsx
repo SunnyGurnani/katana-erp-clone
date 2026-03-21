@@ -2,25 +2,11 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { SubTabs } from "@/components/layout/SubTabs";
-import { DataTable, Column } from "@/components/ui/DataTable";
-import { StatusCell } from "@/components/ui/StatusBadge";
+import { SkeletonRows } from "@/components/ui/Skeleton";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
 
-const tabs = [
-  { label: "Inventory", href: "/dashboard/stock" },
-  { label: "Batches", href: "/dashboard/stock/batches" },
-  { label: "Adjustments", href: "/dashboard/stock/adjustments" },
-  { label: "Transfers", href: "/dashboard/stock/transfers" },
-  { label: "Stocktakes", href: "/dashboard/stock/stocktakes" },
-];
-
-function fmtDate(d: string | null | undefined) {
-  if (!d) return "—";
-  return new Date(d).toISOString().slice(0, 10);
-}
-
-export default function TransfersPage() {
+export default function StockTransfersPage() {
   const qc = useQueryClient();
   const { addToast } = useToast();
   const [variantId, setVariantId] = useState("");
@@ -44,54 +30,62 @@ export default function TransfersPage() {
     ...(products || []).flatMap((p: any) => (p.variants || []).map((v: any) => ({ id: v.id, label: `${p.name} (${v.sku})` }))),
   ];
 
-  const columns: Column[] = [
-    { key: "item", header: "Item", render: (r) => r.variant?.material?.name || r.variant?.product?.name || "—" },
-    { key: "from", header: "From", render: (r) => r.fromLocation?.name || "—" },
-    { key: "to", header: "To", render: (r) => r.toLocation?.name || "—" },
-    { key: "qty", header: "Qty" },
-    { key: "status", header: "Status", isStatus: true, render: (r) => <StatusCell status={r.status} />, filterable: false },
-    { key: "createdAt", header: "Date", render: (r) => fmtDate(r.createdAt) },
-  ];
-
   return (
-    <>
-      <SubTabs tabs={tabs} />
-      <div className="px-4 py-3 space-y-4">
-        <div className="card p-4">
-          <h2 className="font-semibold text-gray-800 mb-3 text-sm">New Transfer</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-            <div>
-              <label className="label">Item</label>
-              <select className="input" value={variantId} onChange={e => setVariantId(e.target.value)}>
-                <option value="">— Select —</option>
-                {allVariants.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">From</label>
-              <select className="input" value={fromId} onChange={e => setFromId(e.target.value)}>
-                <option value="">— Select —</option>
-                {(locations || []).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">To</label>
-              <select className="input" value={toId} onChange={e => setToId(e.target.value)}>
-                <option value="">— Select —</option>
-                {(locations || []).filter((l: any) => l.id !== fromId).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Qty</label>
-              <input className="input" type="number" value={qty} onChange={e => setQty(e.target.value)} />
-            </div>
+    <div className="px-4 py-3 space-y-4">
+      <div className="card p-5">
+        <h2 className="font-semibold text-gray-800 mb-4">New Transfer</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label className="label">Item</label>
+            <select className="input" value={variantId} onChange={e => setVariantId(e.target.value)}>
+              <option value="">— Select —</option>
+              {allVariants.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+            </select>
           </div>
-          <button className="btn-primary px-4 py-2 rounded-lg text-sm font-medium" disabled={transfer.isPending || !variantId || !fromId || !toId || !qty} onClick={() => transfer.mutate()}>
-            {transfer.isPending ? "Transferring…" : "Transfer"}
-          </button>
+          <div>
+            <label className="label">From</label>
+            <select className="input" value={fromId} onChange={e => setFromId(e.target.value)}>
+              <option value="">— Select —</option>
+              {(locations || []).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">To</label>
+            <select className="input" value={toId} onChange={e => setToId(e.target.value)}>
+              <option value="">— Select —</option>
+              {(locations || []).filter((l: any) => l.id !== fromId).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Qty</label>
+            <input className="input" type="number" value={qty} onChange={e => setQty(e.target.value)} />
+          </div>
         </div>
-        <DataTable columns={columns} data={data || []} isLoading={isLoading} emptyMessage="No transfers" showRank countLabel="transfers" />
+        <button className="btn btn-primary" disabled={transfer.isPending || !variantId || !fromId || !toId || !qty} onClick={() => transfer.mutate()}>
+          {transfer.isPending ? "Transferring..." : "Transfer"}
+        </button>
       </div>
-    </>
+
+      <div className="card">
+        <div className="px-5 py-4 border-b border-gray-200"><h2 className="font-semibold text-gray-800">History</h2></div>
+        {isLoading ? <table className="table"><tbody><SkeletonRows rows={5} /></tbody></table> : (
+          <table className="table">
+            <thead><tr><th>Item</th><th>From</th><th>To</th><th>Qty</th><th>Status</th><th>Date</th></tr></thead>
+            <tbody>
+              {(data || []).map((t: any) => (
+                <tr key={t.id}>
+                  <td>{t.variant?.material?.name || t.variant?.product?.name || "—"}</td>
+                  <td>{t.fromLocation?.name || "—"}</td>
+                  <td>{t.toLocation?.name || "—"}</td>
+                  <td>{t.qty}</td>
+                  <td><StatusBadge status={t.status} /></td>
+                  <td className="text-gray-500 text-sm">{new Date(t.createdAt).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
   );
 }
