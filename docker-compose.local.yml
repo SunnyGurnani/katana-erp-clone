@@ -1,0 +1,109 @@
+version: "3.9"
+
+# Local development stack — run with: docker compose -f docker-compose.local.yml up --build
+# Access the app at http://localhost
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: forge
+      POSTGRES_PASSWORD: localdev123
+      POSTGRES_DB: forgeerp
+    volumes:
+      - pgdata_local:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forge -d forgeerp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - minio_local:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://forge:localdev123@postgres:5432/forgeerp
+      SECRET_KEY: local-dev-secret-key-minimum-32-chars-long-ok
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+      REFRESH_TOKEN_EXPIRE_DAYS: "30"
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      MINIO_BUCKET: forgeerp
+      MINIO_USE_SSL: "false"
+      MINIO_PUBLIC_URL: http://localhost/files
+      NODE_ENV: production
+      PORT: "4000"
+      ALLOWED_ORIGINS: http://localhost,http://localhost:3000
+      PUBLIC_API_URL: http://localhost
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - internal
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost
+    depends_on:
+      - api
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+      - web
+      - minio
+    networks:
+      - internal
+
+volumes:
+  pgdata_local:
+  minio_local:
+
+networks:
+  internal:
+    driver: bridge
