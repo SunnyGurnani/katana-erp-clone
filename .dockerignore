@@ -1,0 +1,11 @@
+node_modules
+.git
+.env
+.env.*
+!.env.production
+backups/
+nginx/certs/
+*.md
+test_all.sh
+.next
+dist

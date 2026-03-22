@@ -56,11 +56,9 @@ router.get('/logs', async (req, res) => {
   res.json(paginated(items, total, page, pageSize));
 });
 
-export default router;
-
-// POST /webhook_logs_export — export webhook logs as JSON array
-router.post('/logs/export', async (req: any, res) => {
-  const { webhookId, status, startDate, endDate } = (req.body || {});
+// POST /webhooks/logs/export — export webhook logs as JSON array
+router.post('/logs/export', async (req, res) => {
+  const { webhookId, status, startDate, endDate } = (req.body || {}) as any;
   const where: any = {};
   if (webhookId) where.webhookId = webhookId;
   if (status) where.status = status;
@@ -74,3 +72,5 @@ router.post('/logs/export', async (req: any, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="webhook_logs.json"');
   res.json(logs);
 });
+
+export default router;

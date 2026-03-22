@@ -46,6 +46,19 @@ import accountingMetadataRouter from './routes/accountingMetadata';
 import quotesRouter from './routes/quotes';
 import insightsRouter from './routes/insights';
 import planningRouter from './routes/planning';
+import attachmentsRouter from './routes/attachments';
+import variantsRouter from './routes/variants';
+import operatorsRouter from './routes/operators';
+import salesOrderRowsRouter from './routes/salesOrderRows';
+import salesOrderFulfillmentsRouter from './routes/salesOrderFulfillments';
+import purchaseOrderRowsRouter from './routes/purchaseOrderRows';
+import serialNumberStockRouter from './routes/serialNumberStock';
+import dataImportExportRouter from './routes/dataImportExport';
+import pdfRouter from './routes/pdf';
+import uploadRouter from './routes/upload';
+import moProductionsRouter from './routes/moProductions';
+import soAddressesRouter from './routes/soAddresses';
+import { initStorage } from './lib/storage';
 
 const app = express();
 
@@ -110,8 +123,22 @@ app.use(`${v1}/accounting-metadata`, accountingMetadataRouter);
 app.use(`${v1}/quotes`, quotesRouter);
 app.use(`${v1}/insights`, insightsRouter);
 app.use(`${v1}/planning`, planningRouter);
+app.use(`${v1}/attachments`, attachmentsRouter);
+app.use(`${v1}/variants`, variantsRouter);
+app.use(`${v1}/operators`, operatorsRouter);
+app.use(`${v1}/sales-order-rows`, salesOrderRowsRouter);
+app.use(`${v1}/sales-order-fulfillments`, salesOrderFulfillmentsRouter);
+app.use(`${v1}/purchase-order-rows`, purchaseOrderRowsRouter);
+app.use(`${v1}/serial-number-stock`, serialNumberStockRouter);
+app.use(`${v1}/data`, dataImportExportRouter);
+app.use(`${v1}/pdf`, pdfRouter);
+app.use(`${v1}/upload`, uploadRouter);
+app.use(`${v1}/mo-productions`, moProductionsRouter);
+app.use(`${v1}/so-addresses`, soAddressesRouter);
 
 app.use(errorHandler);
+
+initStorage().catch(err => console.warn('MinIO not available:', err.message));
 
 app.listen(env.PORT, () => console.log(`ForgeERP API running on port ${env.PORT}`));
 

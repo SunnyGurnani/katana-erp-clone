@@ -167,6 +167,7 @@ model InventoryLevel {
   allocated    Decimal  @default(0) @db.Decimal(18, 4)
   reorderPoint Decimal? @map("reorder_point") @db.Decimal(18, 4)
   reorderQty   Decimal? @map("reorder_qty") @db.Decimal(18, 4)
+  safetyStock  Decimal? @map("safety_stock") @db.Decimal(18, 4)
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
   @@unique([variantId, locationId])
@@ -354,6 +355,7 @@ model ProductOperation {
   bomId           String           @map("bom_id")
   bom             BOM              @relation(fields: [bomId], references: [id], onDelete: Cascade)
   name            String
+  rank            Int              @default(0)
   durationMinutes Int?             @map("duration_minutes")
   costPerHour     Decimal?         @map("cost_per_hour") @db.Decimal(18, 4)
   notes           String?
@@ -931,32 +933,16 @@ model OutsourcedPORecipeRow {
   @@map("outsourced_po_recipe_rows")
 }
 
-// ─── Quotes ─────────────────────────────────────────────────────────────────
+// ─── Attachments ─────────────────────────────────────────────────────────────
 
-model Quote {
-  id           String      @id @default(uuid())
-  number       String      @unique
-  customerId   String?     @map("customer_id")
-  status       String      @default("draft") // draft | sent | accepted | rejected | expired
-  currency     String      @default("USD")
-  validUntil   DateTime?   @map("valid_until") @db.Date
-  notes        String?
-  rows         QuoteRow[]
-  createdAt    DateTime    @default(now()) @map("created_at")
-  updatedAt    DateTime    @updatedAt @map("updated_at")
-  @@map("quotes")
-}
-
-model QuoteRow {
+model Attachment {
   id          String   @id @default(uuid())
-  quoteId     String   @map("quote_id")
-  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  variantId   String?  @map("variant_id")
-  description String?
-  qty         Decimal  @db.Decimal(18, 4)
-  unitPrice   Decimal? @map("unit_price") @db.Decimal(18, 4)
-  taxRate     Decimal? @map("tax_rate") @db.Decimal(7, 4)
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  name        String
+  url         String
+  type        String?
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
-  @@map("quote_rows")
+  @@map("attachments")
 }

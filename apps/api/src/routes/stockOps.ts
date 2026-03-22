@@ -82,6 +82,19 @@ router.get('/transfers/:id', async (req, res) => {
   res.json(item);
 });
 
+// Bulk status update for stock transfers (must be before /:id routes)
+router.patch('/transfers/bulk-status', async (req, res) => {
+  const { ids, status } = z.object({
+    ids: z.array(z.string().uuid()),
+    status: z.string(),
+  }).parse(req.body);
+  const result = await prisma.stockTransfer.updateMany({
+    where: { id: { in: ids } },
+    data: { status },
+  });
+  res.json({ updated: result.count });
+});
+
 router.patch('/transfers/:id', async (req, res) => {
   const data = z.object({ note: z.string().nullish(), status: z.string().optional() }).parse(req.body);
   const item = await prisma.stockTransfer.update({ where: { id: req.params.id }, data });

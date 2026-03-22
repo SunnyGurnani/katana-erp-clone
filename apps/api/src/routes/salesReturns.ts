@@ -128,4 +128,16 @@ router.get('/return-reasons', (_req, res) => {
   res.json(RETURN_REASONS);
 });
 
+// Unassigned batch transactions for a return row
+router.get('/:id/unassigned-batch-transactions', async (req, res) => {
+  const ret = await prisma.salesReturn.findUnique({
+    where: { id: req.params.id },
+    include: { rows: true },
+  });
+  if (!ret) return res.status(404).json({ error: 'Not found' });
+  // Rows without a linked batch
+  const unassigned = ret.rows.filter(r => !r.soRowId);
+  res.json(unassigned);
+});
+
 export default router;

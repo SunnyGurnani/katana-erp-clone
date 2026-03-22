@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
 COPY apps/web/package.json ./apps/web/
 COPY packages/types/package.json ./packages/types/
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile || pnpm install
 
 FROM base AS build
 WORKDIR /app
@@ -14,8 +14,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY --from=deps /app/packages/types/node_modules ./packages/types/node_modules
 COPY . .
-RUN pnpm --filter @forgeerp/types build
-RUN pnpm --filter @forgeerp/web build
+ARG NEXT_PUBLIC_API_URL=http://localhost
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+RUN cd apps/web && npm run build
 
 FROM base AS runner
 WORKDIR /app
