@@ -1,5 +1,5 @@
 "use client";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -7,19 +7,34 @@ import { SkeletonRows } from "@/components/ui/Skeleton";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { ArrowLeft, Plus, PackageCheck } from "lucide-react";
+import { ChildTable, ColumnDef, FieldDef } from "@/components/shared/ChildTable";
+import { ArrowLeft, Plus, PackageCheck, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
+
+const addlCostCols: ColumnDef[] = [
+  { key: "description", header: "Description" },
+  { key: "amount", header: "Amount", render: (r: any) => `$${Number(r.amount || 0).toFixed(2)}` },
+  { key: "type", header: "Type" },
+];
+const addlCostFields: FieldDef[] = [
+  { key: "description", label: "Description", required: true },
+  { key: "amount", label: "Amount", type: "number", required: true },
+  { key: "type", label: "Type" },
+];
 
 export default function PODetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const qc = useQueryClient();
   const { addToast } = useToast();
   const [rowOpen, setRowOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [variantId, setVariantId] = useState("");
   const [qty, setQty] = useState("");
   const [unitCost, setUnitCost] = useState("");
   const [receiveLocationId, setReceiveLocationId] = useState("");
+  const [editForm, setEditForm] = useState({ status: "", expectedAt: "", notes: "" });
 
   const { data: po, isLoading } = useQuery({ queryKey: ["po", id], queryFn: () => api.get(`/purchase-orders/${id}`).then(r => r.data) });
   const { data: materials } = useQuery({ queryKey: ["materials"], queryFn: () => api.get("/materials").then(r => r.data.data) });
@@ -37,10 +52,27 @@ export default function PODetailPage() {
     onError: () => addToast("Error receiving stock", "error"),
   });
 
+  const updatePO = useMutation({
+    mutationFn: (d: any) => api.patch(`/purchase-orders/${id}`, d),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["po", id] }); addToast("Updated", "success"); setEditOpen(false); },
+    onError: () => addToast("Error updating PO", "error"),
+  });
+
+  const deletePO = useMutation({
+    mutationFn: () => api.delete(`/purchase-orders/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); addToast("Deleted", "success"); router.push("/dashboard/buy"); },
+    onError: () => addToast("Error deleting PO", "error"),
+  });
+
   if (isLoading) return <div className="p-6"><table className="table"><tbody><SkeletonRows rows={6} /></tbody></table></div>;
   if (!po) return <div className="p-6 text-gray-500">PO not found.</div>;
 
   const canReceive = ["draft", "sent", "partial"].includes(po.status);
+
+  function openEditModal() {
+    setEditForm({ status: po.status || "", expectedAt: po.expectedAt ? po.expectedAt.slice(0, 10) : "", notes: po.notes || "" });
+    setEditOpen(true);
+  }
 
   return (
     <div className="px-4 py-3 space-y-4">
@@ -51,6 +83,8 @@ export default function PODetailPage() {
           <p className="text-sm text-gray-500">{po.supplier?.name || "No supplier"}</p>
         </div>
         <StatusBadge status={po.status} />
+        <button className="btn btn-ghost text-sm" onClick={openEditModal}><Save size={14} />Edit</button>
+        <button className="btn btn-ghost text-sm text-red-600" onClick={() => { if (window.confirm("Delete this purchase order?")) deletePO.mutate(); }}><Trash2 size={14} />Delete</button>
         {canReceive && <button className="btn btn-primary" onClick={() => setReceiveOpen(true)}><PackageCheck size={15} />Receive</button>}
       </div>
 
@@ -86,6 +120,16 @@ export default function PODetailPage() {
         </table>
       </div>
 
+      <ChildTable
+        title="Additional Costs"
+        parentId={id}
+        parentKey="purchaseOrderId"
+        endpoint="/additional-costs"
+        columns={addlCostCols}
+        formFields={addlCostFields}
+        queryKey="po-additional-costs"
+      />
+
       <Modal open={rowOpen} onClose={() => setRowOpen(false)} title="Add Line Item">
         <div className="space-y-3">
           <div>
@@ -118,6 +162,23 @@ export default function PODetailPage() {
         <div className="flex justify-end gap-2 mt-4">
           <button className="btn btn-ghost" onClick={() => setReceiveOpen(false)}>Cancel</button>
           <button className="btn btn-primary" disabled={receive.isPending || !receiveLocationId} onClick={() => receive.mutate()}>{receive.isPending ? "Receiving..." : "Confirm Receive"}</button>
+        </div>
+      </Modal>
+
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Purchase Order">
+        <div className="space-y-3">
+          <div>
+            <label className="label">Status</label>
+            <select className="input" value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}>
+              {["draft", "sent", "partial", "received", "cancelled"].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div><label className="label">Expected Date</label><input className="input" type="date" value={editForm.expectedAt} onChange={e => setEditForm(f => ({ ...f, expectedAt: e.target.value }))} /></div>
+          <div><label className="label">Notes</label><textarea className="input" rows={2} value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} /></div>
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button className="btn btn-ghost" onClick={() => setEditOpen(false)}>Cancel</button>
+          <button className="btn btn-primary" disabled={updatePO.isPending} onClick={() => updatePO.mutate(editForm)}>{updatePO.isPending ? "Saving..." : "Save"}</button>
         </div>
       </Modal>
     </div>

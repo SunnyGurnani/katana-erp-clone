@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
+import { ExportToolbar } from "@/components/shared/ExportToolbar";
 
 export default function StockAdjustmentsPage() {
   const qc = useQueryClient();
@@ -31,6 +32,9 @@ export default function StockAdjustmentsPage() {
 
   return (
     <div className="px-4 py-3 space-y-4">
+      <div className="flex justify-end">
+        <ExportToolbar resource="inventory" />
+      </div>
       <div className="card p-5">
         <h2 className="font-semibold text-gray-800 mb-4">New Adjustment</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">

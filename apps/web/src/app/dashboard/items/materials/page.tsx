@@ -6,7 +6,9 @@ import { DataTable, Column } from "@/components/ui/DataTable";
 import { ListToolbar } from "@/components/layout/ListToolbar";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { Pencil } from "lucide-react";
+import { ActionMenu } from "@/components/shared/ActionMenu";
+import { ExportToolbar } from "@/components/shared/ExportToolbar";
+import { Pencil, Trash2 } from "lucide-react";
 
 const blank = { name: "", sku: "", unit: "pcs", unitCost: "", reorderPoint: "" };
 
@@ -24,6 +26,12 @@ export default function MaterialsPage() {
     onError: () => addToast("Error saving material", "error"),
   });
 
+  const deleteMaterial = useMutation({
+    mutationFn: (id: string) => api.delete(`/materials/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["materials"] }); addToast("Deleted", "success"); },
+    onError: () => addToast("Error deleting material", "error"),
+  });
+
   function openNew() { setForm({ ...blank, id: "" }); setOpen(true); }
   function openEdit(m: any) { setForm({ id: m.id, name: m.name, sku: m.sku || "", unit: m.unit || "pcs", unitCost: m.unitCost || "", reorderPoint: m.reorderPoint || "" }); setOpen(true); }
 
@@ -33,14 +41,19 @@ export default function MaterialsPage() {
     { key: "unit", header: "Unit" },
     { key: "unitCost", header: "Unit cost", sortable: true, render: (r: any) => <span className="font-medium">${Number(r.unitCost || 0).toFixed(2)}</span> },
     { key: "reorderPoint", header: "Reorder point", render: (r: any) => r.reorderPoint ?? "—" },
-    { key: "edit", header: "", filterable: false, render: (r: any) => (
-      <button className="icon-btn" onClick={e => { e.stopPropagation(); openEdit(r); }}><Pencil size={14} /></button>
+    { key: "actions", header: "", filterable: false, render: (r: any) => (
+      <ActionMenu actions={[
+        { label: "Edit", icon: <Pencil size={13} />, onClick: () => openEdit(r) },
+        { label: "Delete", icon: <Trash2 size={13} />, variant: "danger", onClick: () => { if (window.confirm("Delete this material?")) deleteMaterial.mutate(r.id); } },
+      ]} />
     )},
   ];
 
   return (
     <>
-      <ListToolbar actionLabel="Material" onAction={openNew} />
+      <ListToolbar actionLabel="Material" onAction={openNew}>
+        <ExportToolbar resource="materials" />
+      </ListToolbar>
       <div className="px-4 py-3">
         <DataTable columns={columns} data={data || []} isLoading={isLoading} emptyMessage="No materials found" showRank totalLabel="materials" />
       </div>

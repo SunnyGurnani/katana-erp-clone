@@ -7,8 +7,11 @@ import { ListToolbar } from "@/components/layout/ListToolbar";
 import { StatusCell } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
+import { ExportToolbar } from "@/components/shared/ExportToolbar";
+import { ActionMenu } from "@/components/shared/ActionMenu";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Copy, Trash2 } from "lucide-react";
 
 const statuses = [
   { label: "Open", value: "" },
@@ -27,7 +30,6 @@ function getDeliveryStatus(so: any): string {
 function getProductionStatus(so: any): string {
   if (so.status === "fulfilled" || so.status === "done") return "done";
   if (so.status === "in_progress") return "in_progress";
-  if (so.status === "draft") return "not_started";
   return "not_started";
 }
 
@@ -66,6 +68,18 @@ export default function SalesOrdersPage() {
     onError: () => addToast("Error creating SO", "error"),
   });
 
+  const deleteSO = useMutation({
+    mutationFn: (id: string) => api.delete(`/sales-orders/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-orders"] }); addToast("Deleted", "success"); },
+    onError: () => addToast("Error deleting SO", "error"),
+  });
+
+  const duplicateSO = useMutation({
+    mutationFn: (id: string) => api.post(`/sales-orders/${id}/duplicate`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-orders"] }); addToast("Duplicated", "success"); },
+    onError: () => addToast("Error duplicating SO", "error"),
+  });
+
   const totalAmount = (data || []).reduce((s: number, r: any) => s + Number(r.totalPrice || 0), 0);
 
   const columns: Column[] = [
@@ -89,17 +103,19 @@ export default function SalesOrdersPage() {
     { key: "ingredients", header: "Ingredients", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getIngredientsStatus(r)} /> },
     { key: "production", header: "Production", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getProductionStatus(r)} /> },
     { key: "delivery", header: "Delivery", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getDeliveryStatus(r)} /> },
+    { key: "actions", header: "", filterable: false, render: (r: any) => (
+      <ActionMenu actions={[
+        { label: "Duplicate", icon: <Copy size={13} />, onClick: () => duplicateSO.mutate(r.id) },
+        { label: "Delete", icon: <Trash2 size={13} />, variant: "danger", onClick: () => { if (window.confirm("Delete this sales order?")) deleteSO.mutate(r.id); } },
+      ]} />
+    )},
   ];
 
   return (
     <>
-      <ListToolbar
-        statusFilter={status}
-        onStatusChange={setStatus}
-        statuses={statuses}
-        actionLabel="Sales order"
-        onAction={() => setOpen(true)}
-      />
+      <ListToolbar statusFilter={status} onStatusChange={setStatus} statuses={statuses} actionLabel="Sales order" onAction={() => setOpen(true)}>
+        <ExportToolbar resource="sales-orders" filters={status ? { status } : undefined} />
+      </ListToolbar>
       <div className="px-4 py-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-gray-500">{(data || []).length} orders</span>

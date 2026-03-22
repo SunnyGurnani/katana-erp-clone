@@ -7,8 +7,11 @@ import { ListToolbar } from "@/components/layout/ListToolbar";
 import { StatusCell } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
+import { ExportToolbar } from "@/components/shared/ExportToolbar";
+import { ActionMenu } from "@/components/shared/ActionMenu";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Trash2 } from "lucide-react";
 
 const statuses = [
   { label: "Open", value: "" },
@@ -41,6 +44,12 @@ export default function PurchaseOrdersPage() {
     onError: () => addToast("Error creating PO", "error"),
   });
 
+  const deletePO = useMutation({
+    mutationFn: (id: string) => api.delete(`/purchase-orders/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); addToast("Deleted", "success"); },
+    onError: () => addToast("Error deleting PO", "error"),
+  });
+
   const totalCost = (data || []).reduce((s: number, r: any) => s + Number(r.totalCost || 0), 0);
 
   const columns: Column[] = [
@@ -60,11 +69,18 @@ export default function PurchaseOrdersPage() {
     }},
     { key: "totalCost", header: "Total", sortable: true, render: (r: any) => <span className="font-medium">{`${Number(r.totalCost || 0).toFixed(2)} ${r.currency || "USD"}`}</span> },
     { key: "rows", header: "Items", render: (r: any) => <span className="text-gray-500">{r.rows?.length || 0} lines</span> },
+    { key: "actions", header: "", filterable: false, render: (r: any) => (
+      <ActionMenu actions={[
+        { label: "Delete", icon: <Trash2 size={13} />, variant: "danger", onClick: () => { if (window.confirm("Delete this purchase order?")) deletePO.mutate(r.id); } },
+      ]} />
+    )},
   ];
 
   return (
     <>
-      <ListToolbar statusFilter={status} onStatusChange={setStatus} statuses={statuses} actionLabel="Purchase order" onAction={() => setOpen(true)} />
+      <ListToolbar statusFilter={status} onStatusChange={setStatus} statuses={statuses} actionLabel="Purchase order" onAction={() => setOpen(true)}>
+        <ExportToolbar resource="purchase-orders" filters={status ? { status } : undefined} />
+      </ListToolbar>
       <div className="px-4 py-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-gray-500">{(data || []).length} purchase orders</span>

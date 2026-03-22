@@ -6,7 +6,24 @@ import { SkeletonRows } from "@/components/ui/Skeleton";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
+import { ChildTable, ColumnDef, FieldDef } from "@/components/shared/ChildTable";
 import { Plus, ChevronDown, ChevronRight } from "lucide-react";
+
+const stRowCols: ColumnDef[] = [
+  { key: "variant", header: "SKU", render: (r: any) => r.variant?.sku || "—" },
+  { key: "item", header: "Item", render: (r: any) => r.variant?.material?.name || r.variant?.product?.name || "—" },
+  { key: "systemQty", header: "Expected", render: (r: any) => r.systemQty ?? r.expectedQty ?? "—" },
+  { key: "countedQty", header: "Counted" },
+  { key: "variance", header: "Variance", render: (r: any) => {
+    const v = (r.countedQty || 0) - (r.systemQty || r.expectedQty || 0);
+    return <span className={v < 0 ? "text-red-600 font-medium" : v > 0 ? "text-green-600 font-medium" : "text-gray-400"}>{v > 0 ? "+" : ""}{v}</span>;
+  }},
+];
+const stRowFields: FieldDef[] = [
+  { key: "variantId", label: "Variant ID", required: true },
+  { key: "countedQty", label: "Counted Qty", type: "number", required: true },
+  { key: "systemQty", label: "System Qty", type: "number" },
+];
 
 export default function StocktakesPage() {
   const qc = useQueryClient();
@@ -38,42 +55,37 @@ export default function StocktakesPage() {
       </div>
 
       {isLoading ? <div className="card"><table className="table"><tbody><SkeletonRows rows={4} /></tbody></table></div> : (data || []).map((st: any) => (
-        <div key={st.id} className="card">
-          <div className="flex items-center justify-between px-5 py-4 cursor-pointer" onClick={() => setExpanded(expanded === st.id ? null : st.id)}>
-            <div className="flex items-center gap-3">
-              {expanded === st.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              <div>
-                <p className="font-medium text-gray-900">{st.reference || `ST-${st.id.slice(0, 8)}`}</p>
-                <p className="text-xs text-gray-500">{st.location?.name || "All locations"} &middot; {new Date(st.createdAt).toLocaleDateString()}</p>
+        <div key={st.id} className="space-y-3">
+          <div className="card">
+            <div className="flex items-center justify-between px-5 py-4 cursor-pointer" onClick={() => setExpanded(expanded === st.id ? null : st.id)}>
+              <div className="flex items-center gap-3">
+                {expanded === st.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                <div>
+                  <p className="font-medium text-gray-900">{st.reference || `ST-${st.id.slice(0, 8)}`}</p>
+                  <p className="text-xs text-gray-500">{st.location?.name || "All locations"} &middot; {new Date(st.createdAt).toLocaleDateString()}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <StatusBadge status={st.status} />
+                {st.status === "draft" && (
+                  <button className="btn btn-ghost text-sm" onClick={e => { e.stopPropagation(); complete.mutate(st.id); }}>Complete</button>
+                )}
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <StatusBadge status={st.status} />
-              {st.status === "draft" && (
-                <button className="btn btn-ghost text-sm" onClick={e => { e.stopPropagation(); complete.mutate(st.id); }}>Complete</button>
-              )}
-            </div>
           </div>
-          {expanded === st.id && st.rows?.length > 0 && (
-            <div className="border-t border-gray-200">
-              <table className="table">
-                <thead><tr><th>SKU</th><th>Item</th><th>Expected</th><th>Counted</th><th>Variance</th></tr></thead>
-                <tbody>
-                  {st.rows.map((r: any) => {
-                    const variance = (r.countedQty || 0) - (r.expectedQty || 0);
-                    return (
-                      <tr key={r.id}>
-                        <td className="font-mono text-sm">{r.variant?.sku || "—"}</td>
-                        <td>{r.variant?.material?.name || r.variant?.product?.name || "—"}</td>
-                        <td>{r.expectedQty}</td>
-                        <td>{r.countedQty}</td>
-                        <td className={variance < 0 ? "text-red-600 font-medium" : variance > 0 ? "text-green-600 font-medium" : "text-gray-400"}>{variance > 0 ? "+" : ""}{variance}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+          {expanded === st.id && (
+            <ChildTable
+              title="Stocktake Rows"
+              parentId={st.id}
+              parentKey="stocktakeId"
+              endpoint="/stocktake-rows"
+              columns={stRowCols}
+              formFields={stRowFields}
+              queryKey="stocktake-rows"
+              canEdit={st.status === "draft"}
+              canDelete={st.status === "draft"}
+              canCreate={st.status === "draft"}
+            />
           )}
         </div>
       ))}

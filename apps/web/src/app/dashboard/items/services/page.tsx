@@ -7,7 +7,8 @@ import { ListToolbar } from "@/components/layout/ListToolbar";
 import { StatusCell } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { Pencil } from "lucide-react";
+import { ActionMenu } from "@/components/shared/ActionMenu";
+import { Pencil, Trash2 } from "lucide-react";
 
 const blank = { name: "", sku: "", description: "", price: "" };
 
@@ -25,6 +26,12 @@ export default function ServicesPage() {
     onError: () => addToast("Error saving service", "error"),
   });
 
+  const deleteService = useMutation({
+    mutationFn: (id: string) => api.delete(`/services/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["services"] }); addToast("Deleted", "success"); },
+    onError: () => addToast("Error deleting service", "error"),
+  });
+
   function openNew() { setForm({ ...blank, id: "" }); setOpen(true); }
   function openEdit(s: any) { setForm({ id: s.id, name: s.name, sku: s.sku || "", description: s.description || "", price: s.price || "" }); setOpen(true); }
 
@@ -37,8 +44,11 @@ export default function ServicesPage() {
       const active = r.isActive !== false;
       return <StatusCell status={active ? "in_stock" : "not_available"} label={active ? "Active" : "Inactive"} />;
     }},
-    { key: "edit", header: "", filterable: false, render: (r: any) => (
-      <button className="icon-btn" onClick={e => { e.stopPropagation(); openEdit(r); }}><Pencil size={14} /></button>
+    { key: "actions", header: "", filterable: false, render: (r: any) => (
+      <ActionMenu actions={[
+        { label: "Edit", icon: <Pencil size={13} />, onClick: () => openEdit(r) },
+        { label: "Delete", icon: <Trash2 size={13} />, variant: "danger", onClick: () => { if (window.confirm("Delete this service?")) deleteService.mutate(r.id); } },
+      ]} />
     )},
   ];
 

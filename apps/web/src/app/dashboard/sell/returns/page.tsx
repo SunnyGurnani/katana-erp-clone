@@ -7,6 +7,9 @@ import { ListToolbar } from "@/components/layout/ListToolbar";
 import { StatusCell } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
+import { ActionMenu } from "@/components/shared/ActionMenu";
+import { ChildTable, ColumnDef, FieldDef } from "@/components/shared/ChildTable";
+import { Trash2, CheckCircle } from "lucide-react";
 
 const statuses = [
   { label: "All", value: "" },
@@ -15,11 +18,26 @@ const statuses = [
   { label: "Cancelled", value: "cancelled" },
 ];
 
+const returnRowCols: ColumnDef[] = [
+  { key: "variant", header: "SKU", render: (r: any) => r.variant?.sku || "—" },
+  { key: "qty", header: "Qty" },
+  { key: "unitPrice", header: "Unit Price", render: (r: any) => `$${Number(r.unitPrice || 0).toFixed(2)}` },
+  { key: "returnReason", header: "Reason" },
+];
+
+const returnRowFields: FieldDef[] = [
+  { key: "variantId", label: "Variant ID", required: true },
+  { key: "qty", label: "Qty", type: "number", required: true },
+  { key: "unitPrice", label: "Unit Price", type: "number" },
+  { key: "returnReason", label: "Reason" },
+];
+
 export default function ReturnsPage() {
   const qc = useQueryClient();
   const { addToast } = useToast();
   const [status, setStatus] = useState("");
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [customerId, setCustomerId] = useState("");
   const [orderId, setOrderId] = useState("");
   const [notes, setNotes] = useState("");
@@ -43,9 +61,19 @@ export default function ReturnsPage() {
     onError: () => addToast("Error completing return", "error"),
   });
 
+  const deleteReturn = useMutation({
+    mutationFn: (id: string) => api.delete(`/sales-returns/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-returns"] }); addToast("Deleted", "success"); },
+    onError: () => addToast("Error deleting return", "error"),
+  });
+
   const columns: Column[] = [
     { key: "createdAt", header: "Created on", sortable: true, render: (r: any) => new Date(r.createdAt).toISOString().slice(0, 10) },
-    { key: "number", header: "Return #", sortable: true, render: (r: any) => <span className="font-mono text-sm text-brand-600 font-medium">{r.number}</span> },
+    { key: "number", header: "Return #", sortable: true, render: (r: any) => (
+      <button className="font-mono text-sm text-brand-600 font-medium hover:underline" onClick={e => { e.stopPropagation(); setExpanded(expanded === r.id ? null : r.id); }}>
+        {r.number}
+      </button>
+    )},
     { key: "customer", header: "Customer", render: (r: any) => {
       const cust = (customers || []).find((c: any) => c.id === r.customerId);
       return cust?.name || "—";
@@ -59,18 +87,30 @@ export default function ReturnsPage() {
       const total = (r.rows || []).reduce((s: number, row: any) => s + Number(row.qty) * Number(row.unitPrice || 0), 0);
       return <span className="font-medium">${total.toFixed(2)}</span>;
     }},
-    { key: "actions", header: "", filterable: false, render: (r: any) => r.status === "draft" ? (
-      <button className="text-brand-600 text-xs hover:underline font-medium" onClick={e => { e.stopPropagation(); complete.mutate(r.id); }}>
-        Complete
-      </button>
-    ) : null },
+    { key: "actions", header: "", filterable: false, render: (r: any) => (
+      <ActionMenu actions={[
+        ...(r.status === "draft" ? [{ label: "Complete", icon: <CheckCircle size={13} />, onClick: () => complete.mutate(r.id) }] : []),
+        { label: "Delete", icon: <Trash2 size={13} />, variant: "danger" as const, onClick: () => { if (window.confirm("Delete this return?")) deleteReturn.mutate(r.id); } },
+      ]} />
+    )},
   ];
 
   return (
     <>
       <ListToolbar statusFilter={status} onStatusChange={setStatus} statuses={statuses} actionLabel="Return" onAction={() => setOpen(true)} />
-      <div className="px-4 py-3">
+      <div className="px-4 py-3 space-y-4">
         <DataTable columns={columns} data={data || []} isLoading={isLoading} emptyMessage="No returns found" showRank totalLabel="returns" />
+        {expanded && (
+          <ChildTable
+            title="Return Rows"
+            parentId={expanded}
+            parentKey="returnId"
+            endpoint="/sales-return-rows"
+            columns={returnRowCols}
+            formFields={returnRowFields}
+            queryKey="sales-return-rows"
+          />
+        )}
       </div>
       <Modal open={open} onClose={() => setOpen(false)} title="New Sales Return">
         <div className="space-y-3">

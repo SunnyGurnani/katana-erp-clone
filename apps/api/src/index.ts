@@ -58,6 +58,18 @@ import pdfRouter from './routes/pdf';
 import uploadRouter from './routes/upload';
 import moProductionsRouter from './routes/moProductions';
 import soAddressesRouter from './routes/soAddresses';
+import salesReturnRowsRouter from './routes/salesReturnRows';
+import priceListRowsRouter from './routes/priceListRows';
+import priceListCustomersRouter from './routes/priceListCustomers';
+import moProductionIngredientsRouter from './routes/moProductionIngredients';
+import moRecipeRowsRouter from './routes/moRecipeRows';
+import moOperationRowsRouter from './routes/moOperationRows';
+import inventoryMovementsRouter from './routes/inventoryMovements';
+import stocktakeRowsRouter from './routes/stocktakeRows';
+import variantBinsRouter from './routes/variantBins';
+import recipesRouter from './routes/recipes';
+import bomRowsRouter from './routes/bomRows';
+import productOperationsRouter from './routes/productOperations';
 import { initStorage } from './lib/storage';
 
 const app = express();
@@ -135,6 +147,18 @@ app.use(`${v1}/pdf`, pdfRouter);
 app.use(`${v1}/upload`, uploadRouter);
 app.use(`${v1}/mo-productions`, moProductionsRouter);
 app.use(`${v1}/so-addresses`, soAddressesRouter);
+app.use(`${v1}/sales-return-rows`, salesReturnRowsRouter);
+app.use(`${v1}/price-list-rows`, priceListRowsRouter);
+app.use(`${v1}/price-list-customers`, priceListCustomersRouter);
+app.use(`${v1}/mo-production-ingredients`, moProductionIngredientsRouter);
+app.use(`${v1}/mo-recipe-rows`, moRecipeRowsRouter);
+app.use(`${v1}/mo-operation-rows`, moOperationRowsRouter);
+app.use(`${v1}/inventory-movements`, inventoryMovementsRouter);
+app.use(`${v1}/stocktake-rows`, stocktakeRowsRouter);
+app.use(`${v1}/variant-bins`, variantBinsRouter);
+app.use(`${v1}/recipes`, recipesRouter);
+app.use(`${v1}/bom-rows`, bomRowsRouter);
+app.use(`${v1}/product-operations`, productOperationsRouter);
 
 app.use(errorHandler);
 

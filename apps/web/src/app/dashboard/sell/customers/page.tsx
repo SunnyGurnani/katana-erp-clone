@@ -6,7 +6,8 @@ import { DataTable, Column } from "@/components/ui/DataTable";
 import { ListToolbar } from "@/components/layout/ListToolbar";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { Pencil } from "lucide-react";
+import { ActionMenu } from "@/components/shared/ActionMenu";
+import { Pencil, Trash2 } from "lucide-react";
 
 const blank = { name: "", email: "", phone: "", address: "", currency: "USD" };
 
@@ -24,6 +25,12 @@ export default function CustomersPage() {
     onError: () => addToast("Error saving customer", "error"),
   });
 
+  const deleteCustomer = useMutation({
+    mutationFn: (id: string) => api.delete(`/customers/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["customers"] }); addToast("Deleted", "success"); },
+    onError: () => addToast("Error deleting customer", "error"),
+  });
+
   function openNew() { setForm({ ...blank, id: "" }); setOpen(true); }
   function openEdit(c: any) { setForm({ id: c.id, name: c.name, email: c.email || "", phone: c.phone || "", address: c.address || "", currency: c.currency || "USD" }); setOpen(true); }
 
@@ -34,8 +41,11 @@ export default function CustomersPage() {
     { key: "phone", header: "Phone", render: (r: any) => r.phone || "—" },
     { key: "currency", header: "Currency" },
     { key: "orders", header: "# Orders", render: (r: any) => r.salesOrders?.length || r._count?.salesOrders || "—" },
-    { key: "edit", header: "", filterable: false, render: (r: any) => (
-      <button className="icon-btn" onClick={e => { e.stopPropagation(); openEdit(r); }}><Pencil size={14} /></button>
+    { key: "actions", header: "", filterable: false, render: (r: any) => (
+      <ActionMenu actions={[
+        { label: "Edit", icon: <Pencil size={13} />, onClick: () => openEdit(r) },
+        { label: "Delete", icon: <Trash2 size={13} />, variant: "danger", onClick: () => { if (window.confirm("Delete this customer?")) deleteCustomer.mutate(r.id); } },
+      ]} />
     )},
   ];
 

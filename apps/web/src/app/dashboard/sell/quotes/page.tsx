@@ -7,6 +7,9 @@ import { ListToolbar } from "@/components/layout/ListToolbar";
 import { StatusCell } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
+import { ExportToolbar } from "@/components/shared/ExportToolbar";
+import { ActionMenu } from "@/components/shared/ActionMenu";
+import { Trash2, ArrowRightCircle } from "lucide-react";
 
 const statuses = [
   { label: "All", value: "" },
@@ -44,6 +47,12 @@ export default function QuotesPage() {
     onError: () => addToast("Error converting quote", "error"),
   });
 
+  const deleteQuote = useMutation({
+    mutationFn: (id: string) => api.delete(`/quotes/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["quotes"] }); addToast("Deleted", "success"); },
+    onError: () => addToast("Error deleting quote", "error"),
+  });
+
   const columns: Column[] = [
     { key: "number", header: "Quote #", sortable: true, render: (r: any) => <span className="font-mono text-sm text-brand-600 font-medium">{r.number}</span> },
     { key: "customer", header: "Customer", render: (r: any) => {
@@ -57,16 +66,19 @@ export default function QuotesPage() {
       return <span className="font-medium">{`${total.toFixed(2)} ${r.currency || "USD"}`}</span>;
     }},
     { key: "rows", header: "Items", render: (r: any) => <span className="text-gray-500">{r.rows?.length || 0} lines</span> },
-    { key: "actions", header: "", filterable: false, render: (r: any) => r.status === "draft" || r.status === "sent" ? (
-      <button className="text-brand-600 text-xs hover:underline font-medium" onClick={e => { e.stopPropagation(); convert.mutate(r.id); }}>
-        Convert to SO
-      </button>
-    ) : null },
+    { key: "actions", header: "", filterable: false, render: (r: any) => (
+      <ActionMenu actions={[
+        ...((r.status === "draft" || r.status === "sent") ? [{ label: "Convert to SO", icon: <ArrowRightCircle size={13} />, onClick: () => convert.mutate(r.id) }] : []),
+        { label: "Delete", icon: <Trash2 size={13} />, variant: "danger" as const, onClick: () => { if (window.confirm("Delete this quote?")) deleteQuote.mutate(r.id); } },
+      ]} />
+    )},
   ];
 
   return (
     <>
-      <ListToolbar statusFilter={status} onStatusChange={setStatus} statuses={statuses} actionLabel="Quote" onAction={() => setOpen(true)} />
+      <ListToolbar statusFilter={status} onStatusChange={setStatus} statuses={statuses} actionLabel="Quote" onAction={() => setOpen(true)}>
+        <ExportToolbar resource="quotes" filters={status ? { status } : undefined} />
+      </ListToolbar>
       <div className="px-4 py-3">
         <DataTable columns={columns} data={data || []} isLoading={isLoading} emptyMessage="No quotes found" showRank totalLabel="quotes" />
       </div>

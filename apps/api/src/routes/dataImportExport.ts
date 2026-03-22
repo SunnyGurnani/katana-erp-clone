@@ -5,29 +5,34 @@ import { z } from 'zod';
 import multer from 'multer';
 import { parse } from 'csv-parse/sync';
 import { Parser as Json2CsvParser } from 'json2csv';
+import * as XLSX from 'xlsx';
 
 const router = Router();
 router.use(authenticate);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-type EntityType = 'products' | 'materials' | 'sales-orders' | 'purchase-orders' | 'inventory' | 'boms';
+type EntityType = 'products' | 'materials' | 'sales-orders' | 'purchase-orders' | 'inventory' | 'boms' | 'quotes' | 'stock-transfers';
 
-const ENTITY_TYPES: EntityType[] = ['products', 'materials', 'sales-orders', 'purchase-orders', 'inventory', 'boms'];
+const ENTITY_TYPES: EntityType[] = ['products', 'materials', 'sales-orders', 'purchase-orders', 'inventory', 'boms', 'quotes', 'stock-transfers'];
 
 // ─── EXPORT ─────────────────────────────────────────────────────────────────
 
 router.post('/export', async (req: AuthRequest, res: Response) => {
-  const { entity, format } = z.object({
-    entity: z.enum(['products', 'materials', 'sales-orders', 'purchase-orders', 'inventory', 'boms']),
-    format: z.enum(['csv', 'json']).default('csv'),
+  const { entity, format, filters, ids } = z.object({
+    entity: z.enum(['products', 'materials', 'sales-orders', 'purchase-orders', 'inventory', 'boms', 'quotes', 'stock-transfers']),
+    format: z.enum(['csv', 'json', 'xlsx']).default('csv'),
+    filters: z.record(z.any()).optional(),
+    ids: z.array(z.string()).optional(),
   }).parse(req.body);
+
+  const idFilter = ids && ids.length > 0 ? { id: { in: ids } } : {};
 
   let data: any[];
 
   switch (entity) {
     case 'products':
-      data = await prisma.product.findMany({ include: { variants: true } });
+      data = await prisma.product.findMany({ where: { ...idFilter, ...filters }, include: { variants: true } });
       data = data.map(p => ({
         id: p.id, name: p.name, sku: p.sku, description: p.description,
         category: p.category, salesPrice: p.salesPrice, purchasePrice: p.purchasePrice,
@@ -35,7 +40,7 @@ router.post('/export', async (req: AuthRequest, res: Response) => {
       }));
       break;
     case 'materials':
-      data = await prisma.material.findMany();
+      data = await prisma.material.findMany({ where: { ...idFilter, ...filters } });
       data = data.map(m => ({
         id: m.id, name: m.name, sku: m.sku, description: m.description,
         category: m.category, purchasePrice: m.purchasePrice, unitOfMeasure: m.unitOfMeasure,
@@ -43,7 +48,7 @@ router.post('/export', async (req: AuthRequest, res: Response) => {
       }));
       break;
     case 'sales-orders':
-      data = await prisma.salesOrder.findMany({ include: { rows: true, customer: { select: { name: true } } } });
+      data = await prisma.salesOrder.findMany({ where: { ...idFilter, ...filters }, include: { rows: true, customer: { select: { name: true } } } });
       data = data.map(so => ({
         id: so.id, number: so.number, customer: (so as any).customer?.name,
         status: so.status, currency: so.currency,
@@ -52,7 +57,7 @@ router.post('/export', async (req: AuthRequest, res: Response) => {
       }));
       break;
     case 'purchase-orders':
-      data = await prisma.purchaseOrder.findMany({ include: { rows: true, supplier: { select: { name: true } } } });
+      data = await prisma.purchaseOrder.findMany({ where: { ...idFilter, ...filters }, include: { rows: true, supplier: { select: { name: true } } } });
       data = data.map(po => ({
         id: po.id, number: po.number, supplier: (po as any).supplier?.name,
         status: po.status, currency: po.currency,
@@ -62,6 +67,7 @@ router.post('/export', async (req: AuthRequest, res: Response) => {
       break;
     case 'inventory':
       data = await prisma.inventoryLevel.findMany({
+        where: filters || {},
         include: { variant: { include: { product: true } }, location: true },
       });
       data = data.map(l => ({
@@ -73,10 +79,26 @@ router.post('/export', async (req: AuthRequest, res: Response) => {
       }));
       break;
     case 'boms':
-      data = await prisma.bOM.findMany({ include: { rows: true, product: { select: { name: true } } } });
+      data = await prisma.bOM.findMany({ where: { ...idFilter, ...filters }, include: { rows: true, product: { select: { name: true } } } });
       data = data.map(b => ({
         id: b.id, name: b.name, product: (b as any).product?.name,
         qty: b.qty, isActive: b.isActive, totalRows: b.rows.length,
+      }));
+      break;
+    case 'quotes':
+      data = await prisma.quote.findMany({ where: { ...idFilter, ...filters }, include: { rows: true } });
+      data = data.map(q => ({
+        id: q.id, number: q.number, customerId: q.customerId,
+        status: q.status, currency: q.currency, validUntil: q.validUntil,
+        totalLines: q.rows.length,
+      }));
+      break;
+    case 'stock-transfers':
+      data = await prisma.stockTransfer.findMany({ where: { ...idFilter, ...filters } });
+      data = data.map(st => ({
+        id: st.id, variantId: st.variantId, fromLocationId: st.fromLocationId,
+        toLocationId: st.toLocationId, qty: st.qty, status: st.status, note: st.note,
+        createdAt: st.createdAt,
       }));
       break;
     default:
@@ -87,6 +109,16 @@ router.post('/export', async (req: AuthRequest, res: Response) => {
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="${entity}.json"`);
     return res.json(data);
+  }
+
+  if (format === 'xlsx') {
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, entity);
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${entity}.xlsx"`);
+    return res.send(buf);
   }
 
   // CSV

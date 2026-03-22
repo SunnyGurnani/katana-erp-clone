@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
+import { ExportToolbar } from "@/components/shared/ExportToolbar";
 
 export default function StockTransfersPage() {
   const qc = useQueryClient();
@@ -32,6 +33,9 @@ export default function StockTransfersPage() {
 
   return (
     <div className="px-4 py-3 space-y-4">
+      <div className="flex justify-end">
+        <ExportToolbar resource="stock-transfers" />
+      </div>
       <div className="card p-5">
         <h2 className="font-semibold text-gray-800 mb-4">New Transfer</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
