@@ -126,7 +126,7 @@ router.post('/:id/receive', async (req, res) => {
 
   const rowsToReceive = body.rows ?? (po.rows as any[]).map((r: any) => ({ rowId: r.id, receivedQty: Number(r.qtyOrdered) - Number(r.qtyReceived || 0) }));
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     for (const recv of rowsToReceive) {
       if (recv.receivedQty <= 0) continue;
       const row = (po.rows as any[]).find((r: any) => r.id === recv.rowId);
@@ -139,8 +139,8 @@ router.post('/:id/receive', async (req, res) => {
   });
 
   const allRows = await prisma.purchaseOrderRow.findMany({ where: { orderId: po.id } });
-  const allFulfilled = allRows.every(r => Number(r.qtyReceived) >= Number(r.qtyOrdered));
-  const anyFulfilled = allRows.some(r => Number(r.qtyReceived) > 0);
+  const allFulfilled = allRows.every((r: any) => Number(r.qtyReceived) >= Number(r.qtyOrdered));
+  const anyFulfilled = allRows.some((r: any) => Number(r.qtyReceived) > 0);
   const newStatus = allFulfilled ? 'received' : anyFulfilled ? 'partial' : po.status;
   const updated = await prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: newStatus }, include });
   res.json(normalizePo(updated));

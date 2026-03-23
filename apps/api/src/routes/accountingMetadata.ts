@@ -24,10 +24,10 @@ router.get('/sales-orders', async (req, res) => {
     prisma.salesOrder.count({ where }),
   ]);
 
-  const items = orders.map(o => {
-    const subtotal = (o.rows || []).reduce((sum, r) => sum + Number(r.qtyOrdered) * Number(r.unitPrice ?? 0), 0);
-    const taxAmount = (o.rows || []).reduce((sum, r) => sum + Number(r.qtyOrdered) * Number(r.unitPrice ?? 0) * Number(r.taxRate ?? 0) / 100, 0);
-    const fulfilledQty = (o.fulfillments || []).reduce((sum, f) => sum + Number(f.qty), 0);
+  const items = orders.map((o: any) => {
+    const subtotal = (o.rows || []).reduce((sum: number, r: any) => sum + Number(r.qtyOrdered) * Number(r.unitPrice ?? 0), 0);
+    const taxAmount = (o.rows || []).reduce((sum: number, r: any) => sum + Number(r.qtyOrdered) * Number(r.unitPrice ?? 0) * Number(r.taxRate ?? 0) / 100, 0);
+    const fulfilledQty = (o.fulfillments || []).reduce((sum: number, f: any) => sum + Number(f.qty), 0);
     return {
       id: o.id,
       number: o.number,
@@ -64,10 +64,10 @@ router.get('/purchase-orders', async (req, res) => {
     prisma.purchaseOrder.count({ where }),
   ]);
 
-  const items = orders.map(o => {
-    const subtotal = (o.rows || []).reduce((sum, r) => sum + Number(r.qtyOrdered) * Number(r.unitPrice ?? 0), 0);
-    const taxAmount = (o.rows || []).reduce((sum, r) => sum + Number(r.qtyOrdered) * Number(r.unitPrice ?? 0) * Number(r.taxRate ?? 0) / 100, 0);
-    const additionalCosts = (o.costRows || []).reduce((sum, c) => sum + Number(c.amount), 0);
+  const items = orders.map((o: any) => {
+    const subtotal = (o.rows || []).reduce((sum: number, r: any) => sum + Number(r.qtyOrdered) * Number(r.unitPrice ?? 0), 0);
+    const taxAmount = (o.rows || []).reduce((sum: number, r: any) => sum + Number(r.qtyOrdered) * Number(r.unitPrice ?? 0) * Number(r.taxRate ?? 0) / 100, 0);
+    const additionalCosts = (o.costRows || []).reduce((sum: number, c: any) => sum + Number(c.amount), 0);
     return {
       id: o.id,
       number: o.number,

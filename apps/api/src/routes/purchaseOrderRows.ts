@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
     prisma.purchaseOrderRow.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
     prisma.purchaseOrderRow.count({ where }),
   ]);
-  res.json(paginated(items.map(r => ({ ...r, qty: r.qtyOrdered, unitCost: r.unitPrice })), total, page, pageSize));
+  res.json(paginated(items.map((r: any) => ({ ...r, qty: r.qtyOrdered, unitCost: r.unitPrice })), total, page, pageSize));
 });
 
 router.get('/:id', async (req, res) => {

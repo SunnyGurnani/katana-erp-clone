@@ -11,7 +11,7 @@ export async function adjustStock(
   tx: TX,
   variantId: string,
   locationId: string,
-  qty: Prisma.Decimal | number,
+  qty: any | number,
   movementType: string,
   opts?: { referenceType?: string; referenceId?: string; note?: string }
 ) {

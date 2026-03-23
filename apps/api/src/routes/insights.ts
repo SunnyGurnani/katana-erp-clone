@@ -42,7 +42,7 @@ router.get('/sales/summary', async (req, res) => {
     }),
   ]);
 
-  const totalRevenue = rows.reduce((s, r) => s + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0);
+  const totalRevenue = rows.reduce((s: number, r: any) => s + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0);
   const orderCount = orders.length;
   const avgOrderValue = orderCount > 0 ? totalRevenue / orderCount : 0;
 
@@ -54,17 +54,17 @@ router.get('/sales/summary', async (req, res) => {
   }
 
   // Resolve top customer names
-  const customerIds = topCustomers.map(c => c.customerId).filter(Boolean) as string[];
+  const customerIds = topCustomers.map((c: any) => c.customerId).filter(Boolean) as string[];
   const customers = customerIds.length
     ? await prisma.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, name: true } })
     : [];
-  const customerMap = Object.fromEntries(customers.map(c => [c.id, c.name]));
+  const customerMap = Object.fromEntries(customers.map((c: any) => [c.id, c.name]));
 
   res.json({
     totalRevenue,
     orderCount,
     avgOrderValue,
-    topCustomers: topCustomers.map(c => ({
+    topCustomers: topCustomers.map((c: any) => ({
       customerId: c.customerId,
       customerName: customerMap[c.customerId!] || null,
       orderCount: c._count.id,
@@ -96,7 +96,7 @@ router.get('/sales/by-product', async (req, res) => {
         select: { id: true, sku: true, name: true, product: { select: { name: true } } },
       })
     : [];
-  const variantMap = Object.fromEntries(variants.map(v => [v.id, v]));
+  const variantMap = Object.fromEntries(variants.map((v: any) => [v.id, v]));
 
   res.json(
     variantIds.map(id => ({
@@ -129,9 +129,9 @@ router.get('/manufacturing/summary', async (req, res) => {
   ]);
 
   // Avg production time (planned days between start and end)
-  const completedWithDates = mos.filter(m => m.plannedStart && m.plannedEnd);
+  const completedWithDates = mos.filter((m: any) => m.plannedStart && m.plannedEnd);
   const avgProductionTime = completedWithDates.length > 0
-    ? completedWithDates.reduce((s, m) => s + (m.plannedEnd!.getTime() - m.plannedStart!.getTime()), 0) / completedWithDates.length / (1000 * 60 * 60 * 24)
+    ? completedWithDates.reduce((s: number, m: any) => s + (m.plannedEnd!.getTime() - m.plannedStart!.getTime()), 0) / completedWithDates.length / (1000 * 60 * 60 * 24)
     : 0;
 
   // Cost overview from operation rows
@@ -148,14 +148,14 @@ router.get('/manufacturing/summary', async (req, res) => {
     select: { qtyConsumed: true, variantId: true, materialId: true },
   });
   let materialCost = 0;
-  const materialIds = recipeRows.filter(r => r.materialId).map(r => r.materialId!);
-  const variantIds = recipeRows.filter(r => r.variantId).map(r => r.variantId!);
+  const materialIds = recipeRows.filter((r: any) => r.materialId).map((r: any) => r.materialId!);
+  const variantIds = recipeRows.filter((r: any) => r.variantId).map((r: any) => r.variantId!);
   const [materials, variants] = await Promise.all([
     materialIds.length ? prisma.material.findMany({ where: { id: { in: materialIds } }, select: { id: true, purchasePrice: true } }) : [],
     variantIds.length ? prisma.variant.findMany({ where: { id: { in: variantIds } }, select: { id: true, purchasePrice: true } }) : [],
   ]);
-  const matPriceMap = Object.fromEntries(materials.map(m => [m.id, Number(m.purchasePrice || 0)]));
-  const varPriceMap = Object.fromEntries(variants.map(v => [v.id, Number(v.purchasePrice || 0)]));
+  const matPriceMap = Object.fromEntries(materials.map((m: any) => [m.id, Number(m.purchasePrice || 0)]));
+  const varPriceMap = Object.fromEntries(variants.map((v: any) => [v.id, Number(v.purchasePrice || 0)]));
   for (const r of recipeRows) {
     const price = r.materialId ? (matPriceMap[r.materialId] || 0) : r.variantId ? (varPriceMap[r.variantId] || 0) : 0;
     materialCost += Number(r.qtyConsumed) * price;
@@ -198,7 +198,7 @@ router.get('/manufacturing/by-product', async (req, res) => {
   const products = productIds.length
     ? await prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true, sku: true } })
     : [];
-  const productMap = Object.fromEntries(products.map(p => [p.id, p]));
+  const productMap = Object.fromEntries(products.map((p: any) => [p.id, p]));
 
   res.json(
     productIds.map(id => ({
@@ -232,7 +232,7 @@ router.get('/purchasing/summary', async (req, res) => {
     }),
   ]);
 
-  const totalPOSpend = rows.reduce((s, r) => s + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0);
+  const totalPOSpend = rows.reduce((s: number, r: any) => s + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0);
   const poCount = pos.length;
   const avgPOValue = poCount > 0 ? totalPOSpend / poCount : 0;
 
@@ -242,17 +242,17 @@ router.get('/purchasing/summary', async (req, res) => {
     spendByMonth[month] = (spendByMonth[month] || 0) + Number(r.qtyOrdered) * Number(r.unitPrice || 0);
   }
 
-  const supplierIds = topSuppliers.map(s => s.supplierId).filter(Boolean) as string[];
+  const supplierIds = topSuppliers.map((s: any) => s.supplierId).filter(Boolean) as string[];
   const suppliers = supplierIds.length
     ? await prisma.supplier.findMany({ where: { id: { in: supplierIds } }, select: { id: true, name: true } })
     : [];
-  const supplierMap = Object.fromEntries(suppliers.map(s => [s.id, s.name]));
+  const supplierMap = Object.fromEntries(suppliers.map((s: any) => [s.id, s.name]));
 
   res.json({
     totalPOSpend,
     poCount,
     avgPOValue,
-    topSuppliers: topSuppliers.map(s => ({
+    topSuppliers: topSuppliers.map((s: any) => ({
       supplierId: s.supplierId,
       supplierName: supplierMap[s.supplierId!] || null,
       poCount: s._count.id,
@@ -277,7 +277,7 @@ router.get('/inventory/valuation', async (req, res) => {
 
   let totalValue = 0;
   const byLocation: Record<string, { locationName: string; value: number; items: number }> = {};
-  const items = levels.map(l => {
+  const items = levels.map((l: any) => {
     const value = Number(l.onHand) * Number(l.variant.purchasePrice || 0);
     totalValue += value;
     if (!byLocation[l.locationId]) byLocation[l.locationId] = { locationName: l.location.name, value: 0, items: 0 };

@@ -33,7 +33,7 @@ router.post('/orders/:id/productions', async (req, res) => {
       producedAt: data.producedAt ? new Date(data.producedAt) : undefined,
       notes: data.notes ?? undefined,
       ingredients: {
-        create: mo.recipeRows.map(rr => ({
+        create: mo.recipeRows.map((rr: any) => ({
           recipeRowId: rr.id,
           variantId: rr.variantId ?? undefined,
           materialId: rr.materialId ?? undefined,

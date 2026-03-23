@@ -51,7 +51,7 @@ router.get('/forecast', async (req, res) => {
     committedMap[key] = (committedMap[key] || 0) + (Number(r.qtyOrdered) - Number(r.qtyFulfilled));
   }
 
-  const forecast = levels.map(l => {
+  const forecast = levels.map((l: any) => {
     const key = `${l.variantId}|${l.locationId}`;
     const onHand = Number(l.onHand);
     const expected = expectedMap[key] || 0;
@@ -117,7 +117,7 @@ router.get('/replenishment', async (req, res) => {
   }
 
   // Find preferred supplier per variant (supplier with most PO rows for that variant)
-  const variantIds = levels.map(l => l.variantId);
+  const variantIds = levels.map((l: any) => l.variantId);
   const supplierRows = variantIds.length
     ? await prisma.purchaseOrderRow.findMany({
         where: { variantId: { in: variantIds } },
@@ -145,7 +145,7 @@ router.get('/replenishment', async (req, res) => {
   }
 
   const suggestions = levels
-    .map(l => {
+    .map((l: any) => {
       const key = `${l.variantId}|${l.locationId}`;
       const onHand = Number(l.onHand);
       const expected = expectedMap[key] || 0;

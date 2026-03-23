@@ -108,7 +108,7 @@ router.post('/:id/complete', async (req, res) => {
   if (ret.status === 'completed') return res.status(422).json({ error: 'Already completed' });
   if (ret.status === 'cancelled') return res.status(422).json({ error: 'Cannot complete cancelled return' });
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     for (const row of ret.rows) {
       if (row.variantId && row.locationId) {
         await adjustStock(tx, row.variantId, row.locationId, Number(row.qty), 'sales_return', {
@@ -136,7 +136,7 @@ router.get('/:id/unassigned-batch-transactions', async (req, res) => {
   });
   if (!ret) return res.status(404).json({ error: 'Not found' });
   // Rows without a linked batch
-  const unassigned = ret.rows.filter(r => !r.soRowId);
+  const unassigned = ret.rows.filter((r: any) => !r.soRowId);
   res.json(unassigned);
 });
 

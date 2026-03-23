@@ -150,7 +150,7 @@ router.post('/scan', async (req, res) => {
       type: 'variant',
       item: variant,
       inventory,
-      totalStock: inventory.reduce((sum, l) => sum + Number(l.onHand), 0),
+      totalStock: inventory.reduce((sum: number, l: any) => sum + Number(l.onHand), 0),
     });
   } else {
     const material = result.item as any;

@@ -38,7 +38,7 @@ router.get('/', async (req, res) => {
     prisma.customFieldDefinition.findMany({ where, skip, take, orderBy: [{ rank: 'asc' }, { createdAt: 'asc' }] }),
     prisma.customFieldDefinition.count({ where }),
   ]);
-  res.json(paginated(items.map(d => ({
+  res.json(paginated(items.map((d: any) => ({
     ...d,
     options: d.options ? JSON.parse(d.options) : null,
   })), total, page, pageSize));
@@ -94,7 +94,7 @@ router.get('/values', async (req, res) => {
   ]);
 
   // Cast values based on fieldType
-  const parsed = items.map(v => ({
+  const parsed = items.map((v: any) => ({
     ...v,
     parsedValue: castValue(v.value, v.field.fieldType),
   }));
@@ -146,8 +146,8 @@ router.get('/entity/:entityType/:entityId', async (req, res) => {
   });
   const values = await prisma.customFieldValue.findMany({ where: { entityType, entityId } });
 
-  const valueMap = Object.fromEntries(values.map(v => [v.fieldId, v.value]));
-  const result = definitions.map(d => ({
+  const valueMap = Object.fromEntries(values.map((v: any) => [v.fieldId, v.value]));
+  const result = definitions.map((d: any) => ({
     ...d,
     options: d.options ? JSON.parse(d.options) : null,
     value: castValue(valueMap[d.id] ?? d.defaultValue ?? null, d.fieldType),

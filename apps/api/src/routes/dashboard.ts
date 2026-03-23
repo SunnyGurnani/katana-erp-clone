@@ -46,7 +46,7 @@ router.get('/stats', async (_req, res) => {
     openMfgOrders: openMos,
     revenue30d,
     poSpend30d,
-    recentMovements: recentMovements.map(m => ({
+    recentMovements: recentMovements.map((m: any) => ({
       id: m.id, qty: Number(m.qty), movementType: m.movementType, createdAt: m.createdAt,
       variantId: m.variantId, locationId: m.locationId,
     })),

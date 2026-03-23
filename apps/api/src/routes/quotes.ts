@@ -133,7 +133,7 @@ router.post('/:id/convert-to-so', async (req, res) => {
   const soCount = await prisma.salesOrder.count();
   const soNumber = `SO-${new Date().getFullYear()}-${String(soCount + 1).padStart(4, '0')}`;
 
-  const so = await prisma.$transaction(async (tx) => {
+  const so = await prisma.$transaction(async (tx: any) => {
     const order = await tx.salesOrder.create({
       data: {
         number: soNumber,
@@ -141,7 +141,7 @@ router.post('/:id/convert-to-so', async (req, res) => {
         currency: quote.currency,
         notes: quote.notes ?? undefined,
         rows: {
-          create: quote.rows.map(r => ({
+          create: quote.rows.map((r: any) => ({
             variantId: r.variantId ?? undefined,
             description: r.description ?? undefined,
             qtyOrdered: Number(r.qty),

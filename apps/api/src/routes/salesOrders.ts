@@ -127,7 +127,7 @@ router.post('/:id/fulfill', async (req, res) => {
     rowId: r.id, qty: Number(r.qtyOrdered) - Number(r.qtyFulfilled || 0), isReturn: false,
   }));
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     for (const item of rowsToFulfill) {
       if (item.qty <= 0) continue;
       const row = (so.rows as any[]).find((r: any) => r.id === item.rowId);
@@ -142,8 +142,8 @@ router.post('/:id/fulfill', async (req, res) => {
   });
 
   const allRows = await prisma.salesOrderRow.findMany({ where: { orderId: so.id } });
-  const allFulfilled = allRows.every(r => Number(r.qtyFulfilled) >= Number(r.qtyOrdered));
-  const anyFulfilled = allRows.some(r => Number(r.qtyFulfilled) > 0);
+  const allFulfilled = allRows.every((r: any) => Number(r.qtyFulfilled) >= Number(r.qtyOrdered));
+  const anyFulfilled = allRows.some((r: any) => Number(r.qtyFulfilled) > 0);
   const newStatus = allFulfilled ? 'fulfilled' : anyFulfilled ? 'partial' : so.status;
   const updated = await prisma.salesOrder.update({ where: { id: so.id }, data: { status: newStatus }, include });
   res.json(normalizeSo(updated));
@@ -174,8 +174,8 @@ router.get('/:id/returnable-items', async (req, res) => {
   }
 
   const items = (order.rows || [])
-    .filter(r => Number(r.qtyFulfilled) > 0)
-    .map(r => ({
+    .filter((r: any) => Number(r.qtyFulfilled) > 0)
+    .map((r: any) => ({
       soRowId: r.id,
       variantId: r.variantId,
       description: r.description,
@@ -184,7 +184,7 @@ router.get('/:id/returnable-items', async (req, res) => {
       qtyReturnable: Number(r.qtyFulfilled) - (returnedByRow[r.id] || 0),
       unitPrice: r.unitPrice,
     }))
-    .filter(r => r.qtyReturnable > 0);
+    .filter((r: any) => r.qtyReturnable > 0);
 
   res.json(items);
 });

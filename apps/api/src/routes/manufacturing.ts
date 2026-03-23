@@ -92,7 +92,7 @@ router.post('/orders', async (req, res) => {
   const number = data.number || await nextMoNumber();
   const qtyPlanned = data.qtyPlanned ?? data.qty;
 
-  const mo = await prisma.$transaction(async (tx) => {
+  const mo = await prisma.$transaction(async (tx: any) => {
     const created = await tx.manufacturingOrder.create({
       data: {
         number, bomId: data.bomId ?? undefined, productId, variantId: variantId ?? undefined,
@@ -158,7 +158,7 @@ router.post('/orders/:id/produce', async (req, res) => {
 
   const ratio = Number(mo.qtyPlanned) > 0 ? qty / Number(mo.qtyPlanned) : 0;
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     for (const rr of mo.recipeRows) {
       if (rr.variantId && sourceLocId) {
         const consumeQty = Number(rr.qtyPlanned) * ratio;

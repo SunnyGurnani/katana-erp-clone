@@ -252,7 +252,7 @@ router.post('/:provider/sync/inventory', async (req, res) => {
       if (locationId) invWhere.locationId = locationId;
 
       const invLevels = await prisma.inventoryLevel.findMany({ where: invWhere });
-      const totalQty = invLevels.reduce((sum, l) => sum + Number(l.onHand), 0);
+      const totalQty = invLevels.reduce((sum: number, l: any) => sum + Number(l.onHand), 0);
 
       // In production: PATCH to Shopify inventory_levels/set.json or WC products/:id
       const log = await logSync(

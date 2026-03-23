@@ -50,7 +50,7 @@ router.post('/adjustments', async (req: AuthRequest, res) => {
   }).parse({ ...body, qtyDelta: typeof rawQty === 'number' ? rawQty : Number(rawQty) });
 
   let created: any;
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     await adjustStock(tx, data.variantId, data.locationId, data.qtyDelta, 'adjustment', {
       referenceType: 'stock_adjustment', note: data.reason,
     });
@@ -118,7 +118,7 @@ router.post('/transfers', async (req: AuthRequest, res) => {
     toLocationId: z.string().uuid(), qty: z.number().positive(), note: z.string().nullish(),
   }).parse(req.body);
 
-  const transfer = await prisma.$transaction(async (tx) => {
+  const transfer = await prisma.$transaction(async (tx: any) => {
     await adjustStock(tx, data.variantId, data.fromLocationId, -data.qty, 'transfer_out', { referenceType: 'stock_transfer', note: data.note ?? undefined });
     await adjustStock(tx, data.variantId, data.toLocationId, data.qty, 'transfer_in', { referenceType: 'stock_transfer', note: data.note ?? undefined });
     return tx.stockTransfer.create({
@@ -173,7 +173,7 @@ router.post('/stocktakes/:id/rows', async (req, res) => {
 async function commitStocktake(req: any, res: any) {
   const st = await prisma.stocktake.findUnique({ where: { id: req.params.id }, include: { rows: true } });
   if (!st || st.status !== 'draft') return res.status(422).json({ error: 'Stocktake is not in draft' });
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     for (const row of st.rows) {
       if (Number(row.variance) !== 0) {
         await adjustStock(tx, row.variantId, st.locationId, Number(row.variance), 'stocktake_adjustment', {
