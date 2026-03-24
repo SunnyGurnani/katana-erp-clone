@@ -2,36 +2,37 @@
 
 A production-structured manufacturing ERP inspired by Katana MRP, built with:
 
-- **Backend:** Express.js + Prisma 5 + PostgreSQL + TypeScript
+- **Backend:** Express.js + Prisma 5 + MySQL 8 + TypeScript
 - **Frontend:** Next.js 14 + Tailwind CSS + TanStack Query
 - **Monorepo:** Turborepo + pnpm workspaces
 - **Auth:** JWT (access + refresh tokens)
 
-## Quick Start
+## 🚀 Easy Run (Windows & MacBook)
 
-### With Docker
+Run these commands to get started immediately:
 
 ```bash
-cp .env.example .env
-docker compose up -d --build
+git pull origin master
+pnpm install
+docker compose -f docker-compose.local.yml up --build
 ```
 
 Then visit:
-- Frontend: http://localhost:3000
-- API Docs: http://localhost:8000/docs
-- Health: http://localhost:8000/health
+- **Frontend:** http://localhost:3000
+- **API Docs:** http://localhost:8000/docs
+- **Health:** http://localhost:8000/health
 
-### Local Development
+## 🛠 Local Development (Without Docker)
 
-**Prerequisites:** Node 20, pnpm 9, PostgreSQL 16
+**Prerequisites:** Node 20, pnpm 9, MySQL 8
 
 ```bash
 cp .env.example .env
-# Edit .env with your DATABASE_URL
+# Edit .env with your DATABASE_URL (mysql://...)
 
 pnpm install
 pnpm db:generate
-pnpm db:migrate     # or: pnpm --filter @forge-erp/api db:push
+pnpm db:migrate
 pnpm db:seed
 pnpm run dev
 ```
