@@ -21,7 +21,7 @@ router.get('/', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
   const where: any = {};
   if (req.query.productId) where.productId = req.query.productId;
-  if (req.query.search) where.name = { contains: req.query.search as string, mode: 'insensitive' };
+  if (req.query.search) where.name = { contains: req.query.search as string };
   const [items, total] = await Promise.all([
     prisma.variant.findMany({ where, skip, take, orderBy: { name: 'asc' }, include: { product: { select: { id: true, name: true } } } }),
     prisma.variant.count({ where }),

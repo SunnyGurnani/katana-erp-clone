@@ -33,7 +33,7 @@ const include = { variants: true };
 router.get('/', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
   const where = req.query.search
-    ? { name: { contains: req.query.search as string, mode: 'insensitive' as const } }
+    ? { name: { contains: req.query.search as string } }
     : {};
   const [items, total] = await Promise.all([
     prisma.product.findMany({ where, skip, take, orderBy: { name: 'asc' }, include }),

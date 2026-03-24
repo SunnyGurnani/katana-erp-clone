@@ -15,7 +15,7 @@ const schema = z.object({
 
 router.get('/', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
-  const where = req.query.search ? { name: { contains: req.query.search as string, mode: 'insensitive' as const } } : {};
+  const where = req.query.search ? { name: { contains: req.query.search as string } } : {};
   const [items, total] = await Promise.all([prisma.supplier.findMany({ where, skip, take, orderBy: { name: 'asc' } }), prisma.supplier.count({ where })]);
   res.json(paginated(items, total, page, pageSize));
 });

@@ -17,8 +17,8 @@ router.get('/', async (req, res) => {
   }
   if (req.query.search) {
     where.OR = [
-      { fullName: { contains: req.query.search as string, mode: 'insensitive' } },
-      { email: { contains: req.query.search as string, mode: 'insensitive' } },
+      { fullName: { contains: req.query.search as string } },
+      { email: { contains: req.query.search as string } },
     ];
   }
 

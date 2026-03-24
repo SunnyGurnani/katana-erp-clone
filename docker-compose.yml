@@ -1,17 +1,18 @@
 version: "3.9"
 
 services:
-  postgres:
-    image: postgres:16-alpine
+  mysql:
+    image: mysql:8
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER:-forge}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-forge_secret}
-      POSTGRES_DB: ${DB_NAME:-forgeerp}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-forge_secret}
+      MYSQL_USER: ${DB_USER:-forge}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-forge_secret}
+      MYSQL_DATABASE: ${DB_NAME:-forgeerp}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mysqldata:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-forge} -d ${DB_NAME:-forgeerp}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USER:-forge}", "-p${DB_PASSWORD:-forge_secret}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -42,7 +43,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-forge}:${DB_PASSWORD:-forge_secret}@postgres:5432/${DB_NAME:-forgeerp}
+      DATABASE_URL: mysql://${DB_USER:-forge}:${DB_PASSWORD:-forge_secret}@mysql:3306/${DB_NAME:-forgeerp}
       MINIO_ENDPOINT: minio
       MINIO_PORT: "9000"
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
@@ -52,7 +53,7 @@ services:
       NODE_ENV: production
       PORT: "4000"
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
       minio:
         condition: service_healthy
@@ -101,7 +102,7 @@ services:
       - internal
 
 volumes:
-  pgdata:
+  mysqldata:
   minio_data:
   certbot_data:
 

@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { ChildTable, ColumnDef, FieldDef } from "@/components/shared/ChildTable";
-import { ArrowLeft, Plus, PackageCheck, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, PackageCheck, Save, Trash2, FileDown, X } from "lucide-react";
 import Link from "next/link";
 
 const addlCostCols: ColumnDef[] = [
@@ -64,6 +64,19 @@ export default function PODetailPage() {
     onError: () => addToast("Error deleting PO", "error"),
   });
 
+  const deleteRow = useMutation({
+    mutationFn: (rowId: string) => api.delete(`/purchase-order-rows/${rowId}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["po", id] }); addToast("Row removed", "success"); },
+    onError: () => addToast("Error removing row", "error"),
+  });
+
+  function downloadPdf() {
+    api.get(`/pdf/purchase-order/${id}`, { responseType: "blob" }).then(res => {
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a"); a.href = url; a.download = `PO-${po?.poNumber || id}.pdf`; a.click(); URL.revokeObjectURL(url);
+    }).catch(() => addToast("Error downloading PDF", "error"));
+  }
+
   if (isLoading) return <div className="p-6"><table className="table"><tbody><SkeletonRows rows={6} /></tbody></table></div>;
   if (!po) return <div className="p-6 text-gray-500">PO not found.</div>;
 
@@ -83,6 +96,7 @@ export default function PODetailPage() {
           <p className="text-sm text-gray-500">{po.supplier?.name || "No supplier"}</p>
         </div>
         <StatusBadge status={po.status} />
+        <button className="btn btn-ghost text-sm" onClick={downloadPdf}><FileDown size={14} />PDF</button>
         <button className="btn btn-ghost text-sm" onClick={openEditModal}><Save size={14} />Edit</button>
         <button className="btn btn-ghost text-sm text-red-600" onClick={() => { if (window.confirm("Delete this purchase order?")) deletePO.mutate(); }}><Trash2 size={14} />Delete</button>
         {canReceive && <button className="btn btn-primary" onClick={() => setReceiveOpen(true)}><PackageCheck size={15} />Receive</button>}
@@ -103,7 +117,7 @@ export default function PODetailPage() {
           )}
         </div>
         <table className="table">
-          <thead><tr><th>SKU</th><th>Description</th><th>Qty</th><th>Unit Cost</th><th>Received</th><th>Line Total</th></tr></thead>
+          <thead><tr><th>SKU</th><th>Description</th><th>Qty</th><th>Unit Cost</th><th>Received</th><th>Line Total</th><th></th></tr></thead>
           <tbody>
             {(po.rows || []).map((r: any) => (
               <tr key={r.id}>
@@ -113,9 +127,10 @@ export default function PODetailPage() {
                 <td>${Number(r.unitCost || 0).toFixed(2)}</td>
                 <td>{r.receivedQty || 0}</td>
                 <td>${(Number(r.qty) * Number(r.unitCost || 0)).toFixed(2)}</td>
+                <td>{["draft", "sent"].includes(po.status) && <button className="icon-btn text-red-400 hover:text-red-600" onClick={(e) => { e.stopPropagation(); if (window.confirm("Remove this row?")) deleteRow.mutate(r.id); }}><X size={14} /></button>}</td>
               </tr>
             ))}
-            {!po.rows?.length && <tr><td colSpan={6} className="text-center text-gray-400 py-8">No line items yet</td></tr>}
+            {!po.rows?.length && <tr><td colSpan={7} className="text-center text-gray-400 py-8">No line items yet</td></tr>}
           </tbody>
         </table>
       </div>

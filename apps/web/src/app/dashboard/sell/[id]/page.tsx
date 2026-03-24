@@ -7,7 +7,7 @@ import { SkeletonRows } from "@/components/ui/Skeleton";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { ArrowLeft, Plus, Truck, Trash2, Copy, Save } from "lucide-react";
+import { ArrowLeft, Plus, Truck, Trash2, Copy, Save, FileDown, X } from "lucide-react";
 import Link from "next/link";
 
 export default function SODetailPage() {
@@ -58,6 +58,19 @@ export default function SODetailPage() {
     onError: () => addToast("Error duplicating SO", "error"),
   });
 
+  const deleteRow = useMutation({
+    mutationFn: (rowId: string) => api.delete(`/sales-order-rows/${rowId}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["so", id] }); addToast("Row removed", "success"); },
+    onError: () => addToast("Error removing row", "error"),
+  });
+
+  function downloadPdf() {
+    api.get(`/pdf/sales-order/${id}`, { responseType: "blob" }).then(res => {
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a"); a.href = url; a.download = `SO-${so?.soNumber || id}.pdf`; a.click(); URL.revokeObjectURL(url);
+    }).catch(() => addToast("Error downloading PDF", "error"));
+  }
+
   if (isLoading) return <div className="p-6"><table className="table"><tbody><SkeletonRows rows={6} /></tbody></table></div>;
   if (!so) return <div className="p-6 text-gray-500">SO not found.</div>;
 
@@ -77,6 +90,7 @@ export default function SODetailPage() {
           <p className="text-sm text-gray-500">{so.customer?.name || "No customer"}</p>
         </div>
         <StatusBadge status={so.status} />
+        <button className="btn btn-ghost text-sm" onClick={downloadPdf}><FileDown size={14} />PDF</button>
         <button className="btn btn-ghost text-sm" onClick={openEditModal}><Save size={14} />Edit</button>
         <button className="btn btn-ghost text-sm" onClick={() => duplicateSO.mutate()}><Copy size={14} />Duplicate</button>
         <button className="btn btn-ghost text-sm text-red-600" onClick={() => { if (window.confirm("Delete this sales order?")) deleteSO.mutate(); }}><Trash2 size={14} />Delete</button>
@@ -98,7 +112,7 @@ export default function SODetailPage() {
           )}
         </div>
         <table className="table">
-          <thead><tr><th>SKU</th><th>Product</th><th>Qty</th><th>Sale Price</th><th>Fulfilled</th><th>Line Total</th></tr></thead>
+          <thead><tr><th>SKU</th><th>Product</th><th>Qty</th><th>Sale Price</th><th>Fulfilled</th><th>Line Total</th><th></th></tr></thead>
           <tbody>
             {(so.rows || []).map((r: any) => (
               <tr key={r.id}>
@@ -108,9 +122,10 @@ export default function SODetailPage() {
                 <td>${Number(r.salePrice || 0).toFixed(2)}</td>
                 <td>{r.fulfilledQty || 0}</td>
                 <td>${(Number(r.qty) * Number(r.salePrice || 0)).toFixed(2)}</td>
+                <td>{["draft", "confirmed"].includes(so.status) && <button className="icon-btn text-red-400 hover:text-red-600" onClick={(e) => { e.stopPropagation(); if (window.confirm("Remove this row?")) deleteRow.mutate(r.id); }}><X size={14} /></button>}</td>
               </tr>
             ))}
-            {!so.rows?.length && <tr><td colSpan={6} className="text-center text-gray-400 py-8">No line items yet</td></tr>}
+            {!so.rows?.length && <tr><td colSpan={7} className="text-center text-gray-400 py-8">No line items yet</td></tr>}
           </tbody>
         </table>
       </div>

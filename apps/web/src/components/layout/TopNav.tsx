@@ -14,6 +14,7 @@ const navItems = [
   { href: "/dashboard/plan", label: "Plan", icon: Calendar },
   { href: "/dashboard/insights", label: "Insights", icon: BarChart3 },
   { href: "/dashboard/items", label: "Items", icon: Grid3X3 },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 const createItems = [

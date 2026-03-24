@@ -1,19 +1,13 @@
 FROM node:20-alpine AS base
 RUN npm install -g pnpm@9
 
-FROM base AS deps
-WORKDIR /app
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
-COPY apps/api/package.json ./apps/api/
-COPY packages/types/package.json ./packages/types/
-RUN pnpm install --frozen-lockfile || pnpm install
-
 FROM base AS build
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
-COPY --from=deps /app/packages/types/node_modules ./packages/types/node_modules
+# Copy everything first to ensure pnpm workspace is fully intact
 COPY . .
+# Install all dependencies
+RUN pnpm install --frozen-lockfile || pnpm install
+# Generate Prisma Client
 RUN cd apps/api && npx prisma generate
 
 FROM base AS runner

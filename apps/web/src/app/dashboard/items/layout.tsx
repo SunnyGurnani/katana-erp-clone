@@ -4,6 +4,7 @@ const tabs = [
   { label: "Products", href: "/dashboard/items" },
   { label: "Materials", href: "/dashboard/items/materials" },
   { label: "Services", href: "/dashboard/items/services" },
+  { label: "Locations", href: "/dashboard/items/locations" },
 ];
 
 export default function ItemsLayout({ children }: { children: React.ReactNode }) {
