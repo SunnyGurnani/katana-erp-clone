@@ -31,10 +31,10 @@ cp .env.example .env
 # Edit .env with your DATABASE_URL (postgresql://...)
 
 pnpm install
-pnpm db:generate
-pnpm db:migrate
-pnpm db:seed
-pnpm run dev
+pnpm db:generate    # Regenerate Prisma Client
+pnpm db:push        # Push schema to local Postgres
+pnpm db:seed        # Seed demo data
+pnpm run dev        # Start both API + web
 ```
 
 ## Demo Credentials
