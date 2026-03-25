@@ -10,7 +10,7 @@ import { ActionMenu } from "@/components/shared/ActionMenu";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { Pencil, Trash2 } from "lucide-react";
 
-const blank = { name: "", sku: "", unit: "pcs", unitCost: "", reorderPoint: "" };
+const blank = { name: "", sku: "", unit: "pcs", unitCost: "", reorderPoint: "", trackLots: false, trackExpiry: false };
 
 export default function MaterialsPage() {
   const qc = useQueryClient();
@@ -33,7 +33,19 @@ export default function MaterialsPage() {
   });
 
   function openNew() { setForm({ ...blank, id: "" }); setOpen(true); }
-  function openEdit(m: any) { setForm({ id: m.id, name: m.name, sku: m.sku || "", unit: m.unit || "pcs", unitCost: m.unitCost || "", reorderPoint: m.reorderPoint || "" }); setOpen(true); }
+  function openEdit(m: any) {
+    setForm({
+      id: m.id,
+      name: m.name,
+      sku: m.sku || "",
+      unit: m.unit || "pcs",
+      unitCost: m.unitCost || "",
+      reorderPoint: m.reorderPoint || "",
+      trackLots: !!m.trackLots,
+      trackExpiry: !!m.trackExpiry,
+    });
+    setOpen(true);
+  }
 
   const columns: Column[] = [
     { key: "name", header: "Name", sortable: true, render: (r: any) => <span className="font-medium">{r.name}</span> },
@@ -64,6 +76,14 @@ export default function MaterialsPage() {
           <div><label className="label">Unit</label><input className="input" value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} /></div>
           <div><label className="label">Unit Cost</label><input className="input" type="number" value={form.unitCost} onChange={e => setForm(f => ({ ...f, unitCost: e.target.value }))} /></div>
           <div><label className="label">Reorder Point</label><input className="input" type="number" value={form.reorderPoint} onChange={e => setForm(f => ({ ...f, reorderPoint: e.target.value }))} /></div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={!!form.trackLots} onChange={e => setForm(f => ({ ...f, trackLots: e.target.checked }))} />
+            Enable lot number tracking
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={!!form.trackExpiry} onChange={e => setForm(f => ({ ...f, trackExpiry: e.target.checked }))} />
+            Enable expiry date tracking
+          </label>
         </div>
         <div className="flex justify-end gap-2 mt-5">
           <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button>

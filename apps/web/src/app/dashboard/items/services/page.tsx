@@ -10,7 +10,7 @@ import { useToast } from "@/components/ui/Toast";
 import { ActionMenu } from "@/components/shared/ActionMenu";
 import { Pencil, Trash2 } from "lucide-react";
 
-const blank = { name: "", sku: "", description: "", price: "" };
+const blank = { name: "", sku: "", description: "", price: "", trackLots: false, trackExpiry: false };
 
 export default function ServicesPage() {
   const qc = useQueryClient();
@@ -33,7 +33,18 @@ export default function ServicesPage() {
   });
 
   function openNew() { setForm({ ...blank, id: "" }); setOpen(true); }
-  function openEdit(s: any) { setForm({ id: s.id, name: s.name, sku: s.sku || "", description: s.description || "", price: s.price || "" }); setOpen(true); }
+  function openEdit(s: any) {
+    setForm({
+      id: s.id,
+      name: s.name,
+      sku: s.sku || "",
+      description: s.description || "",
+      price: s.price || "",
+      trackLots: !!s.trackLots,
+      trackExpiry: !!s.trackExpiry,
+    });
+    setOpen(true);
+  }
 
   const columns: Column[] = [
     { key: "name", header: "Name", sortable: true, render: (r: any) => <span className="font-medium">{r.name}</span> },
@@ -64,6 +75,14 @@ export default function ServicesPage() {
           <div><label className="label">SKU</label><input className="input" value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} /></div>
           <div><label className="label">Description</label><input className="input" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
           <div><label className="label">Price</label><input className="input" type="number" step="0.01" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} /></div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={!!form.trackLots} onChange={e => setForm(f => ({ ...f, trackLots: e.target.checked }))} />
+            Enable lot number tracking
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={!!form.trackExpiry} onChange={e => setForm(f => ({ ...f, trackExpiry: e.target.checked }))} />
+            Enable expiry date tracking
+          </label>
         </div>
         <div className="flex justify-end gap-2 mt-5">
           <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button>

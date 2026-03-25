@@ -14,6 +14,8 @@ const schema = z.object({
   category: z.string().nullish(),
   unitOfMeasure: z.string().default('pcs'),
   isActive: z.boolean().default(true),
+  trackLots: z.boolean().optional(),
+  trackExpiry: z.boolean().optional(),
   purchasePrice: z.coerce.number().nullish(),
   reorderPoint: z.coerce.number().nullish(),
   leadTimeDays: z.number().int().nullish(),

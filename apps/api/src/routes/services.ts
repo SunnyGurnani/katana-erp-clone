@@ -14,6 +14,8 @@ const schema = z.object({
   price: z.coerce.number().nullish(),
   taxRateId: z.string().uuid().nullish(),
   isActive: z.boolean().default(true),
+  trackLots: z.boolean().optional(),
+  trackExpiry: z.boolean().optional(),
 });
 
 router.get('/', async (req, res) => {
