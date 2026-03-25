@@ -12,7 +12,7 @@ RUN cd apps/api && npx prisma generate
 
 FROM base AS runner
 WORKDIR /app
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl openssl
 ENV NODE_ENV=production
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/api ./apps/api

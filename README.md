@@ -105,3 +105,69 @@ pnpm db:migrate       # Run migrations (production)
 pnpm db:seed          # Seed demo data (30+ records)
 pnpm build            # Build all packages
 ```
+
+## 🐳 Docker Production Setup
+
+Run all services (API, Web, MySQL, MinIO, Nginx) via Docker Compose:
+
+```bash
+docker compose up -d --build
+```
+
+Then visit:
+- **Frontend:** http://localhost (port 80 via Nginx)
+- **API Docs:** http://localhost/api/docs
+
+### Architecture
+
+```
+nginx (port 80/443)
+├── → web  (Next.js, port 3000)
+└── → api  (Express, port 4000)
+    ├── mysql  (port 3306, internal)
+    └── minio  (port 9000, internal)
+```
+
+### Environment Variables
+
+Copy `.env.example` to `.env` and configure before building:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `DB_USER` | `forge` | MySQL user |
+| `DB_PASSWORD` | `forge_secret` | MySQL password |
+| `DB_NAME` | `forgeerp` | MySQL database name |
+| `JWT_SECRET` | — | Secret key for JWT signing |
+| `MINIO_ROOT_USER` | `minioadmin` | MinIO admin username |
+| `MINIO_ROOT_PASSWORD` | `minioadmin123` | MinIO admin password |
+| `PUBLIC_API_URL` | `http://localhost` | Public-facing API base URL |
+
+## 🔧 Resolved Docker Issues
+
+### Web — `Cannot find module '/app/server.js'`
+
+Next.js standalone mode in a monorepo preserves the internal directory structure inside the container. The server entry point lives at `apps/web/server.js`, not at the container root. Fixed in `apps/web/Dockerfile`:
+
+```dockerfile
+# Before
+CMD ["node", "server.js"]
+
+# After (correct path in monorepo standalone output)
+CMD ["node", "apps/web/server.js"]
+```
+
+### API — Prisma OpenSSL / JSON parse error
+
+Prisma's Rust Query Engine on `node:20-alpine` (musl libc) requires `openssl` to be explicitly installed. Without it the engine fails silently and Prisma surfaces a cryptic `SyntaxError: Unexpected token 'E'` JSON parse error. Fixed in `apps/api/Dockerfile`:
+
+```dockerfile
+# Before
+RUN apk add --no-cache curl
+
+# After (openssl required by Prisma Query Engine on Alpine)
+RUN apk add --no-cache curl openssl
+```
