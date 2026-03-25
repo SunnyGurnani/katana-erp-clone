@@ -1,7 +1,7 @@
 import { SubTabs } from "@/components/layout/SubTabs";
 
 const tabs = [
-  { label: "Products", href: "/dashboard/items" },
+  { label: "Products", href: "/dashboard/items/products" },
   { label: "Materials", href: "/dashboard/items/materials" },
   { label: "Services", href: "/dashboard/items/services" },
   { label: "Locations", href: "/dashboard/items/locations" },

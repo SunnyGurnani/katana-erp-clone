@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { Wrench, CheckCircle, Clock, DollarSign } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 
 export default function ManufacturingInsightsPage() {
   const [from, setFrom] = useState("");
@@ -48,26 +49,59 @@ export default function ManufacturingInsightsPage() {
           </div>
 
           {data.costOverview && (
-            <div className="card p-4">
-              <h3 className="font-semibold text-sm text-gray-800 mb-3">Cost Breakdown</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div><p className="text-gray-500 text-xs">Material Cost</p><p className="font-semibold">${Number(data.costOverview.materialCost).toFixed(2)}</p></div>
-                <div><p className="text-gray-500 text-xs">Labor Cost</p><p className="font-semibold">${Number(data.costOverview.laborCost).toFixed(2)}</p></div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="card p-4">
+                <h3 className="font-semibold text-sm text-gray-800 mb-3">Cost Breakdown</h3>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Material Cost', value: Number(data.costOverview.materialCost), fill: '#2E7D32' },
+                        { name: 'Labor Cost', value: Number(data.costOverview.laborCost), fill: '#1565C0' },
+                      ]}
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={60}
+                      dataKey="value"
+                      label={({ name, value }) => `${name}: $${value.toFixed(2)}`}
+                    />
+                    <Tooltip formatter={(value) => `$${Number(value).toFixed(2)}`} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="card p-4">
+                <h3 className="font-semibold text-sm text-gray-800 mb-3">Cost Details</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Material Cost</span>
+                    <span className="font-semibold">${Number(data.costOverview.materialCost).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Labor Cost</span>
+                    <span className="font-semibold">${Number(data.costOverview.laborCost).toFixed(2)}</span>
+                  </div>
+                  <hr />
+                  <div className="flex justify-between text-lg">
+                    <span className="font-semibold">Total Cost</span>
+                    <span className="font-bold">${Number(data.costOverview.totalCost).toFixed(2)}</span>
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
           {data.productionByMonth?.length > 0 && (
-            <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200"><h2 className="font-semibold text-sm text-gray-800">Production by Month</h2></div>
-              <table className="table">
-                <thead><tr><th>Month</th><th>MOs</th></tr></thead>
-                <tbody>
-                  {data.productionByMonth.map((m: any) => (
-                    <tr key={m.month}><td>{m.month}</td><td className="font-semibold">{m.count}</td></tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="border border-gray-200 rounded-lg bg-white p-4">
+              <h2 className="font-semibold text-sm text-gray-800 mb-4">Production Volume Trend</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={data.productionByMonth}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip formatter={(value) => [value, "Manufacturing Orders"]} />
+                  <Bar dataKey="count" fill="#7B1FA2" />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
         </>

@@ -22,27 +22,40 @@ const statuses = [
 ];
 
 function getDeliveryStatus(so: any): string {
-  if (so.status === "fulfilled") return "done";
+  if (so.status === "fulfilled") return "delivered";
   if (so.status === "cancelled") return "cancelled";
-  return "not_shipped";
+  if (so.status === "partial") return "packed";
+  return "unfulfilled";
 }
 
 function getProductionStatus(so: any): string {
-  if (so.status === "fulfilled" || so.status === "done") return "done";
-  if (so.status === "in_progress") return "in_progress";
+  if (so.status === "fulfilled") return "done";
+  if (so.status === "cancelled") return "not_applicable";
+  if (so.status === "partial") return "wip";
+  // Check if any rows have manufacturing requirements
+  const hasManufacturedItems = so.rows?.some((row: any) => row.product?.isManufactured);
+  if (!hasManufacturedItems) return "not_applicable";
   return "not_started";
 }
 
 function getSalesItemsStatus(so: any): string {
-  if (so.status === "fulfilled") return "in_stock";
+  if (so.status === "fulfilled") return "done";
+  if (so.status === "cancelled") return "cancelled";
   if (so.status === "partial") return "partial";
-  if (!so.rows || so.rows.length === 0) return "not_applicable";
-  return "in_stock";
+  if (!so.rows || so.rows.length === 0) return "not_started";
+  return "in_progress";
 }
 
 function getIngredientsStatus(so: any): string {
-  if (so.status === "fulfilled" || so.status === "done") return "in_stock";
+  if (so.status === "fulfilled") return "in_stock";
   if (so.status === "cancelled") return "not_applicable";
+  
+  // Check ingredient availability for manufactured items
+  const manufacturedRows = so.rows?.filter((row: any) => row.product?.isManufactured) || [];
+  if (manufacturedRows.length === 0) return "not_applicable";
+  
+  // For now, assume ingredients are available if SO is not cancelled
+  // In a real implementation, this would check actual ingredient inventory
   return "in_stock";
 }
 
@@ -99,10 +112,47 @@ export default function SalesOrdersPage() {
       const overdue = d < new Date() && !["fulfilled", "cancelled"].includes(r.status);
       return <span className={overdue ? "text-red-600 font-medium" : ""}>{d.toISOString().slice(0, 10)}</span>;
     }},
-    { key: "salesItems", header: "Sales items", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getSalesItemsStatus(r)} /> },
-    { key: "ingredients", header: "Ingredients", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getIngredientsStatus(r)} /> },
-    { key: "production", header: "Production", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getProductionStatus(r)} /> },
-    { key: "delivery", header: "Delivery", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getDeliveryStatus(r)} /> },
+    { key: "salesItems", header: "Sales items", isStatus: true, filterable: false, render: (r: any) => {
+      const status = getSalesItemsStatus(r);
+      const labels = {
+        "done": "Done",
+        "cancelled": "Cancelled", 
+        "partial": "Partial",
+        "in_progress": "In Progress",
+        "not_started": "Not Started"
+      };
+      return <StatusCell status={status} label={labels[status as keyof typeof labels] || status} />;
+    }},
+    { key: "ingredients", header: "Ingredients", isStatus: true, filterable: false, render: (r: any) => {
+      const status = getIngredientsStatus(r);
+      const labels = {
+        "in_stock": "Available",
+        "not_applicable": "N/A",
+        "expected": "Expected", 
+        "not_available": "Short"
+      };
+      return <StatusCell status={status} label={labels[status as keyof typeof labels] || status} />;
+    }},
+    { key: "production", header: "Production", isStatus: true, filterable: false, render: (r: any) => {
+      const status = getProductionStatus(r);
+      const labels = {
+        "done": "Complete",
+        "wip": "In Progress",
+        "not_started": "Pending",
+        "not_applicable": "N/A"
+      };
+      return <StatusCell status={status} label={labels[status as keyof typeof labels] || status} />;
+    }},
+    { key: "delivery", header: "Delivery", isStatus: true, filterable: false, render: (r: any) => {
+      const status = getDeliveryStatus(r);
+      const labels = {
+        "delivered": "Delivered",
+        "packed": "Packed", 
+        "unfulfilled": "Unfulfilled",
+        "cancelled": "Cancelled"
+      };
+      return <StatusCell status={status} label={labels[status as keyof typeof labels] || status} />;
+    }},
     { key: "actions", header: "", filterable: false, render: (r: any) => (
       <ActionMenu actions={[
         { label: "Duplicate", icon: <Copy size={13} />, onClick: () => duplicateSO.mutate(r.id) },

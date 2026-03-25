@@ -61,7 +61,7 @@ router.get('/orders', async (req, res) => {
   const where: any = {};
   if (req.query.status) where.status = req.query.status;
   const [items, total] = await Promise.all([
-    prisma.manufacturingOrder.findMany({ where, include: moInclude, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.manufacturingOrder.findMany({ where, include: moInclude, skip, take, orderBy: { priority: 'asc' } }),
     prisma.manufacturingOrder.count({ where }),
   ]);
   res.json(paginated(items.map(normalizeMo), total, page, pageSize));
@@ -175,6 +175,30 @@ router.post('/orders/:id/produce', async (req, res) => {
   const status = newProduced >= Number(mo.qtyPlanned) ? 'done' : 'in_progress';
   const updated = await prisma.manufacturingOrder.update({ where: { id: mo.id }, data: { qtyProduced: newProduced, status }, include: moInclude });
   res.json(normalizeMo(updated));
+});
+
+// POST /orders/rerank — bulk update MO priorities
+router.post('/orders/rerank', async (req, res) => {
+  const { orderedIds } = z.object({
+    orderedIds: z.array(z.string().uuid()),
+  }).parse(req.body);
+
+  await prisma.$transaction(
+    orderedIds.map((id, index) =>
+      prisma.manufacturingOrder.update({ 
+        where: { id }, 
+        data: { priority: index + 1 } 
+      })
+    )
+  );
+
+  const mos = await prisma.manufacturingOrder.findMany({ 
+    where: { id: { in: orderedIds } }, 
+    include: moInclude,
+    orderBy: { priority: 'asc' }
+  });
+  
+  res.json(mos.map(normalizeMo));
 });
 
 // MO Productions sub-routes

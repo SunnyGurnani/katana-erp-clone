@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { DollarSign, Package, TrendingDown } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 export default function PurchasingInsightsPage() {
   const [from, setFrom] = useState("");
@@ -39,30 +40,46 @@ export default function PurchasingInsightsPage() {
           </div>
 
           {data.topSuppliers?.length > 0 && (
-            <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200"><h2 className="font-semibold text-sm text-gray-800">Top Suppliers</h2></div>
-              <table className="table">
-                <thead><tr><th>Supplier</th><th>PO Count</th></tr></thead>
-                <tbody>
-                  {data.topSuppliers.map((s: any, i: number) => (
-                    <tr key={i}><td className="font-medium">{s.supplierName || "Unknown"}</td><td>{s.poCount}</td></tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="border border-gray-200 rounded-lg bg-white p-4">
+              <h2 className="font-semibold text-sm text-gray-800 mb-4">Top Suppliers by PO Volume</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={data.topSuppliers.slice(0, 5).map((s: any, i: number) => ({
+                      name: s.supplierName || "Unknown",
+                      value: s.poCount,
+                      fill: ['#1565C0', '#7B1FA2', '#2E7D32', '#EF6C00', '#C62828'][i % 5]
+                    }))}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    dataKey="value"
+                    label={({ name, value }) => `${name}: ${value}`}
+                  />
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
           )}
 
           {data.spendByMonth?.length > 0 && (
-            <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200"><h2 className="font-semibold text-sm text-gray-800">Spend by Month</h2></div>
-              <table className="table">
-                <thead><tr><th>Month</th><th>Spend</th></tr></thead>
-                <tbody>
-                  {data.spendByMonth.map((m: any) => (
-                    <tr key={m.month}><td>{m.month}</td><td className="font-semibold">${Number(m.spend).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="border border-gray-200 rounded-lg bg-white p-4">
+              <h2 className="font-semibold text-sm text-gray-800 mb-4">Purchasing Spend Trend</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={data.spendByMonth}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip formatter={(value) => [`$${Number(value).toLocaleString()}`, "Spend"]} />
+                  <Line 
+                    type="monotone" 
+                    dataKey="spend" 
+                    stroke="#EF6C00" 
+                    strokeWidth={2}
+                    dot={{ fill: "#EF6C00", strokeWidth: 2 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           )}
         </>

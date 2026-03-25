@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { DollarSign, ShoppingCart, TrendingUp } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 
 export default function SalesInsightsPage() {
   const [from, setFrom] = useState("");
@@ -50,30 +51,56 @@ export default function SalesInsightsPage() {
           </div>
 
           {data.topCustomers?.length > 0 && (
-            <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200"><h2 className="font-semibold text-sm text-gray-800">Top Customers</h2></div>
-              <table className="table">
-                <thead><tr><th>Customer</th><th>Orders</th></tr></thead>
-                <tbody>
-                  {data.topCustomers.map((c: any, i: number) => (
-                    <tr key={i}><td className="font-medium">{c.customerName || "Unknown"}</td><td>{c.orderCount}</td></tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="border border-gray-200 rounded-lg bg-white p-4">
+                <h2 className="font-semibold text-sm text-gray-800 mb-4">Top Customers</h2>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={data.topCustomers.slice(0, 5)} layout="horizontal">
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" />
+                    <YAxis dataKey="customerName" type="category" width={80} />
+                    <Tooltip />
+                    <Bar dataKey="orderCount" fill="#1565C0" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-200">
+                  <h2 className="font-semibold text-sm text-gray-800">Customer Details</h2>
+                </div>
+                <table className="table">
+                  <thead><tr><th>Customer</th><th>Orders</th></tr></thead>
+                  <tbody>
+                    {data.topCustomers.map((c: any, i: number) => (
+                      <tr key={i}>
+                        <td className="font-medium">{c.customerName || "Unknown"}</td>
+                        <td>{c.orderCount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
           {data.revenueByMonth?.length > 0 && (
-            <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200"><h2 className="font-semibold text-sm text-gray-800">Revenue by Month</h2></div>
-              <table className="table">
-                <thead><tr><th>Month</th><th>Revenue</th></tr></thead>
-                <tbody>
-                  {data.revenueByMonth.map((m: any) => (
-                    <tr key={m.month}><td>{m.month}</td><td className="font-semibold">${Number(m.revenue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="border border-gray-200 rounded-lg bg-white p-4">
+              <h2 className="font-semibold text-sm text-gray-800 mb-4">Revenue Trend</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={data.revenueByMonth}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip formatter={(value) => [`$${Number(value).toLocaleString()}`, "Revenue"]} />
+                  <Line 
+                    type="monotone" 
+                    dataKey="revenue" 
+                    stroke="#2E7D32" 
+                    strokeWidth={2}
+                    dot={{ fill: "#2E7D32", strokeWidth: 2 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           )}
         </>
