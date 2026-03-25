@@ -58,8 +58,9 @@ export default function ProductDetailPage() {
   // Queries
   const { data: product, isLoading } = useQuery({
     queryKey: ["product", id],
-    queryFn: () => api.get(`/products/${id}`).then(r => r.data),
-    onSuccess: (data) => {
+    queryFn: async () => {
+      const res = await api.get(`/products/${id}`);
+      const data = res.data;
       setProductForm({
         name: data.name || "",
         sku: data.sku || "",
@@ -70,7 +71,8 @@ export default function ProductDetailPage() {
         trackLots: !!data.trackLots,
         trackExpiry: !!data.trackExpiry,
       });
-    }
+      return data;
+    },
   });
 
   const { data: boms = [] } = useQuery({

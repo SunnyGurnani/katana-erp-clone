@@ -63,13 +63,8 @@ export default function ReplenishmentPage() {
   const columns: Column[] = [
     { 
       key: "select", 
-      header: (
-        <input 
-          type="checkbox"
-          checked={selectedItems.length === data?.length}
-          onChange={(e) => setSelectedItems(e.target.checked ? (data?.map((item: any) => item.variantId) || []) : [])}
-        />
-      ), 
+      header: "",
+      filterable: false,
       render: (r: any) => (
         <input 
           type="checkbox"

@@ -120,7 +120,7 @@ router.post('/:id/complete', async (req, res) => {
 router.get('/my-tasks', async (req: any, res) => {
   const userId = req.userId; // from auth middleware
   const { page, pageSize, skip, take } = getPagination(req);
-  const where = { assignedToId: userId };
+  const where: any = { assignedToId: userId };
   if (req.query.status) where.status = req.query.status;
   
   const [items, total] = await Promise.all([
