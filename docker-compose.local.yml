@@ -4,20 +4,19 @@ version: "3.9"
 # Access the app at http://localhost
 
 services:
-  mysql:
-    image: mysql:8
+  postgres:
+    image: postgres:15-alpine
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: localdev123
-      MYSQL_USER: forge
-      MYSQL_PASSWORD: localdev123
-      MYSQL_DATABASE: forgeerp
+      POSTGRES_USER: forge
+      POSTGRES_PASSWORD: localdev123
+      POSTGRES_DB: forgeerp
     volumes:
-      - mysqldata_local:/var/lib/mysql
+      - postgres_data_local:/var/lib/postgresql/data
     ports:
-      - "3306:3306"
+      - "5432:5432"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "forge", "-plocaldev123"]
+      test: ["CMD-SHELL", "pg_isready -U forge -d forgeerp"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -50,7 +49,7 @@ services:
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: mysql://forge:localdev123@mysql:3306/forgeerp
+      DATABASE_URL: postgresql://forge:localdev123@postgres:5432/forgeerp?schema=public
       SECRET_KEY: local-dev-secret-key-minimum-32-chars-long-ok
       ACCESS_TOKEN_EXPIRE_MINUTES: "60"
       REFRESH_TOKEN_EXPIRE_DAYS: "30"
@@ -66,7 +65,7 @@ services:
       ALLOWED_ORIGINS: http://localhost,http://localhost:3000
       PUBLIC_API_URL: http://localhost
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
@@ -102,7 +101,7 @@ services:
       - internal
 
 volumes:
-  mysqldata_local:
+  postgres_data_local:
   minio_local:
 
 networks:

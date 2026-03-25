@@ -2,7 +2,7 @@
 
 A production-structured manufacturing ERP inspired by Katana MRP, built with:
 
-- **Backend:** Express.js + Prisma 5 + MySQL 8 + TypeScript
+- **Backend:** Express.js + Prisma 5 + PostgreSQL + TypeScript
 - **Frontend:** Next.js 14 + Tailwind CSS + TanStack Query
 - **Monorepo:** Turborepo + pnpm workspaces
 - **Auth:** JWT (access + refresh tokens)
@@ -24,11 +24,11 @@ Then visit:
 
 ## 🛠 Local Development (Without Docker)
 
-**Prerequisites:** Node 20, pnpm 9, MySQL 8
+**Prerequisites:** Node 20, pnpm 9, PostgreSQL 15
 
 ```bash
 cp .env.example .env
-# Edit .env with your DATABASE_URL (mysql://...)
+# Edit .env with your DATABASE_URL (postgresql://...)
 
 pnpm install
 pnpm db:generate
@@ -108,7 +108,7 @@ pnpm build            # Build all packages
 
 ## 🐳 Docker Production Setup
 
-Run all services (API, Web, MySQL, MinIO, Nginx) via Docker Compose:
+Run all services (API, Web, Postgres, MinIO, Nginx) via Docker Compose:
 
 ```bash
 docker compose up -d --build
@@ -124,7 +124,7 @@ Then visit:
 nginx (port 80/443)
 ├── → web  (Next.js, port 3000)
 └── → api  (Express, port 4000)
-    ├── mysql  (port 3306, internal)
+    ├── postgres (port 5432, internal)
     └── minio  (port 9000, internal)
 ```
 
@@ -138,9 +138,9 @@ cp .env.example .env
 
 | Variable | Default | Description |
 |---|---|---|
-| `DB_USER` | `forge` | MySQL user |
-| `DB_PASSWORD` | `forge_secret` | MySQL password |
-| `DB_NAME` | `forgeerp` | MySQL database name |
+| `DB_USER` | `forge` | PostgreSQL user |
+| `DB_PASSWORD` | `forge_secret` | PostgreSQL password |
+| `DB_NAME` | `forgeerp` | PostgreSQL database name |
 | `JWT_SECRET` | — | Secret key for JWT signing |
 | `MINIO_ROOT_USER` | `minioadmin` | MinIO admin username |
 | `MINIO_ROOT_PASSWORD` | `minioadmin123` | MinIO admin password |
