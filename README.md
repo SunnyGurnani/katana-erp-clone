@@ -37,6 +37,32 @@ pnpm db:seed        # Seed demo data
 pnpm run dev        # Start both API + web
 ```
 
+## 🚢 Backend Deployment (No Docker, PostgreSQL)
+
+Use this when deploying the API directly on a VM/server with PostgreSQL.
+
+**Prerequisites:** Node 20+, pnpm 9+, PostgreSQL 15+
+
+```bash
+cp .env.vm.example .env
+# Set DATABASE_URL to your PostgreSQL instance
+# Set SECRET_KEY and ALLOWED_ORIGINS for your domain
+
+pnpm install --frozen-lockfile
+pnpm deploy:backend
+pnpm start:backend
+```
+
+`pnpm deploy:backend` runs Prisma client generation, builds the API, and applies migrations with `prisma migrate deploy`.
+
+Recommended process manager:
+
+```bash
+pm2 start "pnpm start:backend" --name forge-api
+pm2 save
+pm2 startup
+```
+
 ## Demo Credentials
 
 | Role     | Email                    | Password       |
@@ -103,6 +129,8 @@ pnpm run dev          # Start both API + web in dev mode
 pnpm db:generate      # Regenerate Prisma client
 pnpm db:migrate       # Run migrations (production)
 pnpm db:seed          # Seed demo data (30+ records)
+pnpm deploy:backend   # Build + migrate backend for production
+pnpm start:backend    # Start backend API (compiled)
 pnpm build            # Build all packages
 ```
 

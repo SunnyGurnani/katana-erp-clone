@@ -4,10 +4,14 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
+    "build:backend": "pnpm --filter @forge-erp/api build",
     "lint": "turbo run lint",
     "db:generate": "pnpm --filter @forge-erp/api db:generate",
+    "db:migrate": "pnpm --filter @forge-erp/api db:migrate",
     "db:push": "pnpm --filter @forge-erp/api db:push",
-    "db:seed": "pnpm --filter @forge-erp/api db:seed"
+    "db:seed": "pnpm --filter @forge-erp/api db:seed",
+    "start:backend": "pnpm --filter @forge-erp/api start",
+    "deploy:backend": "pnpm --filter @forge-erp/api db:generate && pnpm --filter @forge-erp/api build && pnpm --filter @forge-erp/api db:migrate"
   },
   "devDependencies": {
     "turbo": "^2.3.3"
