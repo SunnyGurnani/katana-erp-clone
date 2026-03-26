@@ -1,3 +1,10 @@
+/**
+ * Purchase orders: listing, CRUD, line items, and goods receipt.
+ * @openapi
+ * tags:
+ *   - name: PurchaseOrders
+ *     description: Supplier purchase orders and receiving
+ */
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
@@ -30,6 +37,40 @@ function normalizePo(po: any) {
   };
 }
 
+/**
+ * @openapi
+ * /purchase-orders:
+ *   get:
+ *     summary: List purchase orders (paginated)
+ *     tags: [PurchaseOrders]
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema: { type: string }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, minimum: 1 }
+ *       - in: query
+ *         name: pageSize
+ *         schema: { type: integer, minimum: 1, maximum: 250 }
+ *     responses:
+ *       '200':
+ *         description: Paginated normalized POs (poNumber, rows with qty/unitCost)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data: { type: array, items: { type: object } }
+ *                 meta:
+ *                   type: object
+ *                   properties:
+ *                     total: { type: integer }
+ *                     page: { type: integer }
+ *                     pageSize: { type: integer }
+ *                     hasNext: { type: boolean }
+ *                     totalPages: { type: integer }
+ */
 router.get('/', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
   const where: any = {};
@@ -41,6 +82,44 @@ router.get('/', async (req, res) => {
   res.json(paginated(items.map(normalizePo), total, page, pageSize));
 });
 
+/**
+ * @openapi
+ * /purchase-orders:
+ *   post:
+ *     summary: Create a purchase order with optional line rows
+ *     tags: [PurchaseOrders]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               number: { type: string }
+ *               supplierId: { type: string, format: uuid, nullable: true }
+ *               currency: { type: string, default: USD }
+ *               expectedAt: { type: string, nullable: true }
+ *               notes: { type: string, nullable: true }
+ *               locationId: { type: string, format: uuid, nullable: true }
+ *               rows:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     variantId: { type: string, format: uuid, nullable: true }
+ *                     materialId: { type: string, format: uuid, nullable: true }
+ *                     description: { type: string, nullable: true }
+ *                     qtyOrdered: { type: number }
+ *                     qty: { type: number }
+ *                     unitPrice: { type: number, nullable: true }
+ *                     unitCost: { type: number, nullable: true }
+ *     responses:
+ *       '201':
+ *         description: Created PO (normalized)
+ *         content:
+ *           application/json:
+ *             schema: { type: object }
+ */
 router.post('/', async (req, res) => {
   const data = z.object({
     number: z.string().optional(),
@@ -79,6 +158,26 @@ router.post('/', async (req, res) => {
   res.status(201).json(normalizePo(po));
 });
 
+/**
+ * @openapi
+ * /purchase-orders/{id}:
+ *   get:
+ *     summary: Get a purchase order by id
+ *     tags: [PurchaseOrders]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       '200':
+ *         description: Normalized PO
+ *         content:
+ *           application/json:
+ *             schema: { type: object }
+ *       '404':
+ *         description: Not found
+ */
 router.get('/:id', async (req, res) => {
   const po = await prisma.purchaseOrder.findUnique({ where: { id: req.params.id }, include });
   if (!po) return res.status(404).json({ error: 'Not found' });
@@ -102,9 +201,95 @@ async function updatePoById(req: any, res: any) {
   res.json(normalizePo(po));
 }
 
+/**
+ * @openapi
+ * /purchase-orders/{id}:
+ *   put:
+ *     summary: Replace/update purchase order header fields
+ *     tags: [PurchaseOrders]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               supplierId: { type: string, format: uuid, nullable: true }
+ *               status: { type: string, nullable: true }
+ *               currency: { type: string, nullable: true }
+ *               expectedAt: { type: string, nullable: true }
+ *               notes: { type: string, nullable: true }
+ *               locationId: { type: string, format: uuid, nullable: true }
+ *     responses:
+ *       '200':
+ *         description: Updated PO
+ *         content:
+ *           application/json:
+ *             schema: { type: object }
+ *   patch:
+ *     summary: Partially update purchase order header fields
+ *     tags: [PurchaseOrders]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               supplierId: { type: string, format: uuid, nullable: true }
+ *               status: { type: string, nullable: true }
+ *               currency: { type: string, nullable: true }
+ *               expectedAt: { type: string, nullable: true }
+ *               notes: { type: string, nullable: true }
+ *               locationId: { type: string, format: uuid, nullable: true }
+ *     responses:
+ *       '200':
+ *         description: Updated PO
+ *         content:
+ *           application/json:
+ *             schema: { type: object }
+ */
 router.put('/:id', updatePoById);
 router.patch('/:id', updatePoById);
 
+/**
+ * @openapi
+ * /purchase-orders/{id}/rows:
+ *   post:
+ *     summary: Add a line item to a purchase order
+ *     tags: [PurchaseOrders]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               variantId: { type: string, format: uuid, nullable: true }
+ *               materialId: { type: string, format: uuid, nullable: true }
+ *               description: { type: string, nullable: true }
+ *               qty: { type: number, default: 1 }
+ *               unitCost: { type: number, nullable: true }
+ *     responses:
+ *       '201':
+ *         description: Created row
+ *         content:
+ *           application/json:
+ *             schema: { type: object }
+ */
 router.post('/:id/rows', async (req, res) => {
   const data = z.object({
     variantId: z.string().uuid().nullish(), materialId: z.string().uuid().nullish(),
@@ -116,6 +301,43 @@ router.post('/:id/rows', async (req, res) => {
   res.status(201).json({ ...row, qty: row.qtyOrdered, unitCost: row.unitPrice });
 });
 
+/**
+ * @openapi
+ * /purchase-orders/{id}/receive:
+ *   post:
+ *     summary: Receive goods against PO lines (increment stock, update qtyReceived)
+ *     tags: [PurchaseOrders]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               locationId: { type: string, format: uuid }
+ *               rows:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [rowId, receivedQty]
+ *                   properties:
+ *                     rowId: { type: string, format: uuid }
+ *                     receivedQty: { type: number, minimum: 0, exclusiveMinimum: true }
+ *     responses:
+ *       '200':
+ *         description: Updated PO after receipt
+ *         content:
+ *           application/json:
+ *             schema: { type: object }
+ *       '404':
+ *         description: Not found
+ *       '422':
+ *         description: Business rule violation
+ */
 router.post('/:id/receive', async (req, res) => {
   const body = z.object({
     locationId: z.string().uuid().optional(),

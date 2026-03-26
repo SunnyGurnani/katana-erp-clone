@@ -1,3 +1,10 @@
+/**
+ * Sales orders: listing, CRUD, line items, fulfillment, and returnable quantities.
+ * @openapi
+ * tags:
+ *   - name: SalesOrders
+ *     description: Customer sales orders and fulfillment
+ */
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
@@ -30,6 +37,40 @@ function normalizeSo(so: any) {
   };
 }
 
+/**
+ * @openapi
+ * /sales-orders:
+ *   get:
+ *     summary: List sales orders (paginated)
+ *     tags: [SalesOrders]
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema: { type: string }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, minimum: 1 }
+ *       - in: query
+ *         name: pageSize
+ *         schema: { type: integer, minimum: 1, maximum: 250 }
+ *     responses:
+ *       '200':
+ *         description: Paginated normalized sales orders (soNumber, rows with qty/salePrice, etc.)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data: { type: array, items: { type: object } }
+ *                 meta:
+ *                   type: object
+ *                   properties:
+ *                     total: { type: integer }
+ *                     page: { type: integer }
+ *                     pageSize: { type: integer }
+ *                     hasNext: { type: boolean }
+ *                     totalPages: { type: integer }
+ */
 router.get('/', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
   const where: any = {};
@@ -41,6 +82,43 @@ router.get('/', async (req, res) => {
   res.json(paginated(items.map(normalizeSo), total, page, pageSize));
 });
 
+/**
+ * @openapi
+ * /sales-orders:
+ *   post:
+ *     summary: Create a sales order with optional line rows
+ *     tags: [SalesOrders]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               number: { type: string }
+ *               customerId: { type: string, format: uuid, nullable: true }
+ *               currency: { type: string, default: USD }
+ *               dueAt: { type: string, nullable: true }
+ *               notes: { type: string, nullable: true }
+ *               locationId: { type: string, format: uuid, nullable: true }
+ *               rows:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     variantId: { type: string, format: uuid, nullable: true }
+ *                     description: { type: string, nullable: true }
+ *                     qty: { type: number }
+ *                     qtyOrdered: { type: number }
+ *                     salePrice: { type: number, nullable: true }
+ *                     unitPrice: { type: number, nullable: true }
+ *     responses:
+ *       '201':
+ *         description: Created sales order (normalized)
+ *         content:
+ *           application/json:
+ *             schema: { type: object }
+ */
 router.post('/', async (req, res) => {
   const data = z.object({
     number: z.string().optional(),
@@ -78,6 +156,26 @@ router.post('/', async (req, res) => {
   res.status(201).json(normalizeSo(so));
 });
 
+/**
+ * @openapi
+ * /sales-orders/{id}:
+ *   get:
+ *     summary: Get a sales order by id
+ *     tags: [SalesOrders]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       '200':
+ *         description: Normalized sales order
+ *         content:
+ *           application/json:
+ *             schema: { type: object }
+ *       '404':
+ *         description: Not found
+ */
 router.get('/:id', async (req, res) => {
   const so = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include });
   if (!so) return res.status(404).json({ error: 'Not found' });
@@ -101,9 +199,94 @@ async function updateSoById(req: any, res: any) {
   res.json(normalizeSo(so));
 }
 
+/**
+ * @openapi
+ * /sales-orders/{id}:
+ *   put:
+ *     summary: Replace/update sales order header fields
+ *     tags: [SalesOrders]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               customerId: { type: string, format: uuid, nullable: true }
+ *               status: { type: string, nullable: true }
+ *               currency: { type: string, nullable: true }
+ *               dueAt: { type: string, nullable: true }
+ *               notes: { type: string, nullable: true }
+ *               locationId: { type: string, format: uuid, nullable: true }
+ *     responses:
+ *       '200':
+ *         description: Updated sales order
+ *         content:
+ *           application/json:
+ *             schema: { type: object }
+ *   patch:
+ *     summary: Partially update sales order header fields
+ *     tags: [SalesOrders]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               customerId: { type: string, format: uuid, nullable: true }
+ *               status: { type: string, nullable: true }
+ *               currency: { type: string, nullable: true }
+ *               dueAt: { type: string, nullable: true }
+ *               notes: { type: string, nullable: true }
+ *               locationId: { type: string, format: uuid, nullable: true }
+ *     responses:
+ *       '200':
+ *         description: Updated sales order
+ *         content:
+ *           application/json:
+ *             schema: { type: object }
+ */
 router.put('/:id', updateSoById);
 router.patch('/:id', updateSoById);
 
+/**
+ * @openapi
+ * /sales-orders/{id}/rows:
+ *   post:
+ *     summary: Add a line item to a sales order
+ *     tags: [SalesOrders]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               variantId: { type: string, format: uuid, nullable: true }
+ *               description: { type: string, nullable: true }
+ *               qty: { type: number, default: 1 }
+ *               salePrice: { type: number, nullable: true }
+ *     responses:
+ *       '201':
+ *         description: Created row (qty maps from qtyOrdered)
+ *         content:
+ *           application/json:
+ *             schema: { type: object }
+ */
 router.post('/:id/rows', async (req, res) => {
   const data = z.object({
     variantId: z.string().uuid().nullish(), description: z.string().nullish(),
@@ -115,6 +298,44 @@ router.post('/:id/rows', async (req, res) => {
   res.status(201).json({ ...row, qty: row.qtyOrdered, salePrice: row.unitPrice });
 });
 
+/**
+ * @openapi
+ * /sales-orders/{id}/fulfill:
+ *   post:
+ *     summary: Fulfill sales order lines (decrement stock, record fulfillments)
+ *     tags: [SalesOrders]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               locationId: { type: string, format: uuid }
+ *               rows:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [rowId, qty]
+ *                   properties:
+ *                     rowId: { type: string, format: uuid }
+ *                     qty: { type: number, minimum: 0, exclusiveMinimum: true }
+ *                     isReturn: { type: boolean, default: false }
+ *     responses:
+ *       '200':
+ *         description: Updated sales order after fulfillment
+ *         content:
+ *           application/json:
+ *             schema: { type: object }
+ *       '404':
+ *         description: Order not found
+ *       '422':
+ *         description: Business rule violation (e.g. cancelled, no location)
+ */
 router.post('/:id/fulfill', async (req, res) => {
   const body = z.object({
     locationId: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.string().uuid().optional()),
@@ -173,6 +394,37 @@ router.post('/:id/fulfill', async (req, res) => {
 });
 
 // GET /sales_orders/:id/returnable_items — fulfilled rows not yet fully returned
+/**
+ * @openapi
+ * /sales-orders/{id}/returnable-items:
+ *   get:
+ *     summary: List SO rows that can still be returned (fulfilled minus already returned)
+ *     tags: [SalesOrders]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       '200':
+ *         description: Array of returnable line summaries
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   soRowId: { type: string, format: uuid }
+ *                   variantId: { type: string, format: uuid, nullable: true }
+ *                   description: { type: string, nullable: true }
+ *                   qtyFulfilled: { type: number }
+ *                   qtyReturned: { type: number }
+ *                   qtyReturnable: { type: number }
+ *                   unitPrice: { type: number, nullable: true }
+ *       '404':
+ *         description: Not found
+ */
 router.get('/:id/returnable-items', async (req, res) => {
   const order = await prisma.salesOrder.findUnique({
     where: { id: req.params.id },

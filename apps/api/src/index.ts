@@ -92,7 +92,7 @@ const swaggerSpec = swaggerJsdoc({
     },
     security: [{ bearerAuth: [] }],
   },
-  apis: ['./routes/**/*.ts'], // Scan all route files for JSDoc
+  apis: ['./src/routes/**/*.ts'], // Scan all route files for JSDoc
 });
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
