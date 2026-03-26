@@ -1,7 +1,8 @@
 import { SubTabs } from "@/components/layout/SubTabs";
 
 const tabs = [
-  { label: "API Keys & Webhooks", href: "/dashboard/settings" },
+  { label: "API Keys", href: "/dashboard/settings" },
+  { label: "Webhooks", href: "/dashboard/settings/webhooks" },
   { label: "Users", href: "/dashboard/settings/users" },
   { label: "Tax Rates", href: "/dashboard/settings/tax-rates" },
   { label: "Currencies", href: "/dashboard/settings/currencies" },

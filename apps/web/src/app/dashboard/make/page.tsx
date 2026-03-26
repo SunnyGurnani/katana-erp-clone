@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -9,7 +9,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { ActionMenu } from "@/components/shared/ActionMenu";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
@@ -26,10 +26,15 @@ const statuses = [
 
 export default function ManufacturingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const qc = useQueryClient();
   const { addToast } = useToast();
   const [status, setStatus] = useState("");
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("create") === "1") setOpen(true);
+  }, [searchParams]);
   const [bomId, setBomId] = useState("");
   const [qty, setQty] = useState("1");
   const [scheduledAt, setScheduledAt] = useState("");

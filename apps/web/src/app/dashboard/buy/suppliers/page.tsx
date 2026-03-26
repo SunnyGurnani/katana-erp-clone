@@ -7,6 +7,7 @@ import { ListToolbar } from "@/components/layout/ListToolbar";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { Pencil } from "lucide-react";
+import Link from "next/link";
 
 const blank = { name: "", email: "", phone: "", address: "", currency: "USD", leadTimeDays: "" };
 
@@ -28,7 +29,7 @@ export default function SuppliersPage() {
   function openEdit(s: any) { setForm({ id: s.id, name: s.name, email: s.email || "", phone: s.phone || "", address: s.address || "", currency: s.currency || "USD", leadTimeDays: s.leadTimeDays || "" }); setOpen(true); }
 
   const columns: Column[] = [
-    { key: "name", header: "Name", sortable: true, render: (r: any) => <span className="font-medium">{r.name}</span> },
+    { key: "name", header: "Name", sortable: true, render: (r: any) => <Link href={`/dashboard/buy/suppliers/${r.id}`} className="font-medium text-brand-600 hover:underline">{r.name}</Link> },
     { key: "email", header: "Email", render: (r: any) => r.email || "—" },
     { key: "phone", header: "Phone", render: (r: any) => r.phone || "—" },
     { key: "currency", header: "Currency" },

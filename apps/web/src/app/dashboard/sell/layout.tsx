@@ -1,8 +1,8 @@
 import { SubTabs } from "@/components/layout/SubTabs";
 
 const tabs = [
-  { label: "Quotes", href: "/dashboard/sell/quotes" },
   { label: "Sales orders", href: "/dashboard/sell" },
+  { label: "Quotes", href: "/dashboard/sell/quotes" },
   { label: "Returns", href: "/dashboard/sell/returns" },
   { label: "Price lists", href: "/dashboard/sell/price-lists" },
   { label: "Customers", href: "/dashboard/sell/customers" },

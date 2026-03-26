@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -12,6 +12,8 @@ import { ActionMenu } from "@/components/shared/ActionMenu";
 import { Trash2, ArrowRightCircle } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { customerOptions } from "@/lib/catalogOptions";
+import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 
 const statuses = [
   { label: "All", value: "" },
@@ -25,8 +27,13 @@ const statuses = [
 export default function QuotesPage() {
   const qc = useQueryClient();
   const { addToast } = useToast();
+  const searchParams = useSearchParams();
   const [status, setStatus] = useState("");
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("create") === "1") setOpen(true);
+  }, [searchParams]);
   const [customerId, setCustomerId] = useState("");
   const [validUntil, setValidUntil] = useState("");
   const [notes, setNotes] = useState("");
@@ -57,7 +64,11 @@ export default function QuotesPage() {
   });
 
   const columns: Column[] = [
-    { key: "number", header: "Quote #", sortable: true, render: (r: any) => <span className="font-mono text-sm text-brand-600 font-medium">{r.number}</span> },
+    { key: "number", header: "Quote #", sortable: true, render: (r: any) => (
+      <Link href={`/dashboard/sell/quotes/${r.id}`} className="font-mono text-sm text-brand-600 font-medium hover:underline" onClick={e => e.stopPropagation()}>
+        {r.number}
+      </Link>
+    )},
     { key: "customer", header: "Customer", render: (r: any) => {
       const cust = (customers || []).find((c: any) => c.id === r.customerId);
       return cust?.name || "—";

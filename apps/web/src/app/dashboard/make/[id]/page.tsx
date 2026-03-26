@@ -53,6 +53,7 @@ export default function MODetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [locationId, setLocationId] = useState("");
   const [sourceLocationId, setSourceLocationId] = useState("");
+  const [produceQty, setProduceQty] = useState("1");
   const [editForm, setEditForm] = useState({ status: "", scheduledAt: "", notes: "" });
 
   const { data: mo, isLoading } = useQuery({ queryKey: ["mo", id], queryFn: () => api.get(`/manufacturing/orders/${id}`).then(r => r.data) });
@@ -60,8 +61,8 @@ export default function MODetailPage() {
   const locOpts = useMemo(() => locationOptions(locations), [locations]);
 
   const produce = useMutation({
-    mutationFn: () => api.post(`/manufacturing/orders/${id}/produce`, { locationId, sourceLocationId: sourceLocationId || undefined }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["mo", id] }); addToast("Production complete", "success"); setProduceOpen(false); },
+    mutationFn: () => api.post(`/manufacturing/orders/${id}/produce`, { qty: Number(produceQty) || 1, locationId, sourceLocationId: sourceLocationId || undefined }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["mo", id] }); addToast("Production complete", "success"); setProduceOpen(false); setProduceQty("1"); },
     onError: () => addToast("Error completing production", "error"),
   });
 
@@ -150,6 +151,11 @@ export default function MODetailPage() {
 
       <Modal open={produceOpen} onClose={() => setProduceOpen(false)} title="Complete Production">
         <div className="space-y-3">
+          <div>
+            <label className="label">Qty to produce *</label>
+            <input className="input" type="number" min="1" value={produceQty} onChange={e => setProduceQty(e.target.value)} />
+            <p className="text-xs text-gray-400 mt-1">Remaining: {(mo.qty || 0) - (mo.completedQty || 0)} of {mo.qty}</p>
+          </div>
           <div>
             <label className="label">Output to location *</label>
             <SearchableSelect

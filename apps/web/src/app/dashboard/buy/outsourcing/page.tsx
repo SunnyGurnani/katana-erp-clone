@@ -23,7 +23,7 @@ export default function OutsourcingPage() {
   const columns: Column[] = [
     { key: "poNumber", header: "PO #", render: (r: any) => <span className="text-brand-600 font-medium">{r.po?.number || "—"}</span> },
     { key: "supplier", header: "Supplier", render: (r: any) => r.po?.supplier?.name || "—" },
-    { key: "material", header: "Material", render: (r: any) => r.materialId || r.variantId || "—" },
+    { key: "material", header: "Material", render: (r: any) => r.variant?.sku ? `[${r.variant.sku}] ${r.variant.product?.name || r.variant.material?.name || ""}` : r.material?.name || r.materialId?.slice(0, 8) || "---" },
     { key: "qtyRequired", header: "Qty required", sortable: true, render: (r: any) => r.qtyRequired },
     { key: "qtyConsumed", header: "Qty consumed", render: (r: any) => r.qtyConsumed },
     { key: "status", header: "Status", render: (r: any) => <StatusBadge status={r.po?.status || "draft"} /> },

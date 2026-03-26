@@ -11,7 +11,7 @@ export function SubTabs({ tabs }: { tabs: Tab[] }) {
     <div className="border-b border-gray-200 bg-white px-5">
       <div className="flex -mb-px gap-1">
         {tabs.map(tab => {
-          const active = pathname === tab.href;
+          const active = pathname === tab.href || (pathname.startsWith(tab.href + '/') && !tabs.some(t => t !== tab && pathname.startsWith(t.href) && t.href.length > tab.href.length));
           return (
             <Link
               key={tab.href}

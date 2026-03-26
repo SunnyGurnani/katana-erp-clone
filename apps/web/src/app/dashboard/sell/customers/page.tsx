@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { ActionMenu } from "@/components/shared/ActionMenu";
 import { Pencil, Trash2 } from "lucide-react";
+import Link from "next/link";
 
 const blank = { name: "", email: "", phone: "", address: "", currency: "USD" };
 
@@ -35,7 +36,7 @@ export default function CustomersPage() {
   function openEdit(c: any) { setForm({ id: c.id, name: c.name, email: c.email || "", phone: c.phone || "", address: c.address || "", currency: c.currency || "USD" }); setOpen(true); }
 
   const columns: Column[] = [
-    { key: "name", header: "Name", sortable: true, render: (r: any) => <span className="font-medium">{r.name}</span> },
+    { key: "name", header: "Name", sortable: true, render: (r: any) => <Link href={`/dashboard/sell/customers/${r.id}`} className="font-medium text-brand-600 hover:underline">{r.name}</Link> },
     { key: "code", header: "Code", render: (r: any) => r.code || "—" },
     { key: "email", header: "Email", render: (r: any) => r.email || "—" },
     { key: "phone", header: "Phone", render: (r: any) => r.phone || "—" },

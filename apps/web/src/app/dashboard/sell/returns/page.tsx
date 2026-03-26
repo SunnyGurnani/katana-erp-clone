@@ -28,7 +28,7 @@ const returnRowCols: ColumnDef[] = [
 ];
 
 const returnRowFields: FieldDef[] = [
-  { key: "variantId", label: "Item (variant)", type: "select", options: [], required: true },
+  { key: "variantId", label: "Item (variant)", type: "select", required: true },
   { key: "qty", label: "Qty", type: "number", required: true },
   { key: "unitPrice", label: "Unit Price", type: "number" },
   { key: "returnReason", label: "Reason" },

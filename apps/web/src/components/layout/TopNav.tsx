@@ -18,10 +18,10 @@ const navItems = [
 ];
 
 const createItems = [
-  { label: "Sales order", href: "/dashboard/sell" },
-  { label: "Quote", href: "/dashboard/sell/quotes" },
-  { label: "Purchase order", href: "/dashboard/buy" },
-  { label: "Manufacturing order", href: "/dashboard/make" },
+  { label: "Sales order", href: "/dashboard/sell?create=1" },
+  { label: "Quote", href: "/dashboard/sell/quotes?create=1" },
+  { label: "Purchase order", href: "/dashboard/buy?create=1" },
+  { label: "Manufacturing order", href: "/dashboard/make?create=1" },
 ];
 
 export function TopNav() {

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -9,14 +9,14 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { ActionMenu } from "@/components/shared/ActionMenu";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Copy, Trash2 } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { customerOptions } from "@/lib/catalogOptions";
 
 const statuses = [
-  { label: "Open", value: "" },
+  { label: "Open", value: "open" },
   { label: "Draft", value: "draft" },
   { label: "Partial", value: "partial" },
   { label: "Fulfilled", value: "fulfilled" },
@@ -50,17 +50,22 @@ function getIngredientsStatus(so: any): string {
 
 export default function SalesOrdersPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const qc = useQueryClient();
   const { addToast } = useToast();
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState("open");
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("create") === "1") setOpen(true);
+  }, [searchParams]);
   const [customerId, setCustomerId] = useState("");
   const [dueAt, setDueAt] = useState("");
   const [notes, setNotes] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["sales-orders", status],
-    queryFn: () => api.get("/sales-orders", { params: status ? { status } : {} }).then(r => r.data.data),
+    queryFn: () => api.get("/sales-orders", { params: status && status !== "open" ? { status } : {} }).then(r => r.data.data),
   });
   const { data: customers } = useQuery({ queryKey: ["customers"], queryFn: () => api.get("/customers").then(r => r.data.data) });
   const custOpts = useMemo(() => customerOptions(customers), [customers]);
