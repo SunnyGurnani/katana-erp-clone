@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ShoppingCart, Wrench, Package, Boxes, Grid3X3, Calendar, BarChart3, Plus, Bell, HelpCircle, Puzzle, LogOut, Settings } from "lucide-react";
-import { logout } from "@/lib/auth";
+import { ShoppingCart, Wrench, Package, Boxes, Grid3X3, Calendar, BarChart3, Plus, Bell, HelpCircle, Puzzle, LogOut, Settings, Building2, ChevronDown, Check } from "lucide-react";
+import { logout, getTenants, switchTenant, getCurrentTenantId, TenantInfo } from "@/lib/auth";
 import clsx from "clsx";
 import { useState, useRef, useEffect } from "react";
 
@@ -28,26 +28,80 @@ export function TopNav() {
   const pathname = usePathname();
   const [createOpen, setCreateOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
+  const [tenantOpen, setTenantOpen] = useState(false);
   const createRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
+  const tenantRef = useRef<HTMLDivElement>(null);
+
+  const [tenants, setTenants] = useState<TenantInfo[]>([]);
+  const [currentTenantId, setCurrentTenantIdState] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTenants(getTenants());
+    setCurrentTenantIdState(getCurrentTenantId());
+  }, []);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (createRef.current && !createRef.current.contains(e.target as Node)) setCreateOpen(false);
       if (userRef.current && !userRef.current.contains(e.target as Node)) setUserOpen(false);
+      if (tenantRef.current && !tenantRef.current.contains(e.target as Node)) setTenantOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
+  const currentTenant = tenants.find(t => t.id === currentTenantId) || tenants[0];
+
   return (
     <nav className="bg-navy-800 text-white flex items-center h-[52px] px-5 shrink-0">
-      {/* Left: Logo */}
-      <Link href="/dashboard/sell" className="font-bold text-[15px] mr-7 tracking-tight whitespace-nowrap text-white">
-        ForgeERP
-      </Link>
+      {/* Left: Logo + Tenant switcher */}
+      <div className="flex items-center gap-2 mr-5">
+        <Link href="/dashboard/sell" className="font-bold text-[15px] tracking-tight whitespace-nowrap text-white">
+          ForgeERP
+        </Link>
 
-      {/* Center: Nav items — icons above labels */}
+        {/* Tenant switcher */}
+        {tenants.length > 0 && (
+          <div className="relative" ref={tenantRef}>
+            <button
+              onClick={() => setTenantOpen(!tenantOpen)}
+              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-gray-300 hover:text-white hover:bg-white/10 transition-colors max-w-[140px]"
+            >
+              <Building2 size={12} className="shrink-0 opacity-60" />
+              <span className="truncate">{currentTenant?.name || "Select org"}</span>
+              <ChevronDown size={10} className="shrink-0 opacity-60" />
+            </button>
+            {tenantOpen && (
+              <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[200px] z-50">
+                <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Organizations</div>
+                {tenants.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => { setTenantOpen(false); if (t.id !== currentTenantId) switchTenant(t.id); }}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <Building2 size={14} className="text-gray-400" />
+                    <span className="flex-1 text-left truncate">{t.name}</span>
+                    {t.id === currentTenantId && <Check size={14} className="text-green-600" />}
+                  </button>
+                ))}
+                <div className="border-t border-gray-100 mt-1 pt-1">
+                  <Link
+                    href="/dashboard/settings"
+                    className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-500 hover:bg-gray-50"
+                    onClick={() => setTenantOpen(false)}
+                  >
+                    <Plus size={14} /> New organization
+                  </Link>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Center: Nav items -- icons above labels, Katana-style */}
       <div className="flex items-center gap-1 flex-1 justify-center">
         {navItems.map(item => {
           const active = pathname.startsWith(item.href);
@@ -69,7 +123,7 @@ export function TopNav() {
 
       {/* Right: Create, icons, user avatar */}
       <div className="flex items-center gap-1.5 ml-4">
-        {/* Create button — subtle, white text, no special bg */}
+        {/* Create button */}
         <div className="relative" ref={createRef}>
           <button
             className="flex items-center gap-1.5 text-sm font-medium text-white/90 hover:text-white px-3 py-1.5 rounded-md hover:bg-white/10 transition-colors"
