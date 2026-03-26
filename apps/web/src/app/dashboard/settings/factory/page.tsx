@@ -3,7 +3,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
-import { useState, useEffect } from "react";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { locationOptions } from "@/lib/catalogOptions";
+import { useState, useEffect, useMemo } from "react";
 
 export default function FactorySettingsPage() {
   const qc = useQueryClient();
@@ -26,6 +28,7 @@ export default function FactorySettingsPage() {
   }, [data]);
 
   const { data: locations } = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data.data || r.data) });
+  const locOpts = useMemo(() => locationOptions(locations), [locations]);
 
   const save = useMutation({
     mutationFn: (d: any) => api.put("/factory", d),
@@ -42,11 +45,15 @@ export default function FactorySettingsPage() {
       <div className="card p-5 space-y-4">
         <div><label className="label">Factory Name</label><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Main Factory" /></div>
         <div>
-          <label className="label">Default Location</label>
-          <select className="input" value={form.defaultLocationId} onChange={e => setForm(f => ({ ...f, defaultLocationId: e.target.value }))}>
-            <option value="">— Select —</option>
-            {(locations || []).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
+          <label className="label">Default location</label>
+          <SearchableSelect
+            value={form.defaultLocationId}
+            onChange={(v) => setForm((f) => ({ ...f, defaultLocationId: v }))}
+            options={locOpts}
+            placeholder="Search locations…"
+            emptyOptionLabel="— Select —"
+            aria-label="Default location"
+          />
         </div>
         <div><label className="label">Timezone</label><input className="input" value={form.timezone} onChange={e => setForm(f => ({ ...f, timezone: e.target.value }))} /></div>
         <div className="grid grid-cols-2 gap-4">

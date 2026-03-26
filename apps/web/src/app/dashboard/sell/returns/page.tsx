@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -10,6 +10,8 @@ import { useToast } from "@/components/ui/Toast";
 import { ActionMenu } from "@/components/shared/ActionMenu";
 import { ChildTable, ColumnDef, FieldDef } from "@/components/shared/ChildTable";
 import { Trash2, CheckCircle } from "lucide-react";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { customerOptions, salesOrderOptions, productVariantOptions } from "@/lib/catalogOptions";
 
 const statuses = [
   { label: "All", value: "" },
@@ -26,7 +28,7 @@ const returnRowCols: ColumnDef[] = [
 ];
 
 const returnRowFields: FieldDef[] = [
-  { key: "variantId", label: "Variant ID", required: true },
+  { key: "variantId", label: "Item (variant)", type: "select", options: [], required: true },
   { key: "qty", label: "Qty", type: "number", required: true },
   { key: "unitPrice", label: "Unit Price", type: "number" },
   { key: "returnReason", label: "Reason" },
@@ -48,6 +50,11 @@ export default function ReturnsPage() {
   });
   const { data: customers } = useQuery({ queryKey: ["customers"], queryFn: () => api.get("/customers").then(r => r.data.data) });
   const { data: orders } = useQuery({ queryKey: ["sales-orders"], queryFn: () => api.get("/sales-orders").then(r => r.data.data) });
+  const { data: products } = useQuery({ queryKey: ["products"], queryFn: () => api.get("/products").then(r => r.data.data) });
+
+  const custOpts = useMemo(() => customerOptions(customers), [customers]);
+  const orderOpts = useMemo(() => salesOrderOptions(orders), [orders]);
+  const variantOpts = useMemo(() => productVariantOptions(products), [products]);
 
   const create = useMutation({
     mutationFn: () => api.post("/sales-returns", { customerId: customerId || undefined, orderId: orderId || undefined, notes: notes || undefined }),
@@ -109,6 +116,7 @@ export default function ReturnsPage() {
             columns={returnRowCols}
             formFields={returnRowFields}
             queryKey="sales-return-rows"
+            selectOptionsByField={{ variantId: variantOpts }}
           />
         )}
       </div>
@@ -116,17 +124,25 @@ export default function ReturnsPage() {
         <div className="space-y-3">
           <div>
             <label className="label">Customer</label>
-            <select className="input" value={customerId} onChange={e => setCustomerId(e.target.value)}>
-              <option value="">— Select —</option>
-              {(customers || []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <SearchableSelect
+              value={customerId}
+              onChange={setCustomerId}
+              options={custOpts}
+              placeholder="Search customers…"
+              emptyOptionLabel="— Select —"
+              aria-label="Customer"
+            />
           </div>
           <div>
-            <label className="label">Original Sales Order</label>
-            <select className="input" value={orderId} onChange={e => setOrderId(e.target.value)}>
-              <option value="">— Select —</option>
-              {(orders || []).map((o: any) => <option key={o.id} value={o.id}>{o.soNumber}</option>)}
-            </select>
+            <label className="label">Original sales order</label>
+            <SearchableSelect
+              value={orderId}
+              onChange={setOrderId}
+              options={orderOpts}
+              placeholder="Search sales orders…"
+              emptyOptionLabel="— Select —"
+              aria-label="Sales order"
+            />
           </div>
           <div><label className="label">Notes</label><textarea className="input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></div>
         </div>

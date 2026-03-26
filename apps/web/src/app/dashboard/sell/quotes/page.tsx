@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -10,6 +10,8 @@ import { useToast } from "@/components/ui/Toast";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { ActionMenu } from "@/components/shared/ActionMenu";
 import { Trash2, ArrowRightCircle } from "lucide-react";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { customerOptions } from "@/lib/catalogOptions";
 
 const statuses = [
   { label: "All", value: "" },
@@ -34,6 +36,7 @@ export default function QuotesPage() {
     queryFn: () => api.get("/quotes", { params: status ? { status } : {} }).then(r => r.data.data),
   });
   const { data: customers } = useQuery({ queryKey: ["customers"], queryFn: () => api.get("/customers").then(r => r.data.data) });
+  const custOpts = useMemo(() => customerOptions(customers), [customers]);
 
   const create = useMutation({
     mutationFn: () => api.post("/quotes", { customerId: customerId || undefined, validUntil: validUntil || undefined, notes: notes || undefined }),
@@ -86,10 +89,14 @@ export default function QuotesPage() {
         <div className="space-y-3">
           <div>
             <label className="label">Customer</label>
-            <select className="input" value={customerId} onChange={e => setCustomerId(e.target.value)}>
-              <option value="">— Select customer —</option>
-              {(customers || []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <SearchableSelect
+              value={customerId}
+              onChange={setCustomerId}
+              options={custOpts}
+              placeholder="Search customers…"
+              emptyOptionLabel="— Select customer —"
+              aria-label="Customer"
+            />
           </div>
           <div><label className="label">Valid Until</label><input className="input" type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} /></div>
           <div><label className="label">Notes</label><textarea className="input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></div>

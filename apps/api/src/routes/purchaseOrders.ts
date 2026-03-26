@@ -85,7 +85,7 @@ router.get('/:id', async (req, res) => {
   res.json(normalizePo(po));
 });
 
-router.put('/:id', async (req, res) => {
+async function updatePoById(req: any, res: any) {
   const data = z.object({
     supplierId: z.string().uuid().nullish(), status: z.string().nullish(),
     currency: z.string().nullish(), expectedAt: z.string().nullish(),
@@ -100,7 +100,10 @@ router.put('/:id', async (req, res) => {
   if (data.expectedAt !== undefined) poData.expectedDate = data.expectedAt ? new Date(data.expectedAt) : null;
   const po = await prisma.purchaseOrder.update({ where: { id: req.params.id }, data: poData, include });
   res.json(normalizePo(po));
-});
+}
+
+router.put('/:id', updatePoById);
+router.patch('/:id', updatePoById);
 
 router.post('/:id/rows', async (req, res) => {
   const data = z.object({

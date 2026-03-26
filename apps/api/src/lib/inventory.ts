@@ -16,7 +16,17 @@ export async function adjustStock(
   opts?: { referenceType?: string; referenceId?: string; note?: string }
 ) {
   const qtyNum = Number(qty);
-  // Upsert level
+  const existing = await tx.inventoryLevel.findUnique({
+    where: { variantId_locationId: { variantId, locationId } },
+  });
+  const current = existing ? Number(existing.onHand) : 0;
+  if (qtyNum < 0 && current + qtyNum < 0) {
+    const msg = existing
+      ? `Insufficient stock at this location (on hand: ${current}, need: ${Math.abs(qtyNum)}).`
+      : 'No on-hand stock for this variant at the selected location. Receive inventory first or pick another location.';
+    throw Object.assign(new Error(msg), { statusCode: 422 });
+  }
+
   const level = await tx.inventoryLevel.upsert({
     where: { variantId_locationId: { variantId, locationId } },
     create: { variantId, locationId, onHand: qtyNum, allocated: 0 },
@@ -25,7 +35,7 @@ export async function adjustStock(
 
   const newOnHand = Number(level.onHand);
   if (newOnHand < 0) {
-    throw Object.assign(new Error(`Insufficient stock. On hand: ${newOnHand - qtyNum}`), { statusCode: 422 });
+    throw Object.assign(new Error('Stock would go negative; operation rejected.'), { statusCode: 422 });
   }
 
   // Immutable movement record

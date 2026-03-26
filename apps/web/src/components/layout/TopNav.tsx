@@ -41,9 +41,9 @@ export function TopNav() {
   }, []);
 
   return (
-    <nav className="bg-navy-800 text-white flex items-center h-[52px] px-4 shrink-0">
+    <nav className="bg-navy-800 text-white flex items-center h-[52px] px-5 shrink-0">
       {/* Left: Logo */}
-      <Link href="/dashboard/sell" className="font-bold text-[15px] mr-6 tracking-tight whitespace-nowrap text-white">
+      <Link href="/dashboard/sell" className="font-bold text-[15px] mr-7 tracking-tight whitespace-nowrap text-white">
         ForgeERP
       </Link>
 
@@ -56,7 +56,7 @@ export function TopNav() {
               key={item.href}
               href={item.href}
               className={clsx(
-                "flex flex-col items-center gap-0.5 px-4 py-1 rounded-md text-[10px] font-medium transition-colors min-w-[52px]",
+                "flex flex-col items-center gap-0.5 px-3.5 py-1 rounded-md text-[10px] font-medium transition-colors min-w-[50px]",
                 active ? "bg-navy-700 text-white" : "text-gray-400 hover:text-white hover:bg-white/10"
               )}
             >

@@ -1,6 +1,6 @@
 "use client";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
@@ -10,6 +10,8 @@ import { useToast } from "@/components/ui/Toast";
 import { ChildTable, ColumnDef, FieldDef } from "@/components/shared/ChildTable";
 import { ArrowLeft, Play, CheckCircle, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { locationOptions } from "@/lib/catalogOptions";
 
 const recipeRowCols: ColumnDef[] = [
   { key: "material", header: "Material", render: (r: any) => r.variant?.material?.name || r.variant?.sku || "—" },
@@ -55,6 +57,7 @@ export default function MODetailPage() {
 
   const { data: mo, isLoading } = useQuery({ queryKey: ["mo", id], queryFn: () => api.get(`/manufacturing/orders/${id}`).then(r => r.data) });
   const { data: locations } = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data.data) });
+  const locOpts = useMemo(() => locationOptions(locations), [locations]);
 
   const produce = useMutation({
     mutationFn: () => api.post(`/manufacturing/orders/${id}/produce`, { locationId, sourceLocationId: sourceLocationId || undefined }),
@@ -148,18 +151,25 @@ export default function MODetailPage() {
       <Modal open={produceOpen} onClose={() => setProduceOpen(false)} title="Complete Production">
         <div className="space-y-3">
           <div>
-            <label className="label">Output to Location *</label>
-            <select className="input" value={locationId} onChange={e => setLocationId(e.target.value)}>
-              <option value="">— Select —</option>
-              {(locations || []).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
+            <label className="label">Output to location *</label>
+            <SearchableSelect
+              value={locationId}
+              onChange={setLocationId}
+              options={locOpts}
+              placeholder="Search locations…"
+              emptyOptionLabel="— Select —"
+              aria-label="Output location"
+            />
           </div>
           <div>
-            <label className="label">Consume Materials From</label>
-            <select className="input" value={sourceLocationId} onChange={e => setSourceLocationId(e.target.value)}>
-              <option value="">— Same as output —</option>
-              {(locations || []).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
+            <label className="label">Consume materials from</label>
+            <SearchableSelect
+              value={sourceLocationId}
+              onChange={setSourceLocationId}
+              options={[{ value: "", label: "— Same as output —" }, ...locOpts]}
+              placeholder="Search locations…"
+              aria-label="Source location"
+            />
           </div>
           <p className="text-xs text-gray-500">Materials will be deducted and finished goods added to the selected location.</p>
         </div>

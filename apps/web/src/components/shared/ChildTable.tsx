@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Modal } from "@/components/ui/Modal";
+import { SearchableSelect, type SearchableOption } from "@/components/ui/SearchableSelect";
 import { useToast } from "@/components/ui/Toast";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
@@ -31,9 +32,11 @@ interface Props {
   canEdit?: boolean;
   canDelete?: boolean;
   canCreate?: boolean;
+  /** Per-field option lists for searchable selects (e.g. variant picker built from products). */
+  selectOptionsByField?: Record<string, SearchableOption[]>;
 }
 
-export function ChildTable({ title, parentId, parentKey, endpoint, columns, formFields, queryKey, canEdit = true, canDelete = true, canCreate = true }: Props) {
+export function ChildTable({ title, parentId, parentKey, endpoint, columns, formFields, queryKey, canEdit = true, canDelete = true, canCreate = true, selectOptionsByField }: Props) {
   const qc = useQueryClient();
   const { addToast } = useToast();
   const [open, setOpen] = useState(false);
@@ -133,10 +136,14 @@ export function ChildTable({ title, parentId, parentKey, endpoint, columns, form
             <div key={f.key}>
               <label className="label">{f.label}{f.required ? " *" : ""}</label>
               {f.type === "select" ? (
-                <select className="input" value={form[f.key] || ""} onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}>
-                  <option value="">— Select —</option>
-                  {(f.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                <SearchableSelect
+                  value={form[f.key] || ""}
+                  onChange={(v) => setForm((prev) => ({ ...prev, [f.key]: v }))}
+                  options={selectOptionsByField?.[f.key] ?? f.options ?? []}
+                  placeholder="Search…"
+                  emptyOptionLabel="— Select —"
+                  aria-label={f.label}
+                />
               ) : (
                 <input
                   className="input"

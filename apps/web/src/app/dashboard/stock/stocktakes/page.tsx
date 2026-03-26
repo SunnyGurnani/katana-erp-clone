@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
@@ -8,6 +8,8 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { ChildTable, ColumnDef, FieldDef } from "@/components/shared/ChildTable";
 import { Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { locationOptions, productVariantOptions } from "@/lib/catalogOptions";
 
 const stRowCols: ColumnDef[] = [
   { key: "variant", header: "SKU", render: (r: any) => r.variant?.sku || "—" },
@@ -20,7 +22,7 @@ const stRowCols: ColumnDef[] = [
   }},
 ];
 const stRowFields: FieldDef[] = [
-  { key: "variantId", label: "Variant ID", required: true },
+  { key: "variantId", label: "Item (variant)", type: "select", options: [], required: true },
   { key: "countedQty", label: "Counted Qty", type: "number", required: true },
   { key: "systemQty", label: "System Qty", type: "number" },
 ];
@@ -35,6 +37,10 @@ export default function StocktakesPage() {
 
   const { data, isLoading } = useQuery({ queryKey: ["stocktakes"], queryFn: () => api.get("/stock/stocktakes").then(r => r.data.data) });
   const { data: locations } = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data.data) });
+  const { data: products } = useQuery({ queryKey: ["products"], queryFn: () => api.get("/products").then(r => r.data.data) });
+
+  const locOpts = useMemo(() => [{ value: "", label: "All locations" }, ...locationOptions(locations)], [locations]);
+  const variantOpts = useMemo(() => productVariantOptions(products), [products]);
 
   const create = useMutation({
     mutationFn: () => api.post("/stock/stocktakes", { locationId: locationId || undefined, notes: notes || undefined }),
@@ -85,6 +91,7 @@ export default function StocktakesPage() {
               canEdit={st.status === "draft"}
               canDelete={st.status === "draft"}
               canCreate={st.status === "draft"}
+              selectOptionsByField={{ variantId: variantOpts }}
             />
           )}
         </div>
@@ -94,10 +101,13 @@ export default function StocktakesPage() {
         <div className="space-y-3">
           <div>
             <label className="label">Location (optional)</label>
-            <select className="input" value={locationId} onChange={e => setLocationId(e.target.value)}>
-              <option value="">All locations</option>
-              {(locations || []).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
+            <SearchableSelect
+              value={locationId}
+              onChange={setLocationId}
+              options={locOpts}
+              placeholder="Search locations…"
+              aria-label="Stocktake location"
+            />
           </div>
           <div><label className="label">Notes</label><textarea className="input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></div>
         </div>

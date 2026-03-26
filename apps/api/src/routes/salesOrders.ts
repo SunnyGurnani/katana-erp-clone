@@ -84,7 +84,7 @@ router.get('/:id', async (req, res) => {
   res.json(normalizeSo(so));
 });
 
-router.put('/:id', async (req, res) => {
+async function updateSoById(req: any, res: any) {
   const data = z.object({
     customerId: z.string().uuid().nullish(), status: z.string().nullish(),
     currency: z.string().nullish(), dueAt: z.string().nullish(),
@@ -99,7 +99,10 @@ router.put('/:id', async (req, res) => {
   if (data.dueAt !== undefined) soData.requiredDate = data.dueAt ? new Date(data.dueAt) : null;
   const so = await prisma.salesOrder.update({ where: { id: req.params.id }, data: soData, include });
   res.json(normalizeSo(so));
-});
+}
+
+router.put('/:id', updateSoById);
+router.patch('/:id', updateSoById);
 
 router.post('/:id/rows', async (req, res) => {
   const data = z.object({
@@ -114,18 +117,38 @@ router.post('/:id/rows', async (req, res) => {
 
 router.post('/:id/fulfill', async (req, res) => {
   const body = z.object({
-    locationId: z.string().uuid().optional(),
+    locationId: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.string().uuid().optional()),
     rows: z.array(z.object({ rowId: z.string().uuid(), qty: z.coerce.number().positive(), isReturn: z.boolean().default(false) })).optional(),
   }).parse(req.body);
   const so = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include });
   if (!so) return res.status(404).json({ error: 'Not found' });
   if (so.status === 'cancelled') return res.status(422).json({ error: 'Cannot fulfill cancelled SO' });
   const srcLocationId = body.locationId ?? so.locationId;
-  if (!srcLocationId) return res.status(422).json({ error: 'Provide a locationId' });
+  if (!srcLocationId) return res.status(422).json({ error: 'Provide a locationId (or set a default location on the sales order).' });
 
-  const rowsToFulfill = body.rows ?? (so.rows as any[]).map((r: any) => ({
+  const rowsArr = so.rows as any[];
+  if (!rowsArr.length) {
+    return res.status(422).json({ error: 'Add at least one line item before fulfilling.' });
+  }
+
+  const rowsToFulfill = body.rows ?? rowsArr.map((r: any) => ({
     rowId: r.id, qty: Number(r.qtyOrdered) - Number(r.qtyFulfilled || 0), isReturn: false,
   }));
+
+  for (const item of rowsToFulfill) {
+    if (item.qty <= 0) continue;
+    const row = rowsArr.find((r: any) => r.id === item.rowId);
+    if (!row) return res.status(422).json({ error: 'Invalid line item in fulfillment request.' });
+    if (!row.variantId) {
+      return res.status(422).json({
+        error: 'Cannot fulfill lines without a product variant. Assign a product to each line or remove the line.',
+      });
+    }
+  }
+
+  if (!rowsToFulfill.some((i) => i.qty > 0)) {
+    return res.status(422).json({ error: 'Nothing left to fulfill on this order.' });
+  }
 
   await prisma.$transaction(async (tx: any) => {
     for (const item of rowsToFulfill) {

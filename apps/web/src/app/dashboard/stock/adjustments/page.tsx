@@ -1,10 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { productVariantOptions, locationOptions } from "@/lib/catalogOptions";
 
 export default function StockAdjustmentsPage() {
   const qc = useQueryClient();
@@ -15,7 +17,6 @@ export default function StockAdjustmentsPage() {
   const [reason, setReason] = useState("correction");
 
   const { data, isLoading } = useQuery({ queryKey: ["adjustments"], queryFn: () => api.get("/stock/adjustments").then(r => r.data.data) });
-  const { data: materials } = useQuery({ queryKey: ["materials"], queryFn: () => api.get("/materials").then(r => r.data.data) });
   const { data: products } = useQuery({ queryKey: ["products"], queryFn: () => api.get("/products").then(r => r.data.data) });
   const { data: locations } = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data.data) });
 
@@ -25,10 +26,8 @@ export default function StockAdjustmentsPage() {
     onError: () => addToast("Error posting adjustment", "error"),
   });
 
-  const allVariants = [
-    ...(materials || []).flatMap((m: any) => (m.variants || []).map((v: any) => ({ id: v.id, label: `${m.name} (${v.sku})` }))),
-    ...(products || []).flatMap((p: any) => (p.variants || []).map((v: any) => ({ id: v.id, label: `${p.name} (${v.sku})` }))),
-  ];
+  const variantOpts = useMemo(() => productVariantOptions(products), [products]);
+  const locOpts = useMemo(() => locationOptions(locations), [locations]);
 
   return (
     <div className="px-4 py-3 space-y-4">
@@ -40,17 +39,25 @@ export default function StockAdjustmentsPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
           <div>
             <label className="label">Item</label>
-            <select className="input" value={variantId} onChange={e => setVariantId(e.target.value)}>
-              <option value="">— Select —</option>
-              {allVariants.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
-            </select>
+            <SearchableSelect
+              value={variantId}
+              onChange={setVariantId}
+              options={variantOpts}
+              placeholder="Search variants…"
+              emptyOptionLabel="— Select —"
+              aria-label="Item variant"
+            />
           </div>
           <div>
             <label className="label">Location</label>
-            <select className="input" value={locationId} onChange={e => setLocationId(e.target.value)}>
-              <option value="">— Select —</option>
-              {(locations || []).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
+            <SearchableSelect
+              value={locationId}
+              onChange={setLocationId}
+              options={locOpts}
+              placeholder="Search locations…"
+              emptyOptionLabel="— Select —"
+              aria-label="Location"
+            />
           </div>
           <div>
             <label className="label">Qty (+ delta)</label>

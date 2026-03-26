@@ -8,8 +8,8 @@ interface Tab { label: string; href: string; }
 export function SubTabs({ tabs }: { tabs: Tab[] }) {
   const pathname = usePathname();
   return (
-    <div className="border-b border-gray-200 bg-white px-4">
-      <div className="flex -mb-px">
+    <div className="border-b border-gray-200 bg-white px-5">
+      <div className="flex -mb-px gap-1">
         {tabs.map(tab => {
           const active = pathname === tab.href;
           return (
@@ -17,9 +17,9 @@ export function SubTabs({ tabs }: { tabs: Tab[] }) {
               key={tab.href}
               href={tab.href}
               className={clsx(
-                "px-4 py-3 text-sm border-b-2 transition-colors whitespace-nowrap",
+                "px-3 py-3 text-[13px] border-b-2 transition-colors whitespace-nowrap",
                 active
-                  ? "border-brand-600 text-gray-900 font-semibold"
+                  ? "border-navy-800 text-gray-900 font-medium"
                   : "border-transparent text-gray-500 font-normal hover:text-gray-700 hover:border-gray-300"
               )}
             >

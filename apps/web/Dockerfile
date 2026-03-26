@@ -10,6 +10,7 @@ RUN pnpm install --frozen-lockfile || pnpm install
 # Build the web app
 ARG NEXT_PUBLIC_API_URL=http://localhost
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_STANDALONE=1
 RUN pnpm --filter @forge-erp/web build
 
 FROM base AS runner

@@ -15,14 +15,18 @@ async function main() {
   const adminRole = await prisma.role.upsert({ where: { name: 'admin' }, update: {}, create: { name: 'admin', description: 'Full access' } });
   await prisma.role.upsert({ where: { name: 'operator' }, update: {}, create: { name: 'operator', description: 'Production floor' } });
 
-  // Users
+  // Users — always refresh password hashes so re-seed fixes "invalid credentials" after DB drift
+  const adminHash = await bcrypt.hash('Admin1234!', 12);
+  const operatorHash = await bcrypt.hash('Operator1234!', 12);
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@forgeerp.com' }, update: {},
-    create: { email: 'admin@forgeerp.com', fullName: 'Admin User', hashedPassword: await bcrypt.hash('Admin1234!', 12), isActive: true, isSuperuser: true, roleId: adminRole.id },
+    where: { email: 'admin@forgeerp.com' },
+    update: { fullName: 'Admin User', hashedPassword: adminHash, isActive: true, isSuperuser: true, roleId: adminRole.id },
+    create: { email: 'admin@forgeerp.com', fullName: 'Admin User', hashedPassword: adminHash, isActive: true, isSuperuser: true, roleId: adminRole.id },
   });
   await prisma.user.upsert({
-    where: { email: 'operator@forgeerp.com' }, update: {},
-    create: { email: 'operator@forgeerp.com', fullName: 'Floor Operator', hashedPassword: await bcrypt.hash('Operator1234!', 12), isActive: true },
+    where: { email: 'operator@forgeerp.com' },
+    update: { fullName: 'Floor Operator', hashedPassword: operatorHash, isActive: true },
+    create: { email: 'operator@forgeerp.com', fullName: 'Floor Operator', hashedPassword: operatorHash, isActive: true },
   });
 
   // Locations

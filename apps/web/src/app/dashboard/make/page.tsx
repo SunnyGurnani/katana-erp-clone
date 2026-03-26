@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -12,6 +12,8 @@ import { ActionMenu } from "@/components/shared/ActionMenu";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { bomOptions } from "@/lib/catalogOptions";
 
 const statuses = [
   { label: "All", value: "" },
@@ -37,6 +39,7 @@ export default function ManufacturingPage() {
     queryFn: () => api.get("/manufacturing/orders", { params: status ? { status } : {} }).then(r => r.data.data),
   });
   const { data: boms } = useQuery({ queryKey: ["boms"], queryFn: () => api.get("/manufacturing/boms").then(r => r.data.data) });
+  const bomOpts = useMemo(() => bomOptions(boms), [boms]);
 
   const create = useMutation({
     mutationFn: () => api.post("/manufacturing/orders", { bomId, qty: Number(qty), scheduledAt: scheduledAt || undefined }),
@@ -80,10 +83,14 @@ export default function ManufacturingPage() {
         <div className="space-y-3">
           <div>
             <label className="label">Bill of Materials</label>
-            <select className="input" value={bomId} onChange={e => setBomId(e.target.value)}>
-              <option value="">— Select BOM —</option>
-              {(boms || []).map((b: any) => <option key={b.id} value={b.id}>{b.name || b.variant?.product?.name || b.id}</option>)}
-            </select>
+            <SearchableSelect
+              value={bomId}
+              onChange={setBomId}
+              options={bomOpts}
+              placeholder="Search BOMs…"
+              emptyOptionLabel="— Select BOM —"
+              aria-label="Bill of materials"
+            />
           </div>
           <div><label className="label">Qty to Produce</label><input className="input" type="number" value={qty} onChange={e => setQty(e.target.value)} /></div>
           <div><label className="label">Scheduled Date</label><input className="input" type="date" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} /></div>

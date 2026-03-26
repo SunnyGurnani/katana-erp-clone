@@ -1,6 +1,6 @@
 "use client";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
@@ -9,6 +9,8 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { ArrowLeft, Plus, Truck, Trash2, Copy, Save, FileDown, X } from "lucide-react";
 import Link from "next/link";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { productVariantOptions, locationOptions } from "@/lib/catalogOptions";
 
 export default function SODetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -28,6 +30,9 @@ export default function SODetailPage() {
   const { data: products } = useQuery({ queryKey: ["products"], queryFn: () => api.get("/products").then(r => r.data.data) });
   const { data: locations } = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data.data) });
 
+  const variantOpts = useMemo(() => productVariantOptions(products), [products]);
+  const locOpts = useMemo(() => locationOptions(locations), [locations]);
+
   const addRow = useMutation({
     mutationFn: () => api.post(`/sales-orders/${id}/rows`, { variantId, qty: Number(qty), salePrice: Number(salePrice) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["so", id] }); addToast("Row added", "success"); setRowOpen(false); setVariantId(""); setQty(""); setSalePrice(""); },
@@ -35,9 +40,22 @@ export default function SODetailPage() {
   });
 
   const fulfill = useMutation({
-    mutationFn: () => api.post(`/sales-orders/${id}/fulfill`, { locationId: fulfillLocationId }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["so", id] }); addToast("Order fulfilled", "success"); setFulfillOpen(false); },
-    onError: () => addToast("Error fulfilling order", "error"),
+    mutationFn: () =>
+      api.post(`/sales-orders/${id}/fulfill`, {
+        locationId: fulfillLocationId || undefined,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["so", id] });
+      addToast("Order fulfilled", "success");
+      setFulfillOpen(false);
+    },
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.error ||
+        (Array.isArray(err?.response?.data?.issues) && err.response.data.issues[0]?.message) ||
+        "Error fulfilling order";
+      addToast(typeof msg === "string" ? msg : "Error fulfilling order", "error");
+    },
   });
 
   const updateSO = useMutation({
@@ -134,10 +152,14 @@ export default function SODetailPage() {
         <div className="space-y-3">
           <div>
             <label className="label">Product</label>
-            <select className="input" value={variantId} onChange={e => setVariantId(e.target.value)}>
-              <option value="">— Select —</option>
-              {(products || []).flatMap((p: any) => (p.variants || []).map((v: any) => <option key={v.id} value={v.id}>{p.name} ({v.sku})</option>))}
-            </select>
+            <SearchableSelect
+              value={variantId}
+              onChange={setVariantId}
+              options={variantOpts}
+              placeholder="Search products…"
+              emptyOptionLabel="— Select —"
+              aria-label="Product variant"
+            />
           </div>
           <div><label className="label">Qty</label><input className="input" type="number" value={qty} onChange={e => setQty(e.target.value)} /></div>
           <div><label className="label">Sale Price</label><input className="input" type="number" step="0.01" value={salePrice} onChange={e => setSalePrice(e.target.value)} /></div>
@@ -151,11 +173,15 @@ export default function SODetailPage() {
       <Modal open={fulfillOpen} onClose={() => setFulfillOpen(false)} title="Fulfill Order">
         <div className="space-y-3">
           <div>
-            <label className="label">Ship From Location</label>
-            <select className="input" value={fulfillLocationId} onChange={e => setFulfillLocationId(e.target.value)}>
-              <option value="">— Select —</option>
-              {(locations || []).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
+            <label className="label">Ship from location</label>
+            <SearchableSelect
+              value={fulfillLocationId}
+              onChange={setFulfillLocationId}
+              options={locOpts}
+              placeholder="Search locations…"
+              emptyOptionLabel="— Select —"
+              aria-label="Fulfill from location"
+            />
           </div>
           <p className="text-xs text-gray-500">Stock will be deducted from the selected location.</p>
         </div>

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -12,6 +12,8 @@ import { ActionMenu } from "@/components/shared/ActionMenu";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Copy, Trash2 } from "lucide-react";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { customerOptions } from "@/lib/catalogOptions";
 
 const statuses = [
   { label: "Open", value: "" },
@@ -61,6 +63,7 @@ export default function SalesOrdersPage() {
     queryFn: () => api.get("/sales-orders", { params: status ? { status } : {} }).then(r => r.data.data),
   });
   const { data: customers } = useQuery({ queryKey: ["customers"], queryFn: () => api.get("/customers").then(r => r.data.data) });
+  const custOpts = useMemo(() => customerOptions(customers), [customers]);
 
   const create = useMutation({
     mutationFn: () => api.post("/sales-orders", { customerId: customerId || undefined, dueAt: dueAt || undefined, notes: notes || undefined, rows: [] }),
@@ -135,10 +138,14 @@ export default function SalesOrdersPage() {
         <div className="space-y-3">
           <div>
             <label className="label">Customer</label>
-            <select className="input" value={customerId} onChange={e => setCustomerId(e.target.value)}>
-              <option value="">— Select customer —</option>
-              {(customers || []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <SearchableSelect
+              value={customerId}
+              onChange={setCustomerId}
+              options={custOpts}
+              placeholder="Search customers…"
+              emptyOptionLabel="— Select customer —"
+              aria-label="Customer"
+            />
           </div>
           <div><label className="label">Due Date</label><input className="input" type="date" value={dueAt} onChange={e => setDueAt(e.target.value)} /></div>
           <div><label className="label">Notes</label><textarea className="input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></div>

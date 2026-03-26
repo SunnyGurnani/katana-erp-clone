@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -12,6 +12,8 @@ import { ActionMenu } from "@/components/shared/ActionMenu";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { supplierOptions, locationOptions } from "@/lib/catalogOptions";
 
 const statuses = [
   { label: "Open", value: "" },
@@ -29,6 +31,8 @@ export default function PurchaseOrdersPage() {
   const [status, setStatus] = useState("");
   const [open, setOpen] = useState(false);
   const [supplierId, setSupplierId] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const [currency, setCurrency] = useState("USD");
   const [expectedAt, setExpectedAt] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -37,10 +41,42 @@ export default function PurchaseOrdersPage() {
     queryFn: () => api.get("/purchase-orders", { params: status ? { status } : {} }).then(r => r.data.data),
   });
   const { data: suppliers } = useQuery({ queryKey: ["suppliers"], queryFn: () => api.get("/suppliers").then(r => r.data.data) });
+  const { data: locations } = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data.data) });
+  const { data: currencies } = useQuery({ queryKey: ["currencies"], queryFn: () => api.get("/currencies").then(r => r.data.data) });
+
+  const supOpts = useMemo(() => supplierOptions(suppliers), [suppliers]);
+  const locOpts = useMemo(() => locationOptions(locations), [locations]);
+  const currencyOpts = useMemo(
+    () =>
+      (currencies || []).length
+        ? (currencies || []).map((c: any) => ({
+            value: c.code,
+            label: c.isBase ? `${c.code} (Base) — ${c.name}` : `${c.code} — ${c.name}`,
+          }))
+        : [{ value: "USD", label: "USD — US Dollar" }],
+    [currencies]
+  );
 
   const create = useMutation({
-    mutationFn: () => api.post("/purchase-orders", { supplierId: supplierId || undefined, expectedAt: expectedAt || undefined, notes: notes || undefined, rows: [] }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); addToast("Purchase order created", "success"); setOpen(false); setSupplierId(""); setExpectedAt(""); setNotes(""); },
+    mutationFn: () =>
+      api.post("/purchase-orders", {
+        supplierId: supplierId || undefined,
+        locationId: locationId || undefined,
+        currency: currency || "USD",
+        expectedAt: expectedAt || undefined,
+        notes: notes || undefined,
+        rows: [],
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["purchase-orders"] });
+      addToast("Purchase order created", "success");
+      setOpen(false);
+      setSupplierId("");
+      setLocationId("");
+      setCurrency("USD");
+      setExpectedAt("");
+      setNotes("");
+    },
     onError: () => addToast("Error creating PO", "error"),
   });
 
@@ -81,29 +117,54 @@ export default function PurchaseOrdersPage() {
       <ListToolbar statusFilter={status} onStatusChange={setStatus} statuses={statuses} actionLabel="Purchase order" onAction={() => setOpen(true)}>
         <ExportToolbar resource="purchase-orders" filters={status ? { status } : undefined} />
       </ListToolbar>
-      <div className="px-4 py-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-gray-500">{(data || []).length} purchase orders</span>
-          <span className="text-xs font-medium text-gray-700">Total: ${totalCost.toFixed(2)}</span>
+      <div className="px-5 py-3">
+        <div className="flex items-center justify-between mb-2.5">
+          <span className="text-sm text-gray-500">{(data || []).length} purchase orders</span>
+          <span className="text-sm font-medium text-gray-700">Total: ${totalCost.toFixed(2)}</span>
         </div>
         <DataTable columns={columns} data={data || []} isLoading={isLoading} onRowClick={(row) => router.push(`/dashboard/buy/${row.id}`)} emptyMessage="No purchase orders found" showRank totalLabel="purchase orders" />
       </div>
-      <Modal open={open} onClose={() => setOpen(false)} title="New Purchase Order">
-        <div className="space-y-3">
+      <Modal open={open} onClose={() => setOpen(false)} title="New purchase order">
+        <div className="mx-auto w-full max-w-[520px] space-y-4">
           <div>
-            <label className="label">Supplier</label>
-            <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
-              <option value="">— Select supplier —</option>
-              {(suppliers || []).map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Supplier</label>
+            <SearchableSelect
+              value={supplierId}
+              onChange={setSupplierId}
+              options={supOpts}
+              placeholder="Search suppliers…"
+              emptyOptionLabel="— Select supplier —"
+              aria-label="Supplier"
+            />
           </div>
-          <div><label className="label">Expected Delivery</label><input className="input" type="date" value={expectedAt} onChange={e => setExpectedAt(e.target.value)} /></div>
-          <div><label className="label">Notes</label><textarea className="input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Ship to</label>
+            <SearchableSelect
+              value={locationId}
+              onChange={setLocationId}
+              options={locOpts}
+              placeholder="Search locations…"
+              emptyOptionLabel="— Optional —"
+              aria-label="Ship to location"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Currency</label>
+            <SearchableSelect value={currency} onChange={setCurrency} options={currencyOpts} placeholder="Search currency…" aria-label="Currency" />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Expected arrival</label>
+            <input className="input h-11" type="date" value={expectedAt} onChange={e => setExpectedAt(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Notes</label>
+            <textarea className="input min-h-[88px] resize-y" rows={3} value={notes} onChange={e => setNotes(e.target.value)} />
+          </div>
         </div>
-        <p className="text-xs text-gray-400 mt-3">Add line items after creating the PO.</p>
-        <div className="flex justify-end gap-2 mt-4">
-          <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
-          <button className="btn btn-primary" disabled={create.isPending} onClick={() => create.mutate()}>{create.isPending ? "Creating..." : "Create PO"}</button>
+        <p className="text-sm text-gray-500 mt-4">Add line items on the PO after creating it.</p>
+        <div className="flex justify-end gap-2 mt-5">
+          <button className="btn btn-ghost px-5" onClick={() => setOpen(false)}>Cancel</button>
+          <button className="btn btn-primary px-5" disabled={create.isPending} onClick={() => create.mutate()}>{create.isPending ? "Creating..." : "Create PO"}</button>
         </div>
       </Modal>
     </>
