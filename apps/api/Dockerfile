@@ -20,4 +20,4 @@ COPY --from=build /app/packages/types ./packages/types
 COPY --from=build /app/package.json ./
 COPY --from=build /app/pnpm-workspace.yaml ./
 EXPOSE 4000
-CMD ["sh", "-c", "cd apps/api && npx prisma db push --skip-generate && npx tsx src/seed.ts && npx tsx src/index.ts"]
+CMD ["sh", "-c", "cd apps/api && npx prisma migrate deploy && npx tsx src/seed.ts && npx tsx src/index.ts"]
