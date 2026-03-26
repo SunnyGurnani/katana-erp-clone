@@ -141,7 +141,7 @@ cp .env.example .env
 | `DB_USER` | `forge` | PostgreSQL user |
 | `DB_PASSWORD` | `forge_secret` | PostgreSQL password |
 | `DB_NAME` | `forgeerp` | PostgreSQL database name |
-| `JWT_SECRET` | — | Secret key for JWT signing |
+| `SECRET_KEY` | — | Secret key for JWT signing |
 | `MINIO_ROOT_USER` | `minioadmin` | MinIO admin username |
 | `MINIO_ROOT_PASSWORD` | `minioadmin123` | MinIO admin password |
 | `PUBLIC_API_URL` | `http://localhost` | Public-facing API base URL |
