@@ -17,8 +17,19 @@ export default function LoginPage() {
     try {
       await login(email, password);
       router.push("/dashboard");
-    } catch {
-      addToast("Invalid credentials", "error");
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { error?: string } }; code?: string; message?: string };
+      const apiErr = ax?.response?.data?.error;
+      const network =
+        ax?.code === "ERR_NETWORK" ||
+        ax?.message === "Network Error" ||
+        String(ax?.message || "").includes("Network Error");
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+      const msg =
+        apiErr ||
+        (network ? `Cannot reach API at ${apiUrl} — start the backend and check NEXT_PUBLIC_API_URL.` : null) ||
+        "Invalid credentials";
+      addToast(msg, "error");
     } finally {
       setLoading(false);
     }
