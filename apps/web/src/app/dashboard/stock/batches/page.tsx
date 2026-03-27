@@ -29,7 +29,16 @@ export default function BatchesPage() {
 
   const columns: Column[] = [
     { key: "batchNumber", header: "Batch #", sortable: true, render: (r: any) => <span className="font-mono font-medium">{r.batchNumber}</span> },
-    { key: "variantId", header: "Variant", render: (r: any) => r.variantId || "—" },
+    {
+      key: "variantId",
+      header: "Variant",
+      render: (r: any) => {
+        const v = r.variant;
+        if (v?.product?.name) return `${v.product.name} / ${v.name || v.sku || ""}`.trim();
+        if (v?.name || v?.sku) return [v.name, v.sku ? `(${v.sku})` : ""].filter(Boolean).join(" ");
+        return r.variantId || "—";
+      },
+    },
     { key: "expiryDate", header: "Expiry", sortable: true, render: (r: any) => {
       if (!r.expiryDate) return "—";
       const d = new Date(r.expiryDate);

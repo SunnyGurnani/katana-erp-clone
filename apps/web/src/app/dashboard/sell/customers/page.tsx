@@ -20,7 +20,7 @@ export default function CustomersPage() {
   const { data, isLoading } = useQuery({ queryKey: ["customers"], queryFn: () => api.get("/customers").then(r => r.data.data) });
 
   const save = useMutation({
-    mutationFn: (d: any) => d.id ? api.put(`/customers/${d.id}`, d) : api.post("/customers", d),
+    mutationFn: (d: any) => (d.id ? api.patch(`/customers/${d.id}`, d) : api.post("/customers", d)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["customers"] }); addToast("Saved", "success"); setOpen(false); },
     onError: () => addToast("Error saving customer", "error"),
   });
@@ -40,7 +40,7 @@ export default function CustomersPage() {
     { key: "email", header: "Email", render: (r: any) => r.email || "—" },
     { key: "phone", header: "Phone", render: (r: any) => r.phone || "—" },
     { key: "currency", header: "Currency" },
-    { key: "orders", header: "# Orders", render: (r: any) => r.salesOrders?.length || r._count?.salesOrders || "—" },
+    { key: "orders", header: "# Orders", render: (r: any) => (r._count?.salesOrders != null ? r._count.salesOrders : "—") },
     { key: "actions", header: "", filterable: false, render: (r: any) => (
       <ActionMenu actions={[
         { label: "Edit", icon: <Pencil size={13} />, onClick: () => openEdit(r) },

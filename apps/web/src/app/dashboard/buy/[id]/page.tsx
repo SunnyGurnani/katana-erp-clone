@@ -82,7 +82,13 @@ export default function PODetailPage() {
     mutationFn: () =>
       api.post(`/purchase-orders/${id}/receive`, {
         locationId: receiveLocationId,
-        rows: (po?.rows || []).map((r: any) => ({ rowId: r.id, receivedQty: Number(r.qty) })),
+        rows: (po?.rows || [])
+          .map((r: any) => {
+            const ordered = Number(r.qty ?? r.qtyOrdered ?? 0);
+            const got = Number(r.qtyReceived ?? r.receivedQty ?? 0);
+            return { rowId: r.id, receivedQty: Math.max(0, ordered - got) };
+          })
+          .filter((r: { receivedQty: number }) => r.receivedQty > 0),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["po", id] });
@@ -147,7 +153,17 @@ export default function PODetailPage() {
   }
   if (!po) return <div className="p-6 text-gray-500">PO not found.</div>;
 
-  const canReceive = ["draft", "sent", "partial"].includes(po.status);
+  function lineOutstanding(r: any): number {
+    const ordered = Number(r.qty ?? r.qtyOrdered ?? 0);
+    const got = Number(r.qtyReceived ?? r.receivedQty ?? 0);
+    return Math.max(0, ordered - got);
+  }
+
+  const allRows = po.rows || [];
+  const notReceivedRows = allRows.filter((r: any) => lineOutstanding(r) > 0);
+  const receivedRows = allRows.filter((r: any) => lineOutstanding(r) <= 0 && Number(r.qty ?? r.qtyOrdered ?? 0) > 0);
+
+  const canReceive = po.status !== "cancelled" && notReceivedRows.length > 0;
   const canEditLines = ["draft", "sent"].includes(po.status);
   const canEditHeader = ["draft", "sent", "partial"].includes(po.status);
 
@@ -233,13 +249,19 @@ export default function PODetailPage() {
           </div>
           <div>
             <label className="label">Expected arrival</label>
-            <input
-              className="input"
-              type="date"
-              disabled={!canEditHeader || updatePO.isPending}
-              value={po.expectedAt ? po.expectedAt.slice(0, 10) : ""}
-              onChange={(e) => updatePO.mutate({ expectedAt: e.target.value || null })}
-            />
+            {canEditHeader ? (
+              <input
+                className="input"
+                type="date"
+                disabled={updatePO.isPending}
+                value={po.expectedAt ? po.expectedAt.slice(0, 10) : ""}
+                onChange={(e) => updatePO.mutate({ expectedAt: e.target.value || null })}
+              />
+            ) : (
+              <div className="input bg-gray-50 text-gray-800 min-h-[40px] flex items-center">
+                {po.expectedAt ? po.expectedAt.slice(0, 10) : "—"}
+              </div>
+            )}
           </div>
           <div>
             <label className="label">Created</label>
@@ -297,7 +319,7 @@ export default function PODetailPage() {
               </tr>
             </thead>
             <tbody>
-              {(po.rows || []).map((r: any, i: number) => (
+              {(notReceivedRows.length ? notReceivedRows : []).map((r: any, i: number) => (
                 <tr key={r.id}>
                   {(() => {
                     const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
@@ -394,16 +416,91 @@ export default function PODetailPage() {
                   </td>
                 </tr>
               )}
-              {!po.rows?.length && !canEditLines && (
+              {!notReceivedRows.length && !canEditLines && (
                 <tr>
                   <td colSpan={7} className="text-center text-gray-400 py-8">
-                    No line items
+                    No outstanding line items
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+        {receivedRows.length > 0 && (
+          <>
+            <div className="px-5 py-3 border-t border-gray-200 bg-gray-50/50">
+              <h2 className="text-sm font-semibold text-gray-800">Items received</h2>
+            </div>
+            <div className="overflow-x-auto overflow-y-visible">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th className="w-10">#</th>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Unit cost</th>
+                    <th>Line total</th>
+                    <th>Received</th>
+                    <th className="w-12"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {receivedRows.map((r: any, i: number) => (
+                    <tr key={r.id}>
+                      {(() => {
+                        const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
+                        const m = r.material || (r.materialId ? materialById.get(r.materialId) : undefined);
+                        const itemName =
+                          m?.name ||
+                          v?.product?.name ||
+                          r.description ||
+                          r.variantId ||
+                          r.materialId ||
+                          "—";
+                        const skuPrefix = v?.sku ? `[${v.sku}] ` : m?.sku ? `[${m.sku}] ` : "";
+                        const variantSuffix = v?.name && v?.product ? ` / ${v.name}` : "";
+                        return (
+                          <>
+                            <td className="text-gray-400">{i + 1}</td>
+                            <td>
+                              <span className="font-medium text-gray-900">
+                                {skuPrefix}
+                                {itemName}
+                                {variantSuffix}
+                              </span>
+                            </td>
+                            <td>{r.qty}</td>
+                            <td className="whitespace-nowrap">
+                              {Number(r.unitCost || 0).toFixed(4)} {po.currency || "USD"}
+                            </td>
+                            <td className="font-medium whitespace-nowrap">
+                              {(Number(r.qty) * Number(r.unitCost || 0)).toFixed(2)} {po.currency || "USD"}
+                            </td>
+                            <td>{r.qtyReceived ?? r.receivedQty ?? 0}</td>
+                            <td>
+                              {canEditLines && (
+                                <button
+                                  className="icon-btn text-red-400 hover:text-red-600"
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (window.confirm("Remove this row?")) deleteRow.mutate(r.id);
+                                  }}
+                                >
+                                  <X size={14} />
+                                </button>
+                              )}
+                            </td>
+                          </>
+                        );
+                      })()}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
         <div className="flex flex-col items-end gap-1 border-t border-gray-100 px-5 py-4 text-sm">
           <div className="flex w-full max-w-[260px] justify-between text-gray-600">
             <span>Total units</span>
@@ -479,8 +576,8 @@ export default function PODetailPage() {
         <div className="space-y-3">
           <div>
             <label className="label">Status</label>
-            <select className="input" value={editForm.status} onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}>
-              {["draft", "sent", "partial", "received", "cancelled"].map((s) => (
+            <select className="input" value={editForm.status || po.status} onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}>
+              {["draft", "sent", "confirmed", "partial", "received", "cancelled"].map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>

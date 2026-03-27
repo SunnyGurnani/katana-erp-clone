@@ -13,12 +13,14 @@ interface Action {
 
 interface Props {
   actions: Action[];
+  /** Accessible name for the ⋯ trigger (e.g. "Row actions"). */
+  "aria-label"?: string;
 }
 
 const ITEM_PX = 36;
 const GAP = 4;
 
-export function ActionMenu({ actions }: Props) {
+export function ActionMenu({ actions, "aria-label": ariaLabel = "Row actions" }: Props) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -102,7 +104,10 @@ export function ActionMenu({ actions }: Props) {
     <>
       <div className="relative" ref={triggerRef}>
         <button
+          type="button"
           className="icon-btn"
+          aria-label={ariaLabel}
+          title={ariaLabel}
           onClick={(e) => {
             e.stopPropagation();
             setOpen(!open);

@@ -73,7 +73,39 @@ router.get('/levels', async (req, res) => {
     }),
     prisma.inventoryLevel.count({ where }),
   ]);
-  res.json(paginated(items, total, page, pageSize));
+
+  const defaultLoc =
+    (await prisma.location.findFirst({ where: { isDefault: true } })) ??
+    (await prisma.location.findFirst({ orderBy: { createdAt: 'asc' } }));
+
+  const soRows = await prisma.salesOrderRow.findMany({
+    where: {
+      order: { status: { notIn: ['cancelled', 'fulfilled'] } },
+      variantId: { not: null },
+    },
+    select: {
+      variantId: true,
+      qtyOrdered: true,
+      qtyFulfilled: true,
+      order: { select: { locationId: true } },
+    },
+  });
+
+  const reservedMap: Record<string, number> = {};
+  for (const r of soRows) {
+    const locId = r.order.locationId ?? defaultLoc?.id;
+    if (!locId || !r.variantId) continue;
+    const key = `${r.variantId}|${locId}`;
+    reservedMap[key] = (reservedMap[key] || 0) + (Number(r.qtyOrdered) - Number(r.qtyFulfilled));
+  }
+
+  const enriched = items.map((l: any) => {
+    const key = `${l.variantId}|${l.locationId}`;
+    const reserved = reservedMap[key] || 0;
+    return { ...l, reserved };
+  });
+
+  res.json(paginated(enriched, total, page, pageSize));
 });
 
 /**

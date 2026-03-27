@@ -22,6 +22,12 @@ const schema = z.object({
   MINIO_BUCKET: z.string().default('forgeerp'),
   MINIO_USE_SSL: z.string().default('false'),
   MINIO_PUBLIC_URL: z.string().default('http://localhost/files'),
+  QUICKBOOKS_CLIENT_ID: z.string().default(''),
+  QUICKBOOKS_CLIENT_SECRET: z.string().default(''),
+  QUICKBOOKS_REDIRECT_URI: z.string().default('http://localhost:4000/api/v1/accounting/quickbooks/callback'),
+  QUICKBOOKS_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
+  QUICKBOOKS_SCOPES: z.string().default('com.intuit.quickbooks.accounting'),
+  INTEGRATION_ENCRYPTION_KEY: z.string().optional(),
 });
 
 export const env = schema.parse(process.env);

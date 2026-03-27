@@ -6,6 +6,7 @@ import { DataTable, Column } from "@/components/ui/DataTable";
 import { StatusCell } from "@/components/ui/StatusBadge";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { AlertTriangle } from "lucide-react";
+import { formatLocalDateYmd } from "@/lib/formatDate";
 
 export default function InventoryPage() {
   const [tab, setTab] = useState<"levels" | "movements">("levels");
@@ -22,7 +23,7 @@ export default function InventoryPage() {
     { key: "item", header: "Item", render: (r: any) => <span className="font-medium">{r.variant?.product?.name || r.variant?.material?.name || "—"}</span> },
     { key: "location", header: "Location", render: (r: any) => r.location?.name || "—" },
     { key: "onHand", header: "On hand", sortable: true, render: (r: any) => <span className="font-semibold">{r.onHand}</span> },
-    { key: "reserved", header: "Reserved", render: (r: any) => <span className="text-gray-500">{r.reserved}</span> },
+    { key: "reserved", header: "Reserved", render: (r: any) => <span className="text-gray-700 font-medium">{Number(r.reserved ?? 0)}</span> },
     { key: "available", header: "Available", sortable: true, render: (r: any) => {
       const avail = (r.onHand || 0) - (r.reserved || 0);
       return <span className={avail < 0 ? "text-red-600 font-semibold" : "font-semibold"}>{avail}</span>;
@@ -47,7 +48,7 @@ export default function InventoryPage() {
   ];
 
   const movCols: Column[] = [
-    { key: "createdAt", header: "Date", sortable: true, render: (r: any) => new Date(r.createdAt).toISOString().slice(0, 10) },
+    { key: "createdAt", header: "Date", sortable: true, render: (r: any) => formatLocalDateYmd(r.createdAt) },
     { key: "variant", header: "Item", render: (r: any) => r.variant?.product?.name || r.variant?.material?.name || r.variant?.sku || "—" },
     { key: "movementType", header: "Type", render: (r: any) => <span className="badge">{r.movementType || r.type || "—"}</span> },
     { key: "qty", header: "Qty", render: (r: any) => <span className={Number(r.qty) < 0 ? "text-red-600 font-medium" : "text-green-600 font-medium"}>{r.qty > 0 ? "+" : ""}{r.qty}</span> },

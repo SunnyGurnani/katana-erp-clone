@@ -98,7 +98,16 @@ function normalizeSo(so: any, lookups?: { variantById: Map<string, any> }) {
 router.get('/', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
   const where: any = {};
-  if (req.query.status) where.status = req.query.status;
+  if (req.query.status === 'open') {
+    where.NOT = {
+      OR: [
+        { status: { equals: 'fulfilled', mode: 'insensitive' } },
+        { status: { equals: 'cancelled', mode: 'insensitive' } },
+      ],
+    };
+  } else if (req.query.status) {
+    where.status = { equals: String(req.query.status).trim(), mode: 'insensitive' };
+  }
   const [items, total] = await Promise.all([
     prisma.salesOrder.findMany({ where, include, skip, take, orderBy: { createdAt: 'desc' } }),
     prisma.salesOrder.count({ where }),
@@ -147,7 +156,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const data = z.object({
     number: z.string().optional(),
-    customerId: z.string().uuid().nullish(),
+    customerId: z.string().uuid(),
     currency: z.string().default('USD'),
     dueAt: z.string().nullish(),
     notes: z.string().nullish(),
@@ -164,7 +173,7 @@ router.post('/', async (req, res) => {
   const number = data.number || await nextSoNumber();
   const so = await prisma.salesOrder.create({
     data: {
-      number, customerId: data.customerId ?? undefined, currency: data.currency,
+      number, customerId: data.customerId, currency: data.currency,
       requiredDate: data.dueAt ? new Date(data.dueAt) : undefined,
       notes: data.notes ?? undefined, locationId: data.locationId ?? undefined,
       rows: {
@@ -215,6 +224,12 @@ async function updateSoById(req: any, res: any) {
     currency: z.string().nullish(), dueAt: z.string().nullish(),
     notes: z.string().nullish(), locationId: z.string().min(1).nullish(),
   }).partial().parse(req.body);
+  if (data.dueAt) {
+    const y = Number(String(data.dueAt).slice(0, 4));
+    if (Number.isFinite(y) && (y < 2000 || y > 2100)) {
+      return res.status(422).json({ error: 'Due date year must be between 2000 and 2100' });
+    }
+  }
   const soData: any = {};
   if (data.customerId !== undefined) soData.customerId = data.customerId;
   if (data.status) soData.status = data.status;

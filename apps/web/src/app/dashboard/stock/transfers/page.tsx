@@ -89,7 +89,11 @@ export default function StockTransfersPage() {
             <tbody>
               {(data || []).map((t: any) => (
                 <tr key={t.id}>
-                  <td>{t.variant?.material?.name || t.variant?.product?.name || "—"}</td>
+                  <td>
+                    {t.variant?.product?.name
+                      ? `${t.variant.product.name} / ${t.variant.name || t.variant.sku || ""}`
+                      : t.variant?.name || t.variant?.sku || "—"}
+                  </td>
                   <td>{t.fromLocation?.name || "—"}</td>
                   <td>{t.toLocation?.name || "—"}</td>
                   <td>{t.qty}</td>

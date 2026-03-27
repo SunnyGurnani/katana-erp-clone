@@ -18,7 +18,16 @@ const schema = z.object({
 router.get('/', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
   const where = req.query.search ? { name: { contains: req.query.search as string } } : {};
-  const [items, total] = await Promise.all([prisma.customer.findMany({ where, skip, take, orderBy: { name: 'asc' } }), prisma.customer.count({ where })]);
+  const [items, total] = await Promise.all([
+    prisma.customer.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { name: 'asc' },
+      include: { _count: { select: { salesOrders: true } } },
+    }),
+    prisma.customer.count({ where }),
+  ]);
   res.json(paginated(items, total, page, pageSize));
 });
 router.post('/', async (req, res) => { const c = await prisma.customer.create({ data: schema.parse(req.body) }); res.status(201).json(c); });

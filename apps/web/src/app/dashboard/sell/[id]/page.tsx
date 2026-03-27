@@ -11,6 +11,7 @@ import { ArrowLeft, Plus, Truck, Trash2, Copy, Save, FileDown, X } from "lucide-
 import Link from "next/link";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { productVariantOptions, locationOptions } from "@/lib/catalogOptions";
+import { formatLocalDateDisplay } from "@/lib/formatDate";
 
 export default function SODetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -149,9 +150,9 @@ export default function SODetailPage() {
                   );
                 })()}
                 <td>{r.qty}</td>
-                <td>${Number(r.salePrice || 0).toFixed(2)}</td>
+                <td>{Number(r.salePrice || 0).toFixed(2)} {so.currency || "USD"}</td>
                 <td>{r.fulfilledQty || 0}</td>
-                <td>${(Number(r.qty) * Number(r.salePrice || 0)).toFixed(2)}</td>
+                <td>{(Number(r.qty) * Number(r.salePrice || 0)).toFixed(2)} {so.currency || "USD"}</td>
                 <td>{["draft", "confirmed"].includes(so.status) && <button className="icon-btn text-red-400 hover:text-red-600" onClick={(e) => { e.stopPropagation(); if (window.confirm("Remove this row?")) deleteRow.mutate(r.id); }}><X size={14} /></button>}</td>
               </tr>
             ))}

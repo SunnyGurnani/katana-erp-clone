@@ -19,10 +19,10 @@ const navItems = [
 ];
 
 const createItems = [
-  { label: "Sales order", href: "/dashboard/sell" },
+  { label: "Sales order", href: "/dashboard/sell?newSo=1" },
   { label: "Quote", href: "/dashboard/sell/quotes" },
-  { label: "Purchase order", href: "/dashboard/buy" },
-  { label: "Manufacturing order", href: "/dashboard/make" },
+  { label: "Purchase order", href: "/dashboard/buy?newPo=1" },
+  { label: "Manufacturing order", href: "/dashboard/make?newMo=1" },
 ];
 
 const GAP = 4;

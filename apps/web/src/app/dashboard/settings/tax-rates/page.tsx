@@ -17,10 +17,14 @@ export default function TaxRatesPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<any>({ ...blank, id: "" });
 
-  const { data, isLoading } = useQuery({ queryKey: ["tax-rates"], queryFn: () => api.get("/tax-rates").then(r => r.data.data || r.data) });
+  const { data, isLoading } = useQuery({
+    queryKey: ["tax-rates"],
+    queryFn: () => api.get("/tax-rates").then((r) => r.data.data ?? r.data),
+    retry: false,
+  });
 
   const save = useMutation({
-    mutationFn: (d: any) => d.id ? api.put(`/tax-rates/${d.id}`, d) : api.post("/tax-rates", d),
+    mutationFn: (d: any) => (d.id ? api.patch(`/tax-rates/${d.id}`, d) : api.post("/tax-rates", d)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["tax-rates"] }); addToast("Saved", "success"); setOpen(false); },
     onError: () => addToast("Error saving tax rate", "error"),
   });

@@ -775,6 +775,7 @@ model AccountingIntegration {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
   syncLogs     AccountingSyncLog[]
+  entityMappings AccountingEntityMapping[]
   @@unique([provider])
   @@map("accounting_integrations")
 }
@@ -786,12 +787,56 @@ model AccountingSyncLog {
   direction     String                // push | pull
   entityType    String                @map("entity_type") // invoice | bill | contact | payment
   entityId      String                @map("entity_id")   // local ID
+  operation     String                @default("create") // create | update | delete
   externalId    String?               @map("external_id") // QB/Xero ID
   status        String                // success | error | skipped
+  startedAt     DateTime?             @map("started_at")
+  completedAt   DateTime?             @map("completed_at")
+  errorCode     String?               @map("error_code")
   error         String?
   payload       String?               // JSON
+  requestPayload  String?             @map("request_payload")
+  responsePayload String?             @map("response_payload")
   createdAt     DateTime              @default(now()) @map("created_at")
   @@map("accounting_sync_logs")
+}
+
+model AccountingEntityMapping {
+  id               String                @id @default(uuid())
+  integrationId    String                @map("integration_id")
+  integration      AccountingIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  entityType       String                @map("entity_type")
+  localEntityId    String                @map("local_entity_id")
+  externalEntityId String                @map("external_entity_id")
+  syncToken        String?               @map("sync_token")
+  lastSyncedAt     DateTime?             @map("last_synced_at")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+
+  @@unique([integrationId, entityType, localEntityId])
+  @@map("accounting_entity_mappings")
+}
+
+model SyncJob {
+  id            String                @id @default(uuid())
+  integrationId String                @map("integration_id")
+  integration   AccountingIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  entityType    String                @map("entity_type")
+  localEntityId String                @map("local_entity_id")
+  operation     String
+  status        String                @default("queued") // queued | processing | success | failed
+  attempts      Int                   @default(0)
+  nextRetryAt   DateTime?             @map("next_retry_at")
+  error         String?
+  payload       String?
+  lastErrorAt   DateTime?             @map("last_error_at")
+  idempotencyKey String               @map("idempotency_key")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+
+  @@index([status, nextRetryAt])
+  @@unique([integrationId, idempotencyKey])
+  @@map("sync_jobs")
 }
 
 // ─── E-Commerce Integrations ──────────────────────────────────────────────────

@@ -112,7 +112,16 @@ function normalizePo(po: any, lookups?: { materialById: Map<string, any>; varian
 router.get('/', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
   const where: any = {};
-  if (req.query.status) where.status = req.query.status;
+  if (req.query.status === 'open') {
+    where.NOT = {
+      OR: [
+        { status: { equals: 'received', mode: 'insensitive' } },
+        { status: { equals: 'cancelled', mode: 'insensitive' } },
+      ],
+    };
+  } else if (req.query.status) {
+    where.status = { equals: String(req.query.status).trim(), mode: 'insensitive' };
+  }
   const [items, total] = await Promise.all([
     prisma.purchaseOrder.findMany({ where, include, skip, take, orderBy: { createdAt: 'desc' } }),
     prisma.purchaseOrder.count({ where }),

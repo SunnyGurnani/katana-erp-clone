@@ -13,12 +13,56 @@ router.use(requireOperatorForMutations);
 // ─── Stock Adjustments ───────────────────────────────────────────────────────
 // StockAdjustment has no Prisma relations — only raw ID fields
 
+async function enrichAdjustments(items: any[]) {
+  if (!items.length) return items;
+  const variantIds = [...new Set(items.map((i) => i.variantId))];
+  const locationIds = [...new Set(items.map((i) => i.locationId))];
+  const [variants, locations] = await Promise.all([
+    prisma.variant.findMany({
+      where: { id: { in: variantIds } },
+      include: { product: { select: { id: true, name: true } } },
+    }),
+    prisma.location.findMany({ where: { id: { in: locationIds } } }),
+  ]);
+  const vMap = new Map(variants.map((v) => [v.id, v]));
+  const lMap = new Map(locations.map((l) => [l.id, l]));
+  return items.map((a) => ({
+    ...a,
+    qty: Number(a.qtyDelta),
+    variant: vMap.get(a.variantId) ?? null,
+    location: lMap.get(a.locationId) ?? null,
+  }));
+}
+
+async function enrichTransfers(items: any[]) {
+  if (!items.length) return items;
+  const variantIds = [...new Set(items.map((i) => i.variantId))];
+  const locationIds = [...new Set([...items.map((i) => i.fromLocationId), ...items.map((i) => i.toLocationId)])];
+  const [variants, locations] = await Promise.all([
+    prisma.variant.findMany({
+      where: { id: { in: variantIds } },
+      include: { product: { select: { id: true, name: true } } },
+    }),
+    prisma.location.findMany({ where: { id: { in: locationIds } } }),
+  ]);
+  const vMap = new Map(variants.map((v) => [v.id, v]));
+  const lMap = new Map(locations.map((l) => [l.id, l]));
+  return items.map((t) => ({
+    ...t,
+    qty: Number(t.qty),
+    variant: vMap.get(t.variantId) ?? null,
+    fromLocation: lMap.get(t.fromLocationId) ?? null,
+    toLocation: lMap.get(t.toLocationId) ?? null,
+  }));
+}
+
 router.get('/adjustments', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
-  const [items, total] = await Promise.all([
+  const [raw, total] = await Promise.all([
     prisma.stockAdjustment.findMany({ skip, take, orderBy: { createdAt: 'desc' } }),
     prisma.stockAdjustment.count(),
   ]);
+  const items = await enrichAdjustments(raw);
   res.json(paginated(items, total, page, pageSize));
 });
 
@@ -71,10 +115,11 @@ router.post('/adjustments', async (req: AuthRequest, res) => {
 
 router.get('/transfers', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
-  const [items, total] = await Promise.all([
+  const [raw, total] = await Promise.all([
     prisma.stockTransfer.findMany({ skip, take, orderBy: { createdAt: 'desc' } }),
     prisma.stockTransfer.count(),
   ]);
+  const items = await enrichTransfers(raw);
   res.json(paginated(items, total, page, pageSize));
 });
 

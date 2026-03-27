@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -15,8 +15,29 @@ import { Copy, Trash2 } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { customerOptions } from "@/lib/catalogOptions";
 
+/** Defined in this module so the SO list never crashes if `@/lib/formatDate` fails to resolve (path alias / merge issues). */
+function formatSoListDate(iso: string | Date | null | undefined): string {
+  if (iso == null) return "—";
+  if (iso instanceof Date) {
+    if (isNaN(iso.getTime())) return "—";
+    const y = iso.getFullYear();
+    const m = String(iso.getMonth() + 1).padStart(2, "0");
+    const d = String(iso.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(iso);
+  const dateOnly = s.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) return dateOnly;
+  const t = new Date(s);
+  if (isNaN(t.getTime())) return "—";
+  const y = t.getFullYear();
+  const m = String(t.getMonth() + 1).padStart(2, "0");
+  const d = String(t.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 const statuses = [
-  { label: "Open", value: "" },
+  { label: "Open", value: "open" },
   { label: "Draft", value: "draft" },
   { label: "Partial", value: "partial" },
   { label: "Fulfilled", value: "fulfilled" },
@@ -43,6 +64,7 @@ function getSalesItemsStatus(so: any): string {
 }
 
 function getIngredientsStatus(so: any): string {
+  if (!so.rows || so.rows.length === 0) return "not_applicable";
   if (so.status === "fulfilled" || so.status === "done") return "in_stock";
   if (so.status === "cancelled") return "not_applicable";
   return "in_stock";
@@ -52,21 +74,37 @@ export default function SalesOrdersPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const { addToast } = useToast();
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState("open");
   const [open, setOpen] = useState(false);
   const [customerId, setCustomerId] = useState("");
   const [dueAt, setDueAt] = useState("");
   const [notes, setNotes] = useState("");
 
-  const { data, isLoading } = useQuery({
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("newSo") === "1") {
+      setOpen(true);
+      router.replace("/dashboard/sell", { scroll: false });
+    }
+  }, [router]);
+
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["sales-orders", status],
-    queryFn: () => api.get("/sales-orders", { params: status ? { status } : {} }).then(r => r.data.data),
+    queryFn: async () => {
+      const r = await api.get("/sales-orders", { params: { status } });
+      const body = r.data;
+      if (Array.isArray(body?.data)) return body.data;
+      if (Array.isArray(body)) return body;
+      return [];
+    },
+    retry: false,
   });
   const { data: customers } = useQuery({ queryKey: ["customers"], queryFn: () => api.get("/customers").then(r => r.data.data) });
   const custOpts = useMemo(() => customerOptions(customers), [customers]);
 
   const create = useMutation({
-    mutationFn: () => api.post("/sales-orders", { customerId: customerId || undefined, dueAt: dueAt || undefined, notes: notes || undefined, rows: [] }),
+    mutationFn: () => api.post("/sales-orders", { customerId, dueAt: dueAt || undefined, notes: notes || undefined, rows: [] }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-orders"] }); addToast("Sales order created", "success"); setOpen(false); setCustomerId(""); setDueAt(""); setNotes(""); },
     onError: () => addToast("Error creating SO", "error"),
   });
@@ -83,10 +121,17 @@ export default function SalesOrdersPage() {
     onError: () => addToast("Error duplicating SO", "error"),
   });
 
-  const totalAmount = (data || []).reduce((s: number, r: any) => s + Number(r.totalPrice || 0), 0);
+  const totalsByCurrency = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of data || []) {
+      const cur = (r.currency || "USD").toUpperCase();
+      m.set(cur, (m.get(cur) || 0) + Number(r.totalPrice || 0));
+    }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [data]);
 
   const columns: Column[] = [
-    { key: "createdAt", header: "Created on", sortable: true, render: (r: any) => new Date(r.createdAt).toISOString().slice(0, 10) },
+    { key: "createdAt", header: "Created on", sortable: true, render: (r: any) => formatSoListDate(r.createdAt) },
     { key: "soNumber", header: "Order #", sortable: true, render: (r: any) => (
       <Link href={`/dashboard/sell/${r.id}`} className="text-brand-600 font-medium hover:underline" onClick={e => e.stopPropagation()}>
         {r.soNumber}
@@ -98,9 +143,9 @@ export default function SalesOrdersPage() {
     )},
     { key: "dueAt", header: "Delivery deadline", sortable: true, render: (r: any) => {
       if (!r.dueAt) return "—";
-      const d = new Date(r.dueAt);
-      const overdue = d < new Date() && !["fulfilled", "cancelled"].includes(r.status);
-      return <span className={overdue ? "text-red-600 font-medium" : ""}>{d.toISOString().slice(0, 10)}</span>;
+      const ymd = formatSoListDate(r.dueAt);
+      const overdue = ymd !== "—" && new Date(ymd + "T12:00:00") < new Date() && !["fulfilled", "cancelled"].includes(r.status);
+      return <span className={overdue ? "text-red-600 font-medium" : ""}>{ymd}</span>;
     }},
     { key: "salesItems", header: "Sales items", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getSalesItemsStatus(r)} /> },
     { key: "ingredients", header: "Ingredients", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getIngredientsStatus(r)} /> },
@@ -117,12 +162,22 @@ export default function SalesOrdersPage() {
   return (
     <>
       <ListToolbar statusFilter={status} onStatusChange={setStatus} statuses={statuses} actionLabel="Sales order" onAction={() => setOpen(true)}>
-        <ExportToolbar resource="sales-orders" filters={status ? { status } : undefined} />
+        <ExportToolbar resource="sales-orders" filters={{ status }} />
       </ListToolbar>
       <div className="px-4 py-3">
+        {isError && (
+          <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            Could not load sales orders.{" "}
+            {(error as any)?.response?.data?.error || (error as Error)?.message || "Check the API and try again."}
+          </div>
+        )}
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-gray-500">{(data || []).length} orders</span>
-          <span className="text-xs font-medium text-gray-700">Total: ${totalAmount.toFixed(2)}</span>
+          <span className="text-xs font-medium text-gray-700">
+            {totalsByCurrency.length <= 1
+              ? `Total: ${(totalsByCurrency[0]?.[1] ?? 0).toFixed(2)} ${totalsByCurrency[0]?.[0] ?? "USD"}`
+              : `Totals: ${totalsByCurrency.map(([c, v]) => `${v.toFixed(2)} ${c}`).join(" · ")}`}
+          </span>
         </div>
         <DataTable
           columns={columns}
@@ -153,7 +208,7 @@ export default function SalesOrdersPage() {
         <p className="text-xs text-gray-400 mt-3">Add line items after creating the SO.</p>
         <div className="flex justify-end gap-2 mt-4">
           <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
-          <button className="btn btn-primary" disabled={create.isPending} onClick={() => create.mutate()}>{create.isPending ? "Creating..." : "Create SO"}</button>
+          <button className="btn btn-primary" disabled={create.isPending || !customerId} onClick={() => create.mutate()}>{create.isPending ? "Creating..." : "Create SO"}</button>
         </div>
       </Modal>
     </>

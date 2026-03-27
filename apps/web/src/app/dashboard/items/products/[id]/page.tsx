@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -86,10 +86,32 @@ export default function ProductDetailPage() {
     queryFn: () => api.get("/materials").then(r => r.data.data || []),
   });
 
-  const { data: variants = [] } = useQuery({
-    queryKey: ["variants"],
-    queryFn: () => api.get("/variants").then(r => r.data.data || []),
+  const { data: allProducts = [] } = useQuery({
+    queryKey: ["products"],
+    queryFn: () => api.get("/products").then(r => r.data.data || []),
   });
+
+  const materialById = useMemo(() => {
+    const m = new Map<string, any>();
+    (materials as any[]).forEach((x) => m.set(x.id, x));
+    return m;
+  }, [materials]);
+
+  const variantById = useMemo(() => {
+    const m = new Map<string, any>();
+    (allProducts as any[]).forEach((p) =>
+      (p.variants || []).forEach((v: any) => m.set(v.id, { ...v, product: p }))
+    );
+    return m;
+  }, [allProducts]);
+
+  const variantOptionsList = useMemo(() => {
+    const out: any[] = [];
+    (allProducts as any[]).forEach((p) =>
+      (p.variants || []).forEach((v: any) => out.push({ ...v, product: p }))
+    );
+    return out;
+  }, [allProducts]);
 
   // Mutations
   const updateProduct = useMutation({
@@ -156,9 +178,16 @@ export default function ProductDetailPage() {
     { 
       key: "material", 
       header: "Material/Variant", 
-      render: (r: BOMRow) => r.materialId ? 
-        materials.find((m: any) => m.id === r.materialId)?.name || "Unknown" :
-        variants.find((v: any) => v.id === r.variantId)?.name || "Unknown"
+      render: (r: BOMRow) => {
+        if (r.materialId) return materialById.get(r.materialId)?.name || "—";
+        if (r.variantId) {
+          const v = variantById.get(r.variantId);
+          if (!v) return "—";
+          const pn = v.product?.name || "";
+          return pn ? `${pn} / ${v.name}` : v.name;
+        }
+        return "—";
+      },
     },
     { key: "qty", header: "Quantity", render: (r: BOMRow) => Number(r.qty).toFixed(2) },
     { key: "unitCost", header: "Unit Cost", render: (r: BOMRow) => r.unitCost ? `$${Number(r.unitCost).toFixed(2)}` : "—" },
@@ -188,7 +217,7 @@ export default function ProductDetailPage() {
   ];
 
   const operationColumns: Column[] = [
-    { key: "rank", header: "Step", render: (r: ProductOperation) => r.rank },
+    { key: "rank", header: "Step", render: (r: ProductOperation, i: number) => (r.rank != null && r.rank > 0 ? r.rank : i + 1) },
     { key: "name", header: "Operation", render: (r: ProductOperation) => <span className="font-medium">{r.name}</span> },
     { key: "durationMinutes", header: "Duration (min)", render: (r: ProductOperation) => r.durationMinutes || "—" },
     { key: "costPerHour", header: "Cost/hr", render: (r: ProductOperation) => r.costPerHour ? `$${Number(r.costPerHour).toFixed(2)}` : "—" },
@@ -470,8 +499,8 @@ export default function ProductDetailPage() {
               onChange={e => setBomRowForm(f => ({ ...f, variantId: e.target.value, materialId: "" }))}
             >
               <option value="">— Select Variant —</option>
-              {variants.map((v: any) => (
-                <option key={v.id} value={v.id}>{v.name}</option>
+              {variantOptionsList.map((v: any) => (
+                <option key={v.id} value={v.id}>{v.product?.name ? `${v.product.name} / ${v.name}` : v.name}</option>
               ))}
             </select>
           </div>
