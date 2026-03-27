@@ -53,6 +53,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      NODE_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/forge_erp_test
       SECRET_KEY: test-secret-key-for-ci-32-characters-long
       ALLOWED_ORIGINS: http://localhost:3000
