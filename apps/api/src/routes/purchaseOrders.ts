@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { TenantRequest, tenantWhere, tenantData } from '../middleware/tenant';
 import { getPagination, paginated } from '../middleware/paginate';
 import { adjustStock } from '../lib/inventory';
 import { z } from 'zod';
@@ -30,9 +31,9 @@ function normalizePo(po: any) {
   };
 }
 
-router.get('/', async (req, res) => {
+router.get('/', async (req: TenantRequest, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
-  const where: any = {};
+  const where: any = { ...tenantWhere(req) };
   if (req.query.status) where.status = req.query.status;
   const [items, total] = await Promise.all([
     prisma.purchaseOrder.findMany({ where, include, skip, take, orderBy: { createdAt: 'desc' } }),
@@ -41,7 +42,7 @@ router.get('/', async (req, res) => {
   res.json(paginated(items.map(normalizePo), total, page, pageSize));
 });
 
-router.post('/', async (req, res) => {
+router.post('/', async (req: TenantRequest, res) => {
   const data = z.object({
     number: z.string().optional(),
     supplierId: z.string().uuid().nullish(),
@@ -69,6 +70,7 @@ router.post('/', async (req, res) => {
   }));
   const po = await prisma.purchaseOrder.create({
     data: {
+      ...tenantData(req),
       number, supplierId: data.supplierId ?? undefined, currency: data.currency,
       expectedDate: data.expectedAt ? new Date(data.expectedAt) : undefined,
       notes: data.notes ?? undefined, locationId: data.locationId ?? undefined,

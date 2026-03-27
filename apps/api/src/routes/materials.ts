@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { TenantRequest, tenantWhere, tenantData } from '../middleware/tenant';
 import { getPagination, paginated } from '../middleware/paginate';
 import { z } from 'zod';
 
@@ -19,21 +20,22 @@ const schema = z.object({
   leadTimeDays: z.number().int().nullish(),
 });
 
-router.get('/', async (req, res) => {
+router.get('/', async (req: TenantRequest, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
-  const where = req.query.search ? { name: { contains: req.query.search as string } } : {};
+  const where: any = { ...tenantWhere(req) };
+  if (req.query.search) where.name = { contains: req.query.search as string };
   const [items, total] = await Promise.all([prisma.material.findMany({ where, skip, take, orderBy: { name: 'asc' } }), prisma.material.count({ where })]);
   res.json(paginated(items, total, page, pageSize));
 });
 
-router.post('/', async (req, res) => {
+router.post('/', async (req: TenantRequest, res) => {
   const data = schema.parse(req.body);
-  const m = await prisma.material.create({ data: { ...data, sku: data.sku ?? undefined } });
+  const m = await prisma.material.create({ data: { ...data, sku: data.sku ?? undefined, ...tenantData(req) } });
   res.status(201).json(m);
 });
 
-router.get('/:id', async (req, res) => {
-  const m = await prisma.material.findUnique({ where: { id: req.params.id } });
+router.get('/:id', async (req: TenantRequest, res) => {
+  const m = await prisma.material.findFirst({ where: { id: req.params.id, ...tenantWhere(req) } });
   if (!m) return res.status(404).json({ error: 'Not found' });
   res.json(m);
 });

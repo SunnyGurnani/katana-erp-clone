@@ -45,8 +45,12 @@ router.post('/webhooks/:provider', async (req, res) => {
 
 router.use(authenticate);
 
+async function findEcomIntegration(provider: string) {
+  return prisma.ecommerceIntegration.findFirst({ where: { provider } });
+}
+
 async function getIntegration(provider: string) {
-  const integration = await prisma.ecommerceIntegration.findUnique({ where: { provider } });
+  const integration = await findEcomIntegration(provider);
   if (!integration || integration.status !== 'connected') {
     throw Object.assign(new Error(`${provider} not connected`), { status: 400 });
   }
@@ -79,34 +83,50 @@ router.post('/:provider/connect', async (req, res) => {
     settings: z.record(z.any()).optional(),
   }).parse(req.body);
 
-  const item = await prisma.ecommerceIntegration.upsert({
-    where: { provider: req.params.provider },
-    create: {
-      provider: req.params.provider, status: 'connected',
-      shopDomain: body.shopDomain, accessToken: body.accessToken,
-      apiKey: body.apiKey, apiSecret: body.apiSecret,
-      webhookSecret: body.webhookSecret,
-      settings: body.settings ? JSON.stringify(body.settings) : null,
-    },
-    update: {
-      status: 'connected', shopDomain: body.shopDomain ?? undefined,
-      accessToken: body.accessToken, apiKey: body.apiKey ?? undefined,
-      apiSecret: body.apiSecret ?? undefined, webhookSecret: body.webhookSecret ?? undefined,
-      settings: body.settings ? JSON.stringify(body.settings) : undefined,
-      updatedAt: new Date(),
-    },
-  });
+  const provider = req.params.provider as string;
+  const existing = await findEcomIntegration(provider);
+  let item;
+  if (existing) {
+    item = await prisma.ecommerceIntegration.update({
+      where: { id: existing.id },
+      data: {
+        status: 'connected', shopDomain: body.shopDomain ?? undefined,
+        accessToken: body.accessToken, apiKey: body.apiKey ?? undefined,
+        apiSecret: body.apiSecret ?? undefined, webhookSecret: body.webhookSecret ?? undefined,
+        settings: body.settings ? JSON.stringify(body.settings) : undefined,
+        updatedAt: new Date(),
+      },
+    });
+  } else {
+    item = await prisma.ecommerceIntegration.create({
+      data: {
+        provider, status: 'connected',
+        shopDomain: body.shopDomain, accessToken: body.accessToken,
+        apiKey: body.apiKey, apiSecret: body.apiSecret,
+        webhookSecret: body.webhookSecret,
+        settings: body.settings ? JSON.stringify(body.settings) : null,
+      },
+    });
+  }
   res.json(item);
 });
 
 // POST /ecommerce/:provider/disconnect
 router.post('/:provider/disconnect', async (req, res) => {
-  assertProvider(req.params.provider);
-  const item = await prisma.ecommerceIntegration.upsert({
-    where: { provider: req.params.provider },
-    create: { provider: req.params.provider, status: 'disconnected' },
-    update: { status: 'disconnected', accessToken: null, apiKey: null, apiSecret: null, updatedAt: new Date() },
-  });
+  assertProvider(req.params.provider as string);
+  const providerStr = req.params.provider as string;
+  const existingDisc = await findEcomIntegration(providerStr);
+  let item;
+  if (existingDisc) {
+    item = await prisma.ecommerceIntegration.update({
+      where: { id: existingDisc.id },
+      data: { status: 'disconnected', accessToken: null, apiKey: null, apiSecret: null, updatedAt: new Date() },
+    });
+  } else {
+    item = await prisma.ecommerceIntegration.create({
+      data: { provider: providerStr, status: 'disconnected' },
+    });
+  }
   res.json(item);
 });
 
@@ -151,7 +171,7 @@ router.post('/:provider/sync/products', async (req, res) => {
     }
   }
 
-  await prisma.ecommerceIntegration.update({ where: { provider: req.params.provider }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
+  await prisma.ecommerceIntegration.update({ where: { id: integration.id }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
   res.json({ synced: results.length, results });
 });
 
@@ -231,7 +251,7 @@ router.post('/:provider/sync/orders', async (req, res) => {
     }
   }
 
-  await prisma.ecommerceIntegration.update({ where: { provider: req.params.provider }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
+  await prisma.ecommerceIntegration.update({ where: { id: integration.id }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
   res.json({ synced: results.length, results });
 });
 
@@ -268,7 +288,7 @@ router.post('/:provider/sync/inventory', async (req, res) => {
     }
   }
 
-  await prisma.ecommerceIntegration.update({ where: { provider: req.params.provider }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
+  await prisma.ecommerceIntegration.update({ where: { id: integration.id }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
   res.json({ synced: results.length, results });
 });
 
@@ -304,7 +324,7 @@ router.delete('/mappings/:id', async (req, res) => {
 router.get('/:provider/sync-logs', async (req, res) => {
   assertProvider(req.params.provider);
   const { page, pageSize, skip, take } = getPagination(req);
-  const integration = await prisma.ecommerceIntegration.findUnique({ where: { provider: req.params.provider } });
+  const integration = await findEcomIntegration(req.params.provider as string);
   if (!integration) return res.status(404).json({ error: 'Integration not found' });
 
   const where = { integrationId: integration.id };

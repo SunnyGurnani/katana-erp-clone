@@ -9,6 +9,7 @@ import { env } from './env';
 import { auditMiddleware } from './middleware/audit';
 import { errorHandler } from './middleware/error';
 import { rateLimit } from './middleware/rateLimit';
+import { tenantMiddleware } from './middleware/tenant';
 import authRouter from './routes/auth';
 import productsRouter from './routes/products';
 import materialsRouter from './routes/materials';
@@ -100,6 +101,10 @@ app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 const v1 = '/api/v1';
 app.use(`${v1}/auth`, authRouter);
+
+// Apply tenant middleware globally — it's a no-op when userId is not set (e.g. auth routes)
+app.use(`${v1}`, tenantMiddleware as any);
+
 app.use(`${v1}/products`, productsRouter);
 app.use(`${v1}/materials`, materialsRouter);
 app.use(`${v1}/suppliers`, suppliersRouter);

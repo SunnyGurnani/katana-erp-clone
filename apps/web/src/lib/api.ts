@@ -11,6 +11,10 @@ api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('access_token');
     if (token) config.headers.Authorization = `Bearer ${token}`;
+
+    // Multi-tenant: attach X-Tenant-Id header
+    const tenantId = localStorage.getItem('tenant_id');
+    if (tenantId) config.headers['X-Tenant-Id'] = tenantId;
   }
   return config;
 });
