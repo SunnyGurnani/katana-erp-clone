@@ -29,13 +29,49 @@ const include = {
   costRows: true,
 };
 
-function normalizePo(po: any) {
+async function buildPoRowLookups(rows: any[]) {
+  const materialIds = Array.from(new Set((rows || []).map((r: any) => r.materialId).filter(Boolean)));
+  const variantIds = Array.from(new Set((rows || []).map((r: any) => r.variantId).filter(Boolean)));
+
+  const [materials, variants] = await Promise.all([
+    materialIds.length
+      ? prisma.material.findMany({
+          where: { id: { in: materialIds } },
+          select: { id: true, name: true, sku: true },
+        })
+      : Promise.resolve([]),
+    variantIds.length
+      ? prisma.variant.findMany({
+          where: { id: { in: variantIds } },
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            product: { select: { id: true, name: true } },
+          },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  return {
+    materialById: new Map(materials.map((m: any) => [m.id, m])),
+    variantById: new Map(variants.map((v: any) => [v.id, v])),
+  };
+}
+
+function normalizePo(po: any, lookups?: { materialById: Map<string, any>; variantById: Map<string, any> }) {
   return {
     ...po,
     poNumber: po.number,
     totalCost: po.rows?.reduce((s: number, r: any) => s + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0) ?? 0,
     expectedAt: po.expectedDate,
-    rows: po.rows?.map((r: any) => ({ ...r, qty: r.qtyOrdered, unitCost: r.unitPrice })),
+    rows: po.rows?.map((r: any) => ({
+      ...r,
+      qty: r.qtyOrdered,
+      unitCost: r.unitPrice,
+      material: r.material ?? (r.materialId && lookups ? lookups.materialById.get(r.materialId) || null : null),
+      variant: r.variant ?? (r.variantId && lookups ? lookups.variantById.get(r.variantId) || null : null),
+    })),
   };
 }
 
@@ -81,7 +117,8 @@ router.get('/', async (req, res) => {
     prisma.purchaseOrder.findMany({ where, include, skip, take, orderBy: { createdAt: 'desc' } }),
     prisma.purchaseOrder.count({ where }),
   ]);
-  res.json(paginated(items.map(normalizePo), total, page, pageSize));
+  const lookups = await buildPoRowLookups(items.flatMap((po: any) => po.rows || []));
+  res.json(paginated(items.map((po: any) => normalizePo(po, lookups)), total, page, pageSize));
 });
 
 /**
@@ -129,7 +166,7 @@ router.post('/', async (req, res) => {
     currency: z.string().default('USD'),
     expectedAt: z.string().nullish(),
     notes: z.string().nullish(),
-    locationId: z.string().uuid().nullish(),
+    locationId: z.string().min(1).nullish(),
     rows: z.array(z.object({
       variantId: z.string().uuid().nullish(),
       materialId: z.string().uuid().nullish(),
@@ -157,7 +194,8 @@ router.post('/', async (req, res) => {
     },
     include,
   });
-  res.status(201).json(normalizePo(po));
+  const lookups = await buildPoRowLookups(po.rows || []);
+  res.status(201).json(normalizePo(po, lookups));
 });
 
 /**
@@ -183,14 +221,15 @@ router.post('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const po = await prisma.purchaseOrder.findUnique({ where: { id: req.params.id }, include });
   if (!po) return res.status(404).json({ error: 'Not found' });
-  res.json(normalizePo(po));
+  const lookups = await buildPoRowLookups(po.rows || []);
+  res.json(normalizePo(po, lookups));
 });
 
 async function updatePoById(req: any, res: any) {
   const data = z.object({
     supplierId: z.string().uuid().nullish(), status: z.string().nullish(),
     currency: z.string().nullish(), expectedAt: z.string().nullish(),
-    notes: z.string().nullish(), locationId: z.string().uuid().nullish(),
+    notes: z.string().nullish(), locationId: z.string().min(1).nullish(),
   }).partial().parse(req.body);
   const poData: any = {};
   if (data.supplierId !== undefined) poData.supplierId = data.supplierId;
@@ -200,7 +239,8 @@ async function updatePoById(req: any, res: any) {
   if (data.locationId !== undefined) poData.locationId = data.locationId;
   if (data.expectedAt !== undefined) poData.expectedDate = data.expectedAt ? new Date(data.expectedAt) : null;
   const po = await prisma.purchaseOrder.update({ where: { id: req.params.id }, data: poData, include });
-  res.json(normalizePo(po));
+  const lookups = await buildPoRowLookups(po.rows || []);
+  res.json(normalizePo(po, lookups));
 }
 
 /**
@@ -342,7 +382,7 @@ router.post('/:id/rows', async (req, res) => {
  */
 router.post('/:id/receive', async (req, res) => {
   const body = z.object({
-    locationId: z.string().uuid().optional(),
+    locationId: z.string().min(1).optional(),
     rows: z.array(z.object({ rowId: z.string().uuid(), receivedQty: z.coerce.number().positive() })).optional(),
   }).parse(req.body);
   const po = await prisma.purchaseOrder.findUnique({ where: { id: req.params.id }, include });
@@ -370,7 +410,8 @@ router.post('/:id/receive', async (req, res) => {
   const anyFulfilled = allRows.some((r: any) => Number(r.qtyReceived) > 0);
   const newStatus = allFulfilled ? 'received' : anyFulfilled ? 'partial' : po.status;
   const updated = await prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: newStatus }, include });
-  res.json(normalizePo(updated));
+  const lookups = await buildPoRowLookups(updated.rows || []);
+  res.json(normalizePo(updated, lookups));
 });
 
 export default router;

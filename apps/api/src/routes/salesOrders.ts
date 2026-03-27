@@ -29,13 +29,35 @@ const include = {
   rows: { include: { fulfillments: true } },
 };
 
-function normalizeSo(so: any) {
+async function buildSoRowLookups(rows: any[]) {
+  const variantIds = Array.from(new Set((rows || []).map((r: any) => r.variantId).filter(Boolean)));
+  const variants = variantIds.length
+    ? await prisma.variant.findMany({
+        where: { id: { in: variantIds } },
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          product: { select: { id: true, name: true } },
+        },
+      })
+    : [];
+  return { variantById: new Map(variants.map((v: any) => [v.id, v])) };
+}
+
+function normalizeSo(so: any, lookups?: { variantById: Map<string, any> }) {
   return {
     ...so,
     soNumber: so.number,
     dueAt: so.requiredDate,
     totalPrice: so.rows?.reduce((s: number, r: any) => s + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0) ?? 0,
-    rows: so.rows?.map((r: any) => ({ ...r, qty: r.qtyOrdered, salePrice: r.unitPrice, fulfilledQty: r.qtyFulfilled })),
+    rows: so.rows?.map((r: any) => ({
+      ...r,
+      qty: r.qtyOrdered,
+      salePrice: r.unitPrice,
+      fulfilledQty: r.qtyFulfilled,
+      variant: r.variant ?? (r.variantId && lookups ? lookups.variantById.get(r.variantId) || null : null),
+    })),
   };
 }
 
@@ -81,7 +103,8 @@ router.get('/', async (req, res) => {
     prisma.salesOrder.findMany({ where, include, skip, take, orderBy: { createdAt: 'desc' } }),
     prisma.salesOrder.count({ where }),
   ]);
-  res.json(paginated(items.map(normalizeSo), total, page, pageSize));
+  const lookups = await buildSoRowLookups(items.flatMap((so: any) => so.rows || []));
+  res.json(paginated(items.map((so: any) => normalizeSo(so, lookups)), total, page, pageSize));
 });
 
 /**
@@ -128,7 +151,7 @@ router.post('/', async (req, res) => {
     currency: z.string().default('USD'),
     dueAt: z.string().nullish(),
     notes: z.string().nullish(),
-    locationId: z.string().uuid().nullish(),
+    locationId: z.string().min(1).nullish(),
     rows: z.array(z.object({
       variantId: z.string().uuid().nullish(),
       description: z.string().nullish(),
@@ -155,7 +178,8 @@ router.post('/', async (req, res) => {
     },
     include,
   });
-  res.status(201).json(normalizeSo(so));
+  const lookups = await buildSoRowLookups(so.rows || []);
+  res.status(201).json(normalizeSo(so, lookups));
 });
 
 /**
@@ -181,14 +205,15 @@ router.post('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const so = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include });
   if (!so) return res.status(404).json({ error: 'Not found' });
-  res.json(normalizeSo(so));
+  const lookups = await buildSoRowLookups(so.rows || []);
+  res.json(normalizeSo(so, lookups));
 });
 
 async function updateSoById(req: any, res: any) {
   const data = z.object({
     customerId: z.string().uuid().nullish(), status: z.string().nullish(),
     currency: z.string().nullish(), dueAt: z.string().nullish(),
-    notes: z.string().nullish(), locationId: z.string().uuid().nullish(),
+    notes: z.string().nullish(), locationId: z.string().min(1).nullish(),
   }).partial().parse(req.body);
   const soData: any = {};
   if (data.customerId !== undefined) soData.customerId = data.customerId;
@@ -198,7 +223,8 @@ async function updateSoById(req: any, res: any) {
   if (data.locationId !== undefined) soData.locationId = data.locationId;
   if (data.dueAt !== undefined) soData.requiredDate = data.dueAt ? new Date(data.dueAt) : null;
   const so = await prisma.salesOrder.update({ where: { id: req.params.id }, data: soData, include });
-  res.json(normalizeSo(so));
+  const lookups = await buildSoRowLookups(so.rows || []);
+  res.json(normalizeSo(so, lookups));
 }
 
 /**
@@ -340,7 +366,7 @@ router.post('/:id/rows', async (req, res) => {
  */
 router.post('/:id/fulfill', async (req, res) => {
   const body = z.object({
-    locationId: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.string().uuid().optional()),
+    locationId: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.string().min(1).optional()),
     rows: z.array(z.object({ rowId: z.string().uuid(), qty: z.coerce.number().positive(), isReturn: z.boolean().default(false) })).optional(),
   }).parse(req.body);
   const so = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include });
@@ -392,7 +418,8 @@ router.post('/:id/fulfill', async (req, res) => {
   const anyFulfilled = allRows.some((r: any) => Number(r.qtyFulfilled) > 0);
   const newStatus = allFulfilled ? 'fulfilled' : anyFulfilled ? 'partial' : so.status;
   const updated = await prisma.salesOrder.update({ where: { id: so.id }, data: { status: newStatus }, include });
-  res.json(normalizeSo(updated));
+  const lookups = await buildSoRowLookups(updated.rows || []);
+  res.json(normalizeSo(updated, lookups));
 });
 
 // GET /sales_orders/:id/returnable_items — fulfilled rows not yet fully returned

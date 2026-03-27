@@ -61,7 +61,18 @@ router.get('/levels', async (req, res) => {
   const where: any = {};
   if (req.query.locationId) where.locationId = req.query.locationId;
   if (req.query.variantId) where.variantId = req.query.variantId;
-  const [items, total] = await Promise.all([prisma.inventoryLevel.findMany({ where, skip, take }), prisma.inventoryLevel.count({ where })]);
+  const [items, total] = await Promise.all([
+    prisma.inventoryLevel.findMany({
+      where,
+      skip,
+      take,
+      include: {
+        variant: { include: { product: true } },
+        location: true,
+      },
+    }),
+    prisma.inventoryLevel.count({ where }),
+  ]);
   res.json(paginated(items, total, page, pageSize));
 });
 
@@ -108,7 +119,16 @@ router.get('/movements', async (req, res) => {
   if (req.query.variantId) where.variantId = req.query.variantId;
   if (req.query.locationId) where.locationId = req.query.locationId;
   const [items, total] = await Promise.all([
-    prisma.inventoryMovement.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.inventoryMovement.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        variant: { include: { product: true } },
+        location: true,
+      },
+    }),
     prisma.inventoryMovement.count({ where })
   ]);
   res.json(paginated(items, total, page, pageSize));

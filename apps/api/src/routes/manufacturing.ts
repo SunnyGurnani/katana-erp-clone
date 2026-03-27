@@ -265,7 +265,7 @@ router.post('/orders', async (req, res) => {
     bomId: z.string().uuid().nullish(),
     productId: z.string().uuid().optional(),
     variantId: z.string().uuid().nullish(),
-    locationId: z.string().uuid().nullish(),
+    locationId: z.string().min(1).nullish(),
     qty: z.coerce.number().default(1),
     qtyPlanned: z.coerce.number().optional(),
     scheduledAt: z.string().nullish(),
@@ -366,7 +366,7 @@ router.get('/orders/:id', async (req, res) => {
 router.patch('/orders/:id', async (req, res) => {
   const data = z.object({
     status: z.string().nullish(), qtyPlanned: z.number().nullish(), scheduledAt: z.string().nullish(),
-    notes: z.string().nullish(), locationId: z.string().uuid().nullish(),
+    notes: z.string().nullish(), locationId: z.string().min(1).nullish(),
   }).parse(req.body);
   const moData: any = Object.fromEntries(Object.entries(data).filter(([, v]) => v != null));
   if ('scheduledAt' in data) {
@@ -411,8 +411,8 @@ router.patch('/orders/:id', async (req, res) => {
 router.post('/orders/:id/produce', async (req, res) => {
   const body = z.object({
     qty: z.coerce.number().positive().optional(),
-    locationId: z.string().uuid().optional(),
-    sourceLocationId: z.string().uuid().optional(),
+    locationId: z.string().min(1).optional(),
+    sourceLocationId: z.string().min(1).optional(),
   }).parse(req.body);
 
   const mo = await prisma.manufacturingOrder.findUnique({ where: { id: req.params.id }, include: moInclude });

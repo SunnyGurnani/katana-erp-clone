@@ -13,10 +13,6 @@ import Link from "next/link";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { locationOptions } from "@/lib/catalogOptions";
 
-const recipeRowCols: ColumnDef[] = [
-  { key: "material", header: "Material", render: (r: any) => r.variant?.material?.name || r.variant?.sku || "—" },
-  { key: "qtyPlanned", header: "Qty Planned" },
-];
 const recipeRowFields: FieldDef[] = [
   { key: "materialId", label: "Material ID" },
   { key: "variantId", label: "Variant ID", required: true },
@@ -57,7 +53,36 @@ export default function MODetailPage() {
 
   const { data: mo, isLoading } = useQuery({ queryKey: ["mo", id], queryFn: () => api.get(`/manufacturing/orders/${id}`).then(r => r.data) });
   const { data: locations } = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data.data) });
+  const { data: materials } = useQuery({ queryKey: ["materials"], queryFn: () => api.get("/materials").then((r) => r.data.data) });
+  const { data: products } = useQuery({ queryKey: ["products"], queryFn: () => api.get("/products").then((r) => r.data.data) });
   const locOpts = useMemo(() => locationOptions(locations), [locations]);
+  const materialById = useMemo(() => {
+    const map = new Map<string, any>();
+    (materials || []).forEach((m: any) => map.set(m.id, m));
+    return map;
+  }, [materials]);
+  const variantById = useMemo(() => {
+    const map = new Map<string, any>();
+    (products || []).forEach((p: any) => (p.variants || []).forEach((v: any) => map.set(v.id, { ...v, product: p })));
+    return map;
+  }, [products]);
+  const recipeRowCols: ColumnDef[] = useMemo(
+    () => [
+      {
+        key: "material",
+        header: "Material",
+        render: (r: any) => {
+          const m = r.material || (r.materialId ? materialById.get(r.materialId) : undefined);
+          const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
+          if (m) return m.sku ? `${m.name} (${m.sku})` : m.name;
+          if (v) return v.sku ? `[${v.sku}] ${v.product?.name || v.name || "—"}` : v.product?.name || v.name || "—";
+          return r.materialId || r.variantId || "—";
+        },
+      },
+      { key: "qtyPlanned", header: "Qty Planned" },
+    ],
+    [materialById, variantById]
+  );
 
   const produce = useMutation({
     mutationFn: () => api.post(`/manufacturing/orders/${id}/produce`, { locationId, sourceLocationId: sourceLocationId || undefined }),

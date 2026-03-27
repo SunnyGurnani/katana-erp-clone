@@ -34,6 +34,16 @@ export default function PODetailPage() {
   const { data: locations } = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then((r) => r.data.data) });
   const { data: suppliers } = useQuery({ queryKey: ["suppliers"], queryFn: () => api.get("/suppliers").then((r) => r.data.data) });
   const { data: currencies } = useQuery({ queryKey: ["currencies"], queryFn: () => api.get("/currencies").then((r) => r.data.data) });
+  const materialById = useMemo(() => {
+    const map = new Map<string, any>();
+    (materials || []).forEach((m: any) => map.set(m.id, m));
+    return map;
+  }, [materials]);
+  const variantById = useMemo(() => {
+    const map = new Map<string, any>();
+    (products || []).forEach((p: any) => (p.variants || []).forEach((v: any) => map.set(v.id, { ...v, product: p })));
+    return map;
+  }, [products]);
 
   const lineOptions = useMemo(() => purchaseLineOptions(materials, products), [materials, products]);
   const locOpts = useMemo(() => locationOptions(locations), [locations]);
@@ -269,11 +279,11 @@ export default function PODetailPage() {
         </div>
       </div>
 
-      <div className="card overflow-hidden">
+      <div className="card overflow-visible">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <h2 className="text-sm font-semibold text-gray-800">Items not received</h2>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-visible">
           <table className="table">
             <thead>
               <tr>
@@ -289,12 +299,26 @@ export default function PODetailPage() {
             <tbody>
               {(po.rows || []).map((r: any, i: number) => (
                 <tr key={r.id}>
+                  {(() => {
+                    const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
+                    const m = r.material || (r.materialId ? materialById.get(r.materialId) : undefined);
+                    const itemName =
+                      m?.name ||
+                      v?.product?.name ||
+                      r.description ||
+                      r.variantId ||
+                      r.materialId ||
+                      "—";
+                    const skuPrefix = v?.sku ? `[${v.sku}] ` : m?.sku ? `[${m.sku}] ` : "";
+                    const variantSuffix = v?.name && v?.product ? ` / ${v.name}` : "";
+                    return (
+                      <>
                   <td className="text-gray-400">{i + 1}</td>
                   <td>
                     <span className="font-medium text-gray-900">
-                      {r.variant?.sku ? `[${r.variant.sku}] ` : ""}
-                      {r.variant?.product?.name || r.variant?.material?.name || r.description || "—"}
-                      {r.variant?.name && r.variant?.product ? ` / ${r.variant.name}` : ""}
+                          {skuPrefix}
+                          {itemName}
+                          {variantSuffix}
                     </span>
                   </td>
                   <td>{r.qty}</td>
@@ -318,6 +342,9 @@ export default function PODetailPage() {
                       </button>
                     )}
                   </td>
+                      </>
+                    );
+                  })()}
                 </tr>
               ))}
               {canEditLines && (

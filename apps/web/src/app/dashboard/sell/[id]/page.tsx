@@ -32,6 +32,11 @@ export default function SODetailPage() {
 
   const variantOpts = useMemo(() => productVariantOptions(products), [products]);
   const locOpts = useMemo(() => locationOptions(locations), [locations]);
+  const variantById = useMemo(() => {
+    const map = new Map<string, any>();
+    (products || []).forEach((p: any) => (p.variants || []).forEach((v: any) => map.set(v.id, { ...v, product: p })));
+    return map;
+  }, [products]);
 
   const addRow = useMutation({
     mutationFn: () => api.post(`/sales-orders/${id}/rows`, { variantId, qty: Number(qty), salePrice: Number(salePrice) }),
@@ -134,8 +139,15 @@ export default function SODetailPage() {
           <tbody>
             {(so.rows || []).map((r: any) => (
               <tr key={r.id}>
-                <td className="font-mono text-sm">{r.variant?.sku || "—"}</td>
-                <td>{r.variant?.product?.name || r.description || "—"}</td>
+                {(() => {
+                  const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
+                  return (
+                    <>
+                      <td className="font-mono text-sm">{v?.sku || "—"}</td>
+                      <td>{v?.product?.name || r.description || r.variantId || "—"}</td>
+                    </>
+                  );
+                })()}
                 <td>{r.qty}</td>
                 <td>${Number(r.salePrice || 0).toFixed(2)}</td>
                 <td>{r.fulfilledQty || 0}</td>
