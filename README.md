@@ -32,8 +32,8 @@ cp .env.example .env
 
 pnpm install
 pnpm db:generate    # Regenerate Prisma Client
-pnpm db:push        # Push schema to local Postgres
-pnpm db:seed        # Seed demo data
+pnpm db:migrate     # Apply migrations (uses prisma migrate deploy)
+pnpm db:seed        # Seed demo data (idempotent)
 pnpm run dev        # Start both API + web
 ```
 
