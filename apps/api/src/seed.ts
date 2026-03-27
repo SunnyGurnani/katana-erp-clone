@@ -11,9 +11,23 @@ async function upsertByNumber<T>(model: any, number: string, data: any): Promise
 async function main() {
   console.log('Seeding ForgeERP...');
 
-  // Roles
-  const adminRole = await prisma.role.upsert({ where: { name: 'admin' }, update: {}, create: { name: 'admin', description: 'Full access' } });
-  await prisma.role.upsert({ where: { name: 'operator' }, update: {}, create: { name: 'operator', description: 'Production floor' } });
+  // ─── Default Tenant ──────────────────────────────────────────────────────────
+  const tenant = await prisma.tenant.upsert({
+    where: { slug: 'default' },
+    update: {},
+    create: { name: 'Default Company', slug: 'default' },
+  });
+  const tenantId = tenant.id;
+
+  // Roles — now scoped to tenant
+  let adminRole = await prisma.role.findFirst({ where: { tenantId, name: 'admin' } });
+  if (!adminRole) {
+    adminRole = await prisma.role.create({ data: { tenantId, name: 'admin', description: 'Full access' } });
+  }
+  let operatorRole = await prisma.role.findFirst({ where: { tenantId, name: 'operator' } });
+  if (!operatorRole) {
+    operatorRole = await prisma.role.create({ data: { tenantId, name: 'operator', description: 'Production floor' } });
+  }
 
   // Users — always refresh password hashes so re-seed fixes "invalid credentials" after DB drift
   const adminHash = await bcrypt.hash('Admin1234!', 12);
@@ -23,36 +37,48 @@ async function main() {
     update: { fullName: 'Admin User', hashedPassword: adminHash, isActive: true, isSuperuser: true, roleId: adminRole.id },
     create: { email: 'admin@forgeerp.com', fullName: 'Admin User', hashedPassword: adminHash, isActive: true, isSuperuser: true, roleId: adminRole.id },
   });
-  await prisma.user.upsert({
+
+  // Create tenant memberships for admin and operator users
+  await prisma.tenantMembership.upsert({
+    where: { tenantId_userId: { tenantId, userId: admin.id } },
+    update: { role: 'owner', isDefault: true },
+    create: { tenantId, userId: admin.id, role: 'owner', isDefault: true },
+  });
+  const operatorUser = await prisma.user.upsert({
     where: { email: 'operator@forgeerp.com' },
     update: { fullName: 'Floor Operator', hashedPassword: operatorHash, isActive: true },
     create: { email: 'operator@forgeerp.com', fullName: 'Floor Operator', hashedPassword: operatorHash, isActive: true },
+  });
+  await prisma.tenantMembership.upsert({
+    where: { tenantId_userId: { tenantId, userId: operatorUser.id } },
+    update: { role: 'member' },
+    create: { tenantId, userId: operatorUser.id, role: 'member', isDefault: true },
   });
 
   // Locations
   const warehouse = await prisma.location.upsert({
     where: { id: 'loc-warehouse-001' }, update: {},
-    create: { id: 'loc-warehouse-001', name: 'Main Warehouse', address: '100 Industrial Blvd, Surrey BC', isDefault: true },
+    create: { id: 'loc-warehouse-001', name: 'Main Warehouse', address: '100 Industrial Blvd, Surrey BC', isDefault: true, tenantId },
   }).catch(() => prisma.location.findFirst({ where: { name: 'Main Warehouse' } })) as any;
   const factory = await prisma.location.upsert({
     where: { id: 'loc-factory-001' }, update: {},
-    create: { id: 'loc-factory-001', name: 'Factory Floor', address: '100 Industrial Blvd — Building B' },
+    create: { id: 'loc-factory-001', name: 'Factory Floor', address: '100 Industrial Blvd — Building B', tenantId },
   }).catch(() => prisma.location.findFirst({ where: { name: 'Factory Floor' } })) as any;
 
   // Suppliers
-  const sup1 = await prisma.supplier.upsert({ where: { code: 'SUP-001' }, update: {}, create: { name: 'SteelCo Materials Ltd', code: 'SUP-001', email: 'orders@steelco.com', phone: '+1-604-555-0101', currency: 'USD', paymentTerms: 'Net 30' } });
-  const sup2 = await prisma.supplier.upsert({ where: { code: 'SUP-002' }, update: {}, create: { name: 'Pacific Components Inc', code: 'SUP-002', email: 'procurement@pacificcomp.com', phone: '+1-604-555-0202', currency: 'USD', paymentTerms: 'Net 60' } });
-  const sup3 = await prisma.supplier.upsert({ where: { code: 'SUP-003' }, update: {}, create: { name: 'Apex Coatings & Finishes', code: 'SUP-003', email: 'sales@apexcoatings.com', currency: 'CAD', paymentTerms: 'Net 15' } });
+  const sup1 = await prisma.supplier.upsert({ where: { code: 'SUP-001' }, update: {}, create: { name: 'SteelCo Materials Ltd', code: 'SUP-001', email: 'orders@steelco.com', phone: '+1-604-555-0101', currency: 'USD', paymentTerms: 'Net 30', tenantId } });
+  const sup2 = await prisma.supplier.upsert({ where: { code: 'SUP-002' }, update: {}, create: { name: 'Pacific Components Inc', code: 'SUP-002', email: 'procurement@pacificcomp.com', phone: '+1-604-555-0202', currency: 'USD', paymentTerms: 'Net 60', tenantId } });
+  const sup3 = await prisma.supplier.upsert({ where: { code: 'SUP-003' }, update: {}, create: { name: 'Apex Coatings & Finishes', code: 'SUP-003', email: 'sales@apexcoatings.com', currency: 'CAD', paymentTerms: 'Net 15', tenantId } });
 
   // Customers
-  const cust1 = await prisma.customer.upsert({ where: { code: 'CUST-001' }, update: {}, create: { name: 'Ridgeline Sports Outlet', code: 'CUST-001', email: 'orders@ridgelinesports.com', phone: '+1-778-555-1001', currency: 'CAD', paymentTerms: 'Net 30' } });
-  const cust2 = await prisma.customer.upsert({ where: { code: 'CUST-002' }, update: {}, create: { name: 'Summit Cycles Wholesale', code: 'CUST-002', email: 'buying@summitcycles.com', currency: 'USD', paymentTerms: 'Net 45' } });
-  const cust3 = await prisma.customer.upsert({ where: { code: 'CUST-003' }, update: {}, create: { name: 'Metro Adventure Co', code: 'CUST-003', email: 'purchasing@metroadv.com', currency: 'USD', paymentTerms: 'Due on receipt' } });
+  const cust1 = await prisma.customer.upsert({ where: { code: 'CUST-001' }, update: {}, create: { name: 'Ridgeline Sports Outlet', code: 'CUST-001', email: 'orders@ridgelinesports.com', phone: '+1-778-555-1001', currency: 'CAD', paymentTerms: 'Net 30', tenantId } });
+  const cust2 = await prisma.customer.upsert({ where: { code: 'CUST-002' }, update: {}, create: { name: 'Summit Cycles Wholesale', code: 'CUST-002', email: 'buying@summitcycles.com', currency: 'USD', paymentTerms: 'Net 45', tenantId } });
+  const cust3 = await prisma.customer.upsert({ where: { code: 'CUST-003' }, update: {}, create: { name: 'Metro Adventure Co', code: 'CUST-003', email: 'purchasing@metroadv.com', currency: 'USD', paymentTerms: 'Due on receipt', tenantId } });
 
   // Products
-  const bikeProduct = await prisma.product.upsert({ where: { sku: 'BIKE-PRO-29' }, update: {}, create: { name: 'Mountain Bike Pro 29"', sku: 'BIKE-PRO-29', category: 'Finished Goods', isManufactured: true, salesPrice: 1299.99, purchasePrice: 750 } });
-  const frameProduct = await prisma.product.upsert({ where: { sku: 'FRAME-AL-29' }, update: {}, create: { name: 'Aluminum Frame 29"', sku: 'FRAME-AL-29', category: 'Sub-assembly', isManufactured: true, salesPrice: 399 } });
-  const helmetProduct = await prisma.product.upsert({ where: { sku: 'HELMET-MTB-L' }, update: {}, create: { name: 'MTB Helmet Large', sku: 'HELMET-MTB-L', category: 'Accessories', isManufactured: false, salesPrice: 89.99 } });
+  const bikeProduct = await prisma.product.upsert({ where: { sku: 'BIKE-PRO-29' }, update: {}, create: { name: 'Mountain Bike Pro 29"', sku: 'BIKE-PRO-29', category: 'Finished Goods', isManufactured: true, salesPrice: 1299.99, purchasePrice: 750, tenantId } });
+  const frameProduct = await prisma.product.upsert({ where: { sku: 'FRAME-AL-29' }, update: {}, create: { name: 'Aluminum Frame 29"', sku: 'FRAME-AL-29', category: 'Sub-assembly', isManufactured: true, salesPrice: 399, tenantId } });
+  const helmetProduct = await prisma.product.upsert({ where: { sku: 'HELMET-MTB-L' }, update: {}, create: { name: 'MTB Helmet Large', sku: 'HELMET-MTB-L', category: 'Accessories', isManufactured: false, salesPrice: 89.99, tenantId } });
 
   // Variants
   const bikeRed = await prisma.variant.upsert({ where: { sku: 'BIKE-PRO-29-R-L' }, update: {}, create: { productId: bikeProduct.id, name: 'Red / Large', sku: 'BIKE-PRO-29-R-L', salesPrice: 1299.99 } });
@@ -61,12 +87,12 @@ async function main() {
   const helmetV = await prisma.variant.upsert({ where: { sku: 'HELMET-MTB-L-BLK' }, update: {}, create: { productId: helmetProduct.id, name: 'Black', sku: 'HELMET-MTB-L-BLK', salesPrice: 89.99 } });
 
   // Materials
-  const mat1 = await prisma.material.upsert({ where: { sku: 'MAT-ST-25' }, update: {}, create: { name: 'Carbon Steel Tube 25mm', sku: 'MAT-ST-25', category: 'Raw Material', unitOfMeasure: 'm', purchasePrice: 4.50, reorderPoint: 100, leadTimeDays: 7 } });
-  const mat2 = await prisma.material.upsert({ where: { sku: 'MAT-BRAKE-HYD' }, update: {}, create: { name: 'Hydraulic Brake Set', sku: 'MAT-BRAKE-HYD', category: 'Components', purchasePrice: 42.00, reorderPoint: 20, leadTimeDays: 14 } });
-  const mat3 = await prisma.material.upsert({ where: { sku: 'MAT-CASS-11' }, update: {}, create: { name: 'Shimano 11-speed Cassette', sku: 'MAT-CASS-11', category: 'Components', purchasePrice: 55.00, reorderPoint: 15, leadTimeDays: 10 } });
-  const mat4 = await prisma.material.upsert({ where: { sku: 'MAT-TIRE-29' }, update: {}, create: { name: '29" Tire All-terrain', sku: 'MAT-TIRE-29', category: 'Components', purchasePrice: 28.00, reorderPoint: 40, leadTimeDays: 5 } });
-  const mat5 = await prisma.material.upsert({ where: { sku: 'MAT-AL-3MM' }, update: {}, create: { name: 'Aluminum Alloy Sheet 3mm', sku: 'MAT-AL-3MM', category: 'Raw Material', unitOfMeasure: 'kg', purchasePrice: 3.20, reorderPoint: 200 } });
-  const mat6 = await prisma.material.upsert({ where: { sku: 'MAT-PAINT-RED' }, update: {}, create: { name: 'Epoxy Paint Matte Red', sku: 'MAT-PAINT-RED', category: 'Consumable', unitOfMeasure: 'L', purchasePrice: 18.00, reorderPoint: 10 } });
+  const mat1 = await prisma.material.upsert({ where: { sku: 'MAT-ST-25' }, update: {}, create: { name: 'Carbon Steel Tube 25mm', sku: 'MAT-ST-25', category: 'Raw Material', unitOfMeasure: 'm', purchasePrice: 4.50, reorderPoint: 100, leadTimeDays: 7, tenantId } });
+  const mat2 = await prisma.material.upsert({ where: { sku: 'MAT-BRAKE-HYD' }, update: {}, create: { name: 'Hydraulic Brake Set', sku: 'MAT-BRAKE-HYD', category: 'Components', purchasePrice: 42.00, reorderPoint: 20, leadTimeDays: 14, tenantId } });
+  const mat3 = await prisma.material.upsert({ where: { sku: 'MAT-CASS-11' }, update: {}, create: { name: 'Shimano 11-speed Cassette', sku: 'MAT-CASS-11', category: 'Components', purchasePrice: 55.00, reorderPoint: 15, leadTimeDays: 10, tenantId } });
+  const mat4 = await prisma.material.upsert({ where: { sku: 'MAT-TIRE-29' }, update: {}, create: { name: '29" Tire All-terrain', sku: 'MAT-TIRE-29', category: 'Components', purchasePrice: 28.00, reorderPoint: 40, leadTimeDays: 5, tenantId } });
+  const mat5 = await prisma.material.upsert({ where: { sku: 'MAT-AL-3MM' }, update: {}, create: { name: 'Aluminum Alloy Sheet 3mm', sku: 'MAT-AL-3MM', category: 'Raw Material', unitOfMeasure: 'kg', purchasePrice: 3.20, reorderPoint: 200, tenantId } });
+  const mat6 = await prisma.material.upsert({ where: { sku: 'MAT-PAINT-RED' }, update: {}, create: { name: 'Epoxy Paint Matte Red', sku: 'MAT-PAINT-RED', category: 'Consumable', unitOfMeasure: 'L', purchasePrice: 18.00, reorderPoint: 10, tenantId } });
 
   // Inventory Levels
   await prisma.inventoryLevel.upsert({ where: { variantId_locationId: { variantId: bikeRed.id, locationId: warehouse.id } }, update: {}, create: { variantId: bikeRed.id, locationId: warehouse.id, onHand: 25, allocated: 5, reorderPoint: 10, reorderQty: 20 } });

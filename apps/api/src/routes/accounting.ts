@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { TenantRequest, tenantWhere, tenantData } from '../middleware/tenant';
 import { getPagination, paginated } from '../middleware/paginate';
 import { z } from 'zod';
 
@@ -13,65 +14,90 @@ function assertProvider(p: string): asserts p is Provider {
   if (!PROVIDERS.includes(p as Provider)) throw Object.assign(new Error('Invalid provider'), { status: 400 });
 }
 
+/** Locate integration by provider scoped to the current tenant. */
+async function findIntegration(req: TenantRequest, provider: string) {
+  return prisma.accountingIntegration.findFirst({
+    where: { provider, ...tenantWhere(req) },
+  });
+}
+
 // GET /accounting/integrations
-router.get('/integrations', async (_req, res) => {
+router.get('/integrations', async (req: TenantRequest, res) => {
   const items = await prisma.accountingIntegration.findMany({
+    where: { ...tenantWhere(req) },
     include: { syncLogs: { orderBy: { createdAt: 'desc' }, take: 1 } },
   });
   res.json(items);
 });
 
 // POST /accounting/:provider/connect
-router.post('/:provider/connect', async (req, res) => {
-  assertProvider(req.params.provider);
+router.post('/:provider/connect', async (req: TenantRequest, res) => {
+  assertProvider(req.params.provider as string);
   const body = z.object({
     accessToken: z.string(),
     refreshToken: z.string().optional(),
     tokenExpiry: z.coerce.date().optional(),
     realmId: z.string().optional(),
-    tenantId: z.string().optional(),
+    externalTenantId: z.string().optional(),
     settings: z.record(z.any()).optional(),
   }).parse(req.body);
 
-  const item = await prisma.accountingIntegration.upsert({
-    where: { provider: req.params.provider },
-    create: {
-      provider: req.params.provider,
-      status: 'connected',
-      accessToken: body.accessToken,
-      refreshToken: body.refreshToken,
-      tokenExpiry: body.tokenExpiry,
-      realmId: body.realmId,
-      tenantId: body.tenantId,
-      settings: body.settings ? JSON.stringify(body.settings) : null,
-    },
-    update: {
-      status: 'connected',
-      accessToken: body.accessToken,
-      refreshToken: body.refreshToken ?? undefined,
-      tokenExpiry: body.tokenExpiry ?? undefined,
-      realmId: body.realmId ?? undefined,
-      tenantId: body.tenantId ?? undefined,
-      settings: body.settings ? JSON.stringify(body.settings) : undefined,
-      updatedAt: new Date(),
-    },
-  });
+  const existing = await findIntegration(req, (req.params.provider as string));
+
+  let item;
+  if (existing) {
+    item = await prisma.accountingIntegration.update({
+      where: { id: existing.id },
+      data: {
+        status: 'connected',
+        accessToken: body.accessToken,
+        refreshToken: body.refreshToken ?? undefined,
+        tokenExpiry: body.tokenExpiry ?? undefined,
+        realmId: body.realmId ?? undefined,
+        tenantIdExt: body.externalTenantId ?? undefined,
+        settings: body.settings ? JSON.stringify(body.settings) : undefined,
+        updatedAt: new Date(),
+      },
+    });
+  } else {
+    item = await prisma.accountingIntegration.create({
+      data: {
+        ...tenantData(req),
+        provider: (req.params.provider as string),
+        status: 'connected',
+        accessToken: body.accessToken,
+        refreshToken: body.refreshToken,
+        tokenExpiry: body.tokenExpiry,
+        realmId: body.realmId,
+        tenantIdExt: body.externalTenantId,
+        settings: body.settings ? JSON.stringify(body.settings) : null,
+      } as any,
+    });
+  }
   res.json(item);
 });
 
 // POST /accounting/:provider/disconnect
-router.post('/:provider/disconnect', async (req, res) => {
-  assertProvider(req.params.provider);
-  const item = await prisma.accountingIntegration.upsert({
-    where: { provider: req.params.provider },
-    create: { provider: req.params.provider, status: 'disconnected' },
-    update: { status: 'disconnected', accessToken: null, refreshToken: null, tokenExpiry: null, updatedAt: new Date() },
-  });
+router.post('/:provider/disconnect', async (req: TenantRequest, res) => {
+  assertProvider(req.params.provider as string);
+  const existing = await findIntegration(req, req.params.provider as string);
+
+  let item;
+  if (existing) {
+    item = await prisma.accountingIntegration.update({
+      where: { id: existing.id },
+      data: { status: 'disconnected', accessToken: null, refreshToken: null, tokenExpiry: null, updatedAt: new Date() },
+    });
+  } else {
+    item = await prisma.accountingIntegration.create({
+      data: { ...tenantData(req), provider: (req.params.provider as string), status: 'disconnected' },
+    });
+  }
   res.json(item);
 });
 
-async function getIntegration(provider: string) {
-  const integration = await prisma.accountingIntegration.findUnique({ where: { provider } });
+async function getIntegration(req: TenantRequest, provider: string) {
+  const integration = await findIntegration(req, provider);
   if (!integration || integration.status !== 'connected') {
     throw Object.assign(new Error(`${provider} not connected`), { status: 400 });
   }
@@ -85,12 +111,12 @@ async function logSync(integrationId: string, direction: string, entityType: str
 }
 
 // POST /accounting/:provider/sync/invoices — push fulfilled SOs as invoices
-router.post('/:provider/sync/invoices', async (req, res) => {
-  assertProvider(req.params.provider);
-  const integration = await getIntegration(req.params.provider);
+router.post('/:provider/sync/invoices', async (req: TenantRequest, res) => {
+  assertProvider((req.params.provider as string));
+  const integration = await getIntegration(req, (req.params.provider as string));
   const { soIds } = z.object({ soIds: z.array(z.string().uuid()).optional() }).parse(req.body);
 
-  const where: any = { status: 'fulfilled' };
+  const where: any = { status: 'fulfilled', ...tenantWhere(req) };
   if (soIds?.length) where.id = { in: soIds };
 
   const orders = await prisma.salesOrder.findMany({
@@ -101,7 +127,7 @@ router.post('/:provider/sync/invoices', async (req, res) => {
 
   for (const order of orders) {
     try {
-      const payload = buildInvoicePayload(req.params.provider as Provider, order);
+      const payload = buildInvoicePayload((req.params.provider as string) as Provider, order);
       const log = await logSync(integration.id, 'push', 'invoice', order.id, 'success', undefined, `ext_${order.id.slice(0, 8)}`, JSON.stringify(payload));
       results.push({ orderId: order.id, number: order.number, status: 'success', logId: log.id });
     } catch (err: any) {
@@ -110,17 +136,17 @@ router.post('/:provider/sync/invoices', async (req, res) => {
     }
   }
 
-  await prisma.accountingIntegration.update({ where: { provider: req.params.provider }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
+  await prisma.accountingIntegration.update({ where: { id: integration.id }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
   res.json({ synced: results.length, results });
 });
 
 // POST /accounting/:provider/sync/bills — push POs as bills
-router.post('/:provider/sync/bills', async (req, res) => {
-  assertProvider(req.params.provider);
-  const integration = await getIntegration(req.params.provider);
+router.post('/:provider/sync/bills', async (req: TenantRequest, res) => {
+  assertProvider((req.params.provider as string));
+  const integration = await getIntegration(req, (req.params.provider as string));
   const { poIds } = z.object({ poIds: z.array(z.string().uuid()).optional() }).parse(req.body);
 
-  const where: any = {};
+  const where: any = { ...tenantWhere(req) };
   if (poIds?.length) where.id = { in: poIds };
 
   const orders = await prisma.purchaseOrder.findMany({
@@ -131,7 +157,7 @@ router.post('/:provider/sync/bills', async (req, res) => {
 
   for (const order of orders) {
     try {
-      const payload = buildBillPayload(req.params.provider as Provider, order);
+      const payload = buildBillPayload((req.params.provider as string) as Provider, order);
       const log = await logSync(integration.id, 'push', 'bill', order.id, 'success', undefined, `ext_${order.id.slice(0, 8)}`, JSON.stringify(payload));
       results.push({ orderId: order.id, number: order.number, status: 'success', logId: log.id });
     } catch (err: any) {
@@ -140,18 +166,18 @@ router.post('/:provider/sync/bills', async (req, res) => {
     }
   }
 
-  await prisma.accountingIntegration.update({ where: { provider: req.params.provider }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
+  await prisma.accountingIntegration.update({ where: { id: integration.id }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
   res.json({ synced: results.length, results });
 });
 
 // POST /accounting/:provider/sync/contacts
-router.post('/:provider/sync/contacts', async (req, res) => {
-  assertProvider(req.params.provider);
-  const integration = await getIntegration(req.params.provider);
+router.post('/:provider/sync/contacts', async (req: TenantRequest, res) => {
+  assertProvider((req.params.provider as string));
+  const integration = await getIntegration(req, (req.params.provider as string));
 
   const [customers, suppliers] = await Promise.all([
-    prisma.customer.findMany(),
-    prisma.supplier.findMany(),
+    prisma.customer.findMany({ where: { ...tenantWhere(req) } }),
+    prisma.supplier.findMany({ where: { ...tenantWhere(req) } }),
   ]);
 
   const results: any[] = [];
@@ -166,15 +192,15 @@ router.post('/:provider/sync/contacts', async (req, res) => {
     results.push({ id: s.id, type: 'supplier', status: 'success', logId: log.id });
   }
 
-  await prisma.accountingIntegration.update({ where: { provider: req.params.provider }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
+  await prisma.accountingIntegration.update({ where: { id: integration.id }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
   res.json({ synced: results.length, results });
 });
 
 // GET /accounting/:provider/sync-logs
-router.get('/:provider/sync-logs', async (req, res) => {
-  assertProvider(req.params.provider);
+router.get('/:provider/sync-logs', async (req: TenantRequest, res) => {
+  assertProvider((req.params.provider as string));
   const { page, pageSize, skip, take } = getPagination(req);
-  const integration = await prisma.accountingIntegration.findUnique({ where: { provider: req.params.provider } });
+  const integration = await findIntegration(req, (req.params.provider as string));
   if (!integration) return res.status(404).json({ error: 'Integration not found' });
 
   const where = { integrationId: integration.id };
@@ -187,15 +213,15 @@ router.get('/:provider/sync-logs', async (req, res) => {
 
 // OAuth callback — receives authorization code
 router.get('/:provider/oauth/callback', async (req, res) => {
-  assertProvider(req.params.provider);
+  assertProvider((req.params.provider as string));
   const { code, realmId } = req.query as Record<string, string>;
   if (!code) return res.status(400).json({ error: 'Missing authorization code' });
   res.json({
     message: 'Exchange this code for tokens and POST to /accounting/:provider/connect',
-    provider: req.params.provider,
+    provider: (req.params.provider as string),
     code,
     realmId: realmId || null,
-    tokenEndpoint: req.params.provider === 'quickbooks'
+    tokenEndpoint: (req.params.provider as string) === 'quickbooks'
       ? 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
       : 'https://identity.xero.com/connect/token',
   });

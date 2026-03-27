@@ -9,7 +9,7 @@ router.use(authenticate);
 // GET /operators — users with operator role (or all active users if no "operator" role exists)
 router.get('/', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
-  const operatorRole = await prisma.role.findUnique({ where: { name: 'operator' } });
+  const operatorRole = await prisma.role.findFirst({ where: { name: 'operator' } });
 
   const where: any = { isActive: true };
   if (operatorRole) {

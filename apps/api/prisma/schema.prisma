@@ -8,13 +8,75 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── Multi-Tenancy ────────────────────────────────────────────────────────────
+
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  logoUrl     String?  @map("logo_url")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  memberships   TenantMembership[]
+  roles         Role[]
+  products      Product[]
+  materials     Material[]
+  locations     Location[]
+  suppliers     Supplier[]
+  customers     Customer[]
+  purchaseOrders PurchaseOrder[]
+  salesOrders   SalesOrder[]
+  manufacturingOrders ManufacturingOrder[]
+  boms          BOM[]
+  services      Service[]
+  quotes        Quote[]
+  priceLists    PriceList[]
+  salesReturns  SalesReturn[]
+  taxRates      TaxRate[]
+  currencies    Currency[]
+  webhooks      Webhook[]
+  apiKeys       ApiKey[]
+  factories     Factory[]
+  batches       Batch[]
+  serialNumbers SerialNumber[]
+  customFieldDefinitions CustomFieldDefinition[]
+  additionalCosts AdditionalCost[]
+  accountingIntegrations AccountingIntegration[]
+  ecommerceIntegrations  EcommerceIntegration[]
+
+  @@map("tenants")
+}
+
+model TenantMembership {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String   @default("member") // owner | admin | member | viewer
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, userId])
+  @@map("tenant_memberships")
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
 model Role {
   id          String   @id @default(uuid())
-  name        String   @unique
+  tenantId    String?  @map("tenant_id")
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
   description String?
   users       User[]
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+  @@unique([tenantId, name])
   @@map("roles")
 }
 
@@ -29,6 +91,7 @@ model User {
   role           Role?     @relation(fields: [roleId], references: [id])
   apiKeys        ApiKey[]
   auditLogs      AuditLog[]
+  memberships    TenantMembership[]
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
   @@map("users")
@@ -36,6 +99,8 @@ model User {
 
 model ApiKey {
   id          String    @id @default(uuid())
+  tenantId    String?   @map("tenant_id")
+  tenant      Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name        String
   keyHash     String    @unique @map("key_hash")
   keyPrefix   String    @map("key_prefix")
@@ -52,6 +117,8 @@ model ApiKey {
 
 model Webhook {
   id        String       @id @default(uuid())
+  tenantId  String?      @map("tenant_id")
+  tenant    Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name      String
   url       String
   secret    String?
@@ -78,8 +145,12 @@ model WebhookLog {
   @@map("webhook_logs")
 }
 
+// ─── Inventory ────────────────────────────────────────────────────────────────
+
 model Location {
   id              String           @id @default(uuid())
+  tenantId        String?          @map("tenant_id")
+  tenant          Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name            String
   address         String?
   isActive        Boolean          @default(true) @map("is_active")
@@ -104,8 +175,12 @@ model StorageBin {
   @@map("storage_bins")
 }
 
+// ─── Products ─────────────────────────────────────────────────────────────────
+
 model Product {
   id              String    @id @default(uuid())
+  tenantId        String?   @map("tenant_id")
+  tenant          Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name            String
   sku             String?   @unique
   description     String?
@@ -143,6 +218,8 @@ model Variant {
 
 model Material {
   id            String   @id @default(uuid())
+  tenantId      String?  @map("tenant_id")
+  tenant        Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name          String
   sku           String?  @unique
   description   String?
@@ -190,8 +267,12 @@ model InventoryMovement {
   @@map("inventory_movements")
 }
 
+// ─── People ───────────────────────────────────────────────────────────────────
+
 model Supplier {
   id             String            @id @default(uuid())
+  tenantId       String?           @map("tenant_id")
+  tenant         Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name           String
   code           String?           @unique
   email          String?
@@ -210,6 +291,8 @@ model Supplier {
 
 model Customer {
   id           String            @id @default(uuid())
+  tenantId     String?           @map("tenant_id")
+  tenant       Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name         String
   code         String?           @unique
   email        String?
@@ -226,8 +309,12 @@ model Customer {
   @@map("customers")
 }
 
+// ─── Orders ───────────────────────────────────────────────────────────────────
+
 model PurchaseOrder {
   id           String                @id @default(uuid())
+  tenantId     String?               @map("tenant_id")
+  tenant       Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   number       String                @unique
   supplierId   String?               @map("supplier_id")
   supplier     Supplier?             @relation(fields: [supplierId], references: [id], onDelete: SetNull)
@@ -273,6 +360,8 @@ model PurchaseOrderCostRow {
 
 model SalesOrder {
   id           String                  @id @default(uuid())
+  tenantId     String?                 @map("tenant_id")
+  tenant       Tenant?                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   number       String                  @unique
   customerId   String?                 @map("customer_id")
   customer     Customer?               @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -321,8 +410,12 @@ model SalesOrderFulfillment {
   @@map("sales_order_fulfillments")
 }
 
+// ─── Manufacturing ────────────────────────────────────────────────────────────
+
 model BOM {
   id          String               @id @default(uuid())
+  tenantId    String?              @map("tenant_id")
+  tenant      Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   productId   String               @map("product_id")
   product     Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
   variantId   String?              @map("variant_id")
@@ -367,6 +460,8 @@ model ProductOperation {
 
 model ManufacturingOrder {
   id            String           @id @default(uuid())
+  tenantId      String?          @map("tenant_id")
+  tenant        Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   number        String           @unique
   bomId         String?          @map("bom_id")
   bom           BOM?             @relation(fields: [bomId], references: [id], onDelete: SetNull)
@@ -412,6 +507,8 @@ model MOOperationRow {
   createdAt     DateTime            @default(now()) @map("created_at")
   @@map("mo_operation_rows")
 }
+
+// ─── Stock ────────────────────────────────────────────────────────────────────
 
 model StockAdjustment {
   id          String   @id @default(uuid())
@@ -463,6 +560,8 @@ model StocktakeRow {
 
 model Batch {
   id           String       @id @default(uuid())
+  tenantId     String?      @map("tenant_id")
+  tenant       Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   variantId    String       @map("variant_id")
   batchNumber  String       @map("batch_number")
   expiryDate   DateTime?    @map("expiry_date") @db.Date
@@ -475,6 +574,8 @@ model Batch {
 
 model SerialNumber {
   id           String   @id @default(uuid())
+  tenantId     String?  @map("tenant_id")
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   variantId    String   @map("variant_id")
   serialNumber String   @unique @map("serial_number")
   status       String   @default("available")
@@ -483,8 +584,12 @@ model SerialNumber {
   @@map("serial_numbers")
 }
 
+// ─── Tax & Pricing ────────────────────────────────────────────────────────────
+
 model TaxRate {
   id        String   @id @default(uuid())
+  tenantId  String?  @map("tenant_id")
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name      String
   rate      Decimal  @db.Decimal(7, 4)
   isDefault Boolean  @default(false) @map("is_default")
@@ -529,6 +634,8 @@ model CustomerAddress {
 
 model PriceList {
   id        String              @id @default(uuid())
+  tenantId  String?             @map("tenant_id")
+  tenant    Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name      String
   currency  String              @default("USD")
   isDefault Boolean             @default(false) @map("is_default")
@@ -564,6 +671,8 @@ model PriceListCustomer {
 
 model Service {
   id          String   @id @default(uuid())
+  tenantId    String?  @map("tenant_id")
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name        String
   sku         String?  @unique
   description String?
@@ -575,8 +684,12 @@ model Service {
   @@map("services")
 }
 
+// ─── Sales Returns ────────────────────────────────────────────────────────────
+
 model SalesReturn {
   id         String           @id @default(uuid())
+  tenantId   String?          @map("tenant_id")
+  tenant     Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   number     String           @unique
   orderId    String?          @map("order_id")
   customerId String?          @map("customer_id")
@@ -616,6 +729,8 @@ model SalesOrderShippingFee {
   @@map("sales_order_shipping_fees")
 }
 
+// ─── Forecasting ──────────────────────────────────────────────────────────────
+
 model DemandForecast {
   id         String   @id @default(uuid())
   variantId  String   @map("variant_id")
@@ -630,6 +745,8 @@ model DemandForecast {
 
 model Factory {
   id        String   @id @default(uuid())
+  tenantId  String?  @map("tenant_id")
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name      String
   currency  String   @default("USD")
   timezone  String   @default("UTC")
@@ -639,6 +756,8 @@ model Factory {
   updatedAt DateTime @updatedAt @map("updated_at")
   @@map("factory")
 }
+
+// ─── Productions ──────────────────────────────────────────────────────────────
 
 model MOProduction {
   id          String                   @id @default(uuid())
@@ -685,6 +804,8 @@ model SalesOrderAddress {
   @@map("sales_order_addresses")
 }
 
+// ─── Audit ────────────────────────────────────────────────────────────────────
+
 model AuditLog {
   id           String   @id @default(uuid())
   userId       String?  @map("user_id")
@@ -705,6 +826,8 @@ model AuditLog {
 
 model Quote {
   id           String      @id @default(uuid())
+  tenantId     String?     @map("tenant_id")
+  tenant       Tenant?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   number       String      @unique
   customerId   String?     @map("customer_id")
   status       String      @default("draft") // draft | sent | accepted | rejected | expired
@@ -735,6 +858,8 @@ model QuoteRow {
 
 model Currency {
   id        String   @id @default(uuid())
+  tenantId  String?  @map("tenant_id")
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   code      String   @unique  // ISO 4217 e.g. USD, EUR, GBP
   name      String
   symbol    String
@@ -763,19 +888,21 @@ model ExchangeRate {
 
 model AccountingIntegration {
   id           String    @id @default(uuid())
+  tenantId     String?   @map("tenant_id")
+  tenant       Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   provider     String    // quickbooks | xero
   status       String    @default("disconnected") // disconnected | connected | error
   accessToken  String?   @map("access_token")
   refreshToken String?   @map("refresh_token")
   tokenExpiry  DateTime? @map("token_expiry")
   realmId      String?   @map("realm_id")  // QuickBooks company ID
-  tenantId     String?   @map("tenant_id") // Xero tenant ID
+  tenantIdExt  String?   @map("tenant_id_ext") // Xero tenant ID
   lastSyncAt   DateTime? @map("last_sync_at")
   settings     String?   // JSON blob: account mappings, tax code mappings
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
   syncLogs     AccountingSyncLog[]
-  @@unique([provider])
+  @@unique([tenantId, provider])
   @@map("accounting_integrations")
 }
 
@@ -798,6 +925,8 @@ model AccountingSyncLog {
 
 model EcommerceIntegration {
   id           String    @id @default(uuid())
+  tenantId     String?   @map("tenant_id")
+  tenant       Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   provider     String    // shopify | woocommerce
   status       String    @default("disconnected")
   shopDomain   String?   @map("shop_domain")   // e.g. mystore.myshopify.com
@@ -810,7 +939,7 @@ model EcommerceIntegration {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
   syncLogs     EcommerceSyncLog[]
-  @@unique([provider])
+  @@unique([tenantId, provider])
   @@map("ecommerce_integrations")
 }
 
@@ -848,6 +977,8 @@ model EcommerceProductMapping {
 
 model CustomFieldDefinition {
   id           String              @id @default(uuid())
+  tenantId     String?             @map("tenant_id")
+  tenant       Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   entityType   String              @map("entity_type")  // product | variant | material | supplier | customer | purchase_order | sales_order | manufacturing_order
   name         String
   label        String
@@ -910,6 +1041,8 @@ model VariantBinLocation {
 
 model AdditionalCost {
   id          String   @id @default(uuid())
+  tenantId    String?  @map("tenant_id")
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name        String   @unique
   description String?
   isActive    Boolean  @default(true) @map("is_active")

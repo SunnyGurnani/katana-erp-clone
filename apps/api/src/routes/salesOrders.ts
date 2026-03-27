@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { TenantRequest, tenantWhere, tenantData } from '../middleware/tenant';
 import { getPagination, paginated } from '../middleware/paginate';
 import { adjustStock } from '../lib/inventory';
 import { z } from 'zod';
@@ -30,9 +31,9 @@ function normalizeSo(so: any) {
   };
 }
 
-router.get('/', async (req, res) => {
+router.get('/', async (req: TenantRequest, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
-  const where: any = {};
+  const where: any = { ...tenantWhere(req) };
   if (req.query.status) where.status = req.query.status;
   const [items, total] = await Promise.all([
     prisma.salesOrder.findMany({ where, include, skip, take, orderBy: { createdAt: 'desc' } }),
@@ -41,7 +42,7 @@ router.get('/', async (req, res) => {
   res.json(paginated(items.map(normalizeSo), total, page, pageSize));
 });
 
-router.post('/', async (req, res) => {
+router.post('/', async (req: TenantRequest, res) => {
   const data = z.object({
     number: z.string().optional(),
     customerId: z.string().uuid().nullish(),
@@ -61,6 +62,7 @@ router.post('/', async (req, res) => {
   const number = data.number || await nextSoNumber();
   const so = await prisma.salesOrder.create({
     data: {
+      ...tenantData(req),
       number, customerId: data.customerId ?? undefined, currency: data.currency,
       requiredDate: data.dueAt ? new Date(data.dueAt) : undefined,
       notes: data.notes ?? undefined, locationId: data.locationId ?? undefined,

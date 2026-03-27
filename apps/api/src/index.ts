@@ -8,6 +8,8 @@ import swaggerUi from 'swagger-ui-express';
 import { env } from './env';
 import { auditMiddleware } from './middleware/audit';
 import { errorHandler } from './middleware/error';
+import { rateLimit } from './middleware/rateLimit';
+import { tenantMiddleware } from './middleware/tenant';
 import authRouter from './routes/auth';
 import productsRouter from './routes/products';
 import materialsRouter from './routes/materials';
@@ -78,6 +80,7 @@ app.use(helmet());
 app.use(cors({ origin: env.ALLOWED_ORIGINS.split(',').map(s => s.trim()), credentials: true }));
 app.use(express.json());
 app.use(morgan('dev'));
+app.use(rateLimit({ max: 100, windowMs: 60_000 }));
 app.use(auditMiddleware);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', app: 'ForgeERP' }));
@@ -92,12 +95,16 @@ const swaggerSpec = swaggerJsdoc({
     },
     security: [{ bearerAuth: [] }],
   },
-  apis: [],
+  apis: ['./src/routes/*.ts', './src/routes/*.js'],
 });
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 const v1 = '/api/v1';
 app.use(`${v1}/auth`, authRouter);
+
+// Apply tenant middleware globally — it's a no-op when userId is not set (e.g. auth routes)
+app.use(`${v1}`, tenantMiddleware as any);
+
 app.use(`${v1}/products`, productsRouter);
 app.use(`${v1}/materials`, materialsRouter);
 app.use(`${v1}/suppliers`, suppliersRouter);
