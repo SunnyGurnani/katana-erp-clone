@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
+const logLevels = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
+
 const schema = z.object({
   DATABASE_URL: z.string(),
   SECRET_KEY: z.string().min(32),
@@ -9,6 +11,9 @@ const schema = z.object({
   ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
   PORT: z.coerce.number().default(4000),
   NODE_ENV: z.string().default('development'),
+  /** HMAC secret for POST /api/v1/webhooks/inbound (optional until that route is used) */
+  WEBHOOK_SECRET: z.string().optional(),
+  LOG_LEVEL: z.enum(logLevels).default('info'),
   // MinIO (optional — file uploads disabled if not configured)
   MINIO_ENDPOINT: z.string().default('localhost'),
   MINIO_PORT: z.coerce.number().default(9000),

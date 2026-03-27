@@ -11,11 +11,17 @@ export type InventoryTestContext = {
 };
 
 export async function seedInventoryIntegrationTest(): Promise<InventoryTestContext> {
+  const operatorRole = await prisma.role.upsert({
+    where: { name: 'operator' },
+    update: {},
+    create: { name: 'operator', description: 'integration test' },
+  });
   const user = await prisma.user.create({
     data: {
       email: `inv-it-${Date.now()}-${Math.random().toString(36).slice(2)}@test.local`,
       fullName: 'Inventory IT',
       hashedPassword: await hashPassword('test-password-12345'),
+      roleId: operatorRole.id,
     },
   });
   const accessToken = signToken(user.id, 'access');

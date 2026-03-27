@@ -1,13 +1,21 @@
 import 'express-async-errors';
+import { randomUUID } from 'crypto';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import pinoHttp from 'pino-http';
+import rateLimit from 'express-rate-limit';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 import { env } from './env';
+import { logger } from './lib/logger';
+import { metricsRegistry, refreshProcessMetrics } from './lib/metrics';
 import { auditMiddleware } from './middleware/audit';
 import { errorHandler } from './middleware/error';
+import { metricsHttpMiddleware } from './middleware/metricsHttp';
+import { requestIdMiddleware } from './middleware/requestId';
+import { verifyWebhookSignature } from './middleware/verifyWebhook';
 import authRouter from './routes/auth';
 import productsRouter from './routes/products';
 import materialsRouter from './routes/materials';
@@ -72,14 +80,54 @@ import bomRowsRouter from './routes/bomRows';
 import productOperationsRouter from './routes/productOperations';
 
 const app = express();
+const v1 = '/api/v1';
 
+app.use(requestIdMiddleware);
 app.use(helmet());
 app.use(cors({ origin: env.ALLOWED_ORIGINS.split(',').map(s => s.trim()), credentials: true }));
+
+if (env.NODE_ENV === 'production') {
+  app.use(
+    pinoHttp({
+      logger,
+      genReqId: req => req.id ?? randomUUID(),
+      customProps: req => ({ reqId: req.id }),
+    }),
+  );
+} else {
+  app.use(morgan('dev'));
+}
+
+// Inbound webhook (HMAC raw body) — must run before express.json()
+app.post(`${v1}/webhooks/inbound`, express.raw({ type: '*/*', limit: '1mb' }), verifyWebhookSignature, (_req, res) => {
+  res.status(200).json({ received: true });
+});
+
 app.use(express.json());
-app.use(morgan('dev'));
+app.use(metricsHttpMiddleware);
+
+const apiLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: req => {
+    if (process.env.NODE_ENV === 'test') return true;
+    if (req.path === '/status/metrics') return true;
+    return false;
+  },
+});
+app.use(v1, apiLimiter);
+
 app.use(auditMiddleware);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', app: 'ForgeERP' }));
+
+app.get(`${v1}/status/metrics`, async (_req, res) => {
+  refreshProcessMetrics();
+  res.setHeader('Content-Type', metricsRegistry.contentType);
+  res.send(await metricsRegistry.metrics());
+});
 
 const swaggerSpec = swaggerJsdoc({
   definition: {
@@ -95,7 +143,6 @@ const swaggerSpec = swaggerJsdoc({
 });
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-const v1 = '/api/v1';
 app.use(`${v1}/auth`, authRouter);
 app.use(`${v1}/products`, productsRouter);
 app.use(`${v1}/materials`, materialsRouter);

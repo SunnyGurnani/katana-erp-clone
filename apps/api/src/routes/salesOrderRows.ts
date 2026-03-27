@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { requireOperatorForMutations } from '../middleware/roles';
 import { getPagination, paginated } from '../middleware/paginate';
 import { z } from 'zod';
 
 const router = Router();
 router.use(authenticate);
+router.use(requireOperatorForMutations);
 
 // Standalone sales-order-rows endpoints (beyond the nested /:id/rows on SO router)
 

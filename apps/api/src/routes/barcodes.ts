@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { requireOperatorForMutations } from '../middleware/roles';
 import { z } from 'zod';
 import bwipjs from 'bwip-js';
 import PDFDocument from 'pdfkit';
 
 const router = Router();
 router.use(authenticate);
+router.use(requireOperatorForMutations);
 
 async function lookupByIdentifier(identifier: string) {
   const variant = await prisma.variant.findFirst({

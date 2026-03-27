@@ -4,9 +4,11 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { uploadFile, getFileUrl, deleteFile, listFiles } from '../lib/storage';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { requireOperatorForMutations } from '../middleware/roles';
 
 const router = Router();
 router.use(authenticate);
+router.use(requireOperatorForMutations);
 
 const upload = multer({
   storage: multer.memoryStorage(),

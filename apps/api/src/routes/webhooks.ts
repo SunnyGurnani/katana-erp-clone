@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { requireAdminForMutations } from '../middleware/roles';
 import { getPagination, paginated } from '../middleware/paginate';
 import { z } from 'zod';
 
 const router = Router();
 router.use(authenticate);
+router.use(requireAdminForMutations);
 
 // Parse events: accept string (CSV) or array
 function parseEvents(events: any): string {

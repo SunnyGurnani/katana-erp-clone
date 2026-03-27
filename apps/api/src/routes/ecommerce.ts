@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { requireOperatorForMutations } from '../middleware/roles';
 import { getPagination, paginated } from '../middleware/paginate';
 import { z } from 'zod';
 import fetch from 'node-fetch';
@@ -44,6 +45,7 @@ router.post('/webhooks/:provider', async (req, res) => {
 });
 
 router.use(authenticate);
+router.use(requireOperatorForMutations);
 
 async function getIntegration(provider: string) {
   const integration = await prisma.ecommerceIntegration.findUnique({ where: { provider } });

@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { requireOperatorForMutations } from '../middleware/roles';
 import { getPagination, paginated } from '../middleware/paginate';
 import { adjustStock } from '../lib/inventory';
 import { z } from 'zod';
 
 const router = Router();
 router.use(authenticate);
+router.use(requireOperatorForMutations);
 
 const RETURN_REASONS = ['defective', 'wrong_item', 'not_needed', 'damaged', 'other'];
 

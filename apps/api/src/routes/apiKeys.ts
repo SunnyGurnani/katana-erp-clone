@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { requireAdminForMutations } from '../middleware/roles';
 import { generateApiKey } from '../lib/jwt';
 import { createHash } from 'crypto';
 import { z } from 'zod';
 
 const router = Router();
 router.use(authenticate);
+router.use(requireAdminForMutations);
 
 const hashKey = (key: string) => createHash('sha256').update(key).digest('hex');
 
