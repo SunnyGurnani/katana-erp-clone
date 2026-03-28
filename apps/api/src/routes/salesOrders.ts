@@ -11,6 +11,7 @@ import { authenticate } from '../middleware/auth';
 import { requireOperatorForMutations } from '../middleware/roles';
 import { getPagination, paginated } from '../middleware/paginate';
 import { adjustStock } from '../lib/inventory';
+import { nextSalesOrderNumber } from '../lib/nextSalesOrderNumber';
 import { z } from 'zod';
 import soAddressesRouter from './soAddresses';
 
@@ -18,19 +19,21 @@ const router = Router();
 router.use(authenticate);
 router.use(requireOperatorForMutations);
 
-async function nextSoNumber(): Promise<string> {
-  const count = await prisma.salesOrder.count();
-  return `SO-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
-}
+const rowInclude = {
+  fulfillments: true,
+  location: { select: { id: true, name: true } },
+} as const;
 
 const includeList = {
   customer: { select: { id: true, name: true } },
-  rows: { include: { fulfillments: true } },
+  location: { select: { id: true, name: true } },
+  rows: { include: rowInclude },
 };
 
 const includeDetail = {
   customer: { select: { id: true, name: true } },
-  rows: { include: { fulfillments: true } },
+  location: { select: { id: true, name: true } },
+  rows: { include: rowInclude },
   fulfillments: {
     orderBy: { createdAt: 'desc' as const },
     include: {
@@ -82,6 +85,75 @@ function normalizeSo(so: any, lookups?: { variantById: Map<string, any> }) {
       variant: r.variant ?? (r.variantId && lookups ? lookups.variantById.get(r.variantId) || null : null),
     })),
   };
+}
+
+/** On-hand / allocated / available at the line’s location (row override → order default → all sites). */
+async function attachLineInventoryToRows(soRaw: any, rows: any[]): Promise<any[]> {
+  const variantIds = [...new Set(rows.map((r: any) => r.variantId).filter(Boolean))] as string[];
+  if (!variantIds.length) {
+    return rows.map((r) => ({ ...r, stockAtLineLocation: null }));
+  }
+
+  const levels = await prisma.inventoryLevel.findMany({
+    where: { variantId: { in: variantIds } },
+    include: { location: { select: { id: true, name: true } } },
+  });
+  const key = (v: string, l: string) => `${v}:${l}`;
+  const byKey = new Map(levels.map((lv: any) => [key(lv.variantId, lv.locationId), lv]));
+  const byVariant = new Map<string, any[]>();
+  for (const lv of levels) {
+    const arr = byVariant.get(lv.variantId) || [];
+    arr.push(lv);
+    byVariant.set(lv.variantId, arr);
+  }
+
+  return rows.map((r: any) => {
+    const vid = r.variantId;
+    if (!vid) return { ...r, stockAtLineLocation: null };
+
+    const effLoc: string | null = r.locationId ?? soRaw.locationId ?? null;
+    if (effLoc) {
+      const lv = byKey.get(key(vid, effLoc));
+      const onH = lv ? Number(lv.onHand) : 0;
+      const alc = lv ? Number(lv.allocated) : 0;
+      let locName: string | null = null;
+      if (r.locationId && r.location?.name) locName = r.location.name;
+      else if (!r.locationId && soRaw.locationId === effLoc && soRaw.location?.name) locName = soRaw.location.name;
+      else locName = lv?.location?.name ?? null;
+      return {
+        ...r,
+        stockAtLineLocation: {
+          locationId: effLoc,
+          locationName: locName,
+          onHand: onH,
+          allocated: alc,
+          available: Math.max(0, onH - alc),
+        },
+      };
+    }
+
+    const all = byVariant.get(vid) || [];
+    const onHand = all.reduce((s, x) => s + Number(x.onHand), 0);
+    const allocated = all.reduce((s, x) => s + Number(x.allocated), 0);
+    return {
+      ...r,
+      stockAtLineLocation: {
+        locationId: null,
+        locationName: null,
+        onHand,
+        allocated,
+        available: Math.max(0, onHand - allocated),
+        scope: 'all_locations' as const,
+      },
+    };
+  });
+}
+
+async function respondSalesOrder(so: any) {
+  const lookups = await buildSoRowLookups(so.rows || []);
+  const normalized = normalizeSo(so, lookups);
+  normalized.rows = await attachLineInventoryToRows(so, normalized.rows || []);
+  return normalized;
 }
 
 /**
@@ -188,7 +260,7 @@ router.post('/', async (req, res) => {
     currency: z.string().default('USD'),
     dueAt: z.string().nullish(),
     notes: z.string().nullish(),
-    locationId: z.string().min(1).nullish(),
+    locationId: z.string().uuid().nullish(),
     rows: z.array(
       z.object({
         variantId: z.string().uuid().nullish(),
@@ -197,10 +269,11 @@ router.post('/', async (req, res) => {
         qtyOrdered: z.coerce.number().optional(),
         salePrice: z.coerce.number().nullish(),
         unitPrice: z.coerce.number().nullish(),
+        locationId: z.string().uuid().nullish(),
       }).refine((r) => (r.qtyOrdered ?? r.qty) > 0, { message: 'Quantity must be greater than 0', path: ['qty'] }),
     ).default([]),
   }).parse(req.body);
-  const number = data.number || await nextSoNumber();
+  const number = data.number || (await nextSalesOrderNumber());
   const so = await prisma.salesOrder.create({
     data: {
       number, customerId: data.customerId, currency: data.currency,
@@ -212,13 +285,13 @@ router.post('/', async (req, res) => {
           description: r.description ?? undefined,
           qtyOrdered: r.qtyOrdered ?? r.qty,
           unitPrice: r.unitPrice ?? r.salePrice ?? undefined,
+          locationId: r.locationId ?? undefined,
         })),
       },
     },
     include: includeList,
   });
-  const lookups = await buildSoRowLookups(so.rows || []);
-  res.status(201).json(normalizeSo(so, lookups));
+  res.status(201).json(await respondSalesOrder(so));
 });
 
 /**
@@ -244,8 +317,7 @@ router.post('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const so = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include: includeDetail });
   if (!so) return res.status(404).json({ error: 'Not found' });
-  const lookups = await buildSoRowLookups(so.rows || []);
-  res.json(normalizeSo(so, lookups));
+  res.json(await respondSalesOrder(so));
 });
 
 async function updateSoById(req: any, res: any) {
@@ -258,7 +330,8 @@ async function updateSoById(req: any, res: any) {
   const data = z.object({
     customerId: z.string().uuid().nullish(), status: z.string().nullish(),
     currency: z.string().nullish(), dueAt: z.string().nullish(),
-    notes: z.string().nullish(), locationId: z.string().min(1).nullish(),
+    notes: z.string().nullish(),
+    locationId: z.string().uuid().nullish(),
   }).partial().parse(req.body);
   if (data.dueAt) {
     const y = Number(String(data.dueAt).slice(0, 4));
@@ -294,8 +367,7 @@ async function updateSoById(req: any, res: any) {
   if (data.locationId !== undefined) soData.locationId = data.locationId;
   if (data.dueAt !== undefined) soData.requiredDate = data.dueAt ? parseDueDate(data.dueAt) : null;
   const so = await prisma.salesOrder.update({ where: { id: req.params.id }, data: soData, include: includeDetail });
-  const lookups = await buildSoRowLookups(so.rows || []);
-  res.json(normalizeSo(so, lookups));
+  res.json(await respondSalesOrder(so));
 }
 
 /**
@@ -411,8 +483,7 @@ router.post('/:id/revert-fulfillment', async (req, res) => {
   });
 
   const updated = await prisma.salesOrder.findUnique({ where: { id: orderId }, include: includeDetail });
-  const lookups = await buildSoRowLookups(updated!.rows || []);
-  res.json(normalizeSo(updated!, lookups));
+  res.json(await respondSalesOrder(updated!));
 });
 
 router.delete('/:id', async (req, res) => {
@@ -462,12 +533,22 @@ router.delete('/:id', async (req, res) => {
  */
 router.post('/:id/rows', async (req, res) => {
   const data = z.object({
-    variantId: z.string().uuid().nullish(), description: z.string().nullish(),
+    variantId: z.string().uuid().nullish(),
+    description: z.string().nullish(),
     qty: z.coerce.number().positive({ message: 'Quantity must be greater than 0' }),
     salePrice: z.coerce.number().nullish(),
+    locationId: z.string().min(1).nullish(),
   }).parse(req.body);
   const row = await prisma.salesOrderRow.create({
-    data: { orderId: req.params.id, variantId: data.variantId ?? undefined, description: data.description ?? undefined, qtyOrdered: data.qty, unitPrice: data.salePrice ?? undefined },
+    data: {
+      orderId: req.params.id,
+      variantId: data.variantId ?? undefined,
+      description: data.description ?? undefined,
+      qtyOrdered: data.qty,
+      unitPrice: data.salePrice ?? undefined,
+      locationId: data.locationId ?? undefined,
+    },
+    include: { location: { select: { id: true, name: true } } },
   });
   res.status(201).json({ ...row, qty: row.qtyOrdered, salePrice: row.unitPrice });
 });
@@ -569,8 +650,7 @@ router.post('/:id/fulfill', async (req, res) => {
   const anyFulfilled = allRows.some((r: any) => Number(r.qtyFulfilled) > 0);
   const newStatus = allFulfilled ? 'fulfilled' : anyFulfilled ? 'partial' : so.status;
   const updated = await prisma.salesOrder.update({ where: { id: so.id }, data: { status: newStatus }, include: includeDetail });
-  const lookups = await buildSoRowLookups(updated.rows || []);
-  res.json(normalizeSo(updated, lookups));
+  res.json(await respondSalesOrder(updated));
 });
 
 // GET /sales_orders/:id/returnable_items — fulfilled rows not yet fully returned

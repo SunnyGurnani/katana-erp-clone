@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { nextSalesOrderNumber } from '../lib/nextSalesOrderNumber';
 import { authenticate } from '../middleware/auth';
 import { requireOperatorForMutations } from '../middleware/roles';
 import { getPagination, paginated } from '../middleware/paginate';
@@ -132,8 +133,7 @@ router.post('/:id/convert-to-so', async (req, res) => {
   if (quote.status === 'accepted') return res.status(422).json({ error: 'Quote already accepted' });
   if (quote.status === 'rejected') return res.status(422).json({ error: 'Cannot convert rejected quote' });
 
-  const soCount = await prisma.salesOrder.count();
-  const soNumber = `SO-${new Date().getFullYear()}-${String(soCount + 1).padStart(4, '0')}`;
+  const soNumber = await nextSalesOrderNumber();
 
   const so = await prisma.$transaction(async (tx: any) => {
     const order = await tx.salesOrder.create({

@@ -115,7 +115,17 @@ export default function SalesOrdersPage() {
 
   const create = useMutation({
     mutationFn: () => api.post("/sales-orders", { customerId, dueAt: dueAt || undefined, notes: notes || undefined, rows: [] }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-orders"] }); addToast("Sales order created", "success"); setOpen(false); setCustomerId(""); setDueAt(""); setNotes(""); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sales-orders"] });
+      // New orders are `draft`; the Open tab hides drafts — switch so the row is visible.
+      setStatus("draft");
+      setLocationId("");
+      addToast("Sales order created (Draft). Add lines on the order page.", "success");
+      setOpen(false);
+      setCustomerId("");
+      setDueAt("");
+      setNotes("");
+    },
     onError: () => addToast("Error creating SO", "error"),
   });
 
@@ -127,7 +137,12 @@ export default function SalesOrdersPage() {
 
   const duplicateSO = useMutation({
     mutationFn: (id: string) => api.post(`/sales-orders/${id}/duplicate`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-orders"] }); addToast("Duplicated", "success"); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sales-orders"] });
+      setStatus("draft");
+      setLocationId("");
+      addToast("Duplicated (Draft)", "success");
+    },
     onError: () => addToast("Error duplicating SO", "error"),
   });
 

@@ -34,13 +34,19 @@ router.patch('/:id', async (req, res) => {
     description: z.string().nullish(),
     qty: z.coerce.number().nullish(),
     salePrice: z.coerce.number().nullish(),
+    locationId: z.string().uuid().nullish(),
   }).parse(req.body);
   const update: any = {};
   if (data.variantId !== undefined) update.variantId = data.variantId;
   if (data.description !== undefined) update.description = data.description;
   if (data.qty != null) update.qtyOrdered = data.qty;
   if (data.salePrice != null) update.unitPrice = data.salePrice;
-  const item = await prisma.salesOrderRow.update({ where: { id: req.params.id }, data: update });
+  if (data.locationId !== undefined) update.locationId = data.locationId;
+  const item = await prisma.salesOrderRow.update({
+    where: { id: req.params.id },
+    data: update,
+    include: { location: { select: { id: true, name: true } } },
+  });
   res.json({ ...item, qty: item.qtyOrdered, salePrice: item.unitPrice });
 });
 

@@ -88,6 +88,9 @@ model Location {
   inventoryLevels InventoryLevel[]
   inventoryMovements InventoryMovement[]
   batchStocks     BatchStock[]
+  salesOrders            SalesOrder[]
+  salesOrderRows         SalesOrderRow[]
+  salesOrderFulfillments SalesOrderFulfillment[]
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
   @@map("locations")
@@ -282,6 +285,7 @@ model SalesOrder {
   requiredDate DateTime?               @map("required_date") @db.Date
   notes        String?
   locationId   String?                 @map("location_id")
+  location     Location?               @relation(fields: [locationId], references: [id], onDelete: SetNull)
   rows         SalesOrderRow[]
   fulfillments SalesOrderFulfillment[]
   shippingFees SalesOrderShippingFee[]
@@ -296,6 +300,8 @@ model SalesOrderRow {
   orderId      String                 @map("order_id")
   order        SalesOrder             @relation(fields: [orderId], references: [id], onDelete: Cascade)
   variantId    String?                @map("variant_id")
+  locationId   String?                @map("location_id")
+  location     Location?              @relation(fields: [locationId], references: [id], onDelete: SetNull)
   description  String?
   qtyOrdered   Decimal                @map("qty_ordered") @db.Decimal(18, 4)
   qtyFulfilled Decimal                @default(0) @map("qty_fulfilled") @db.Decimal(18, 4)
@@ -315,6 +321,7 @@ model SalesOrderFulfillment {
   row        SalesOrderRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
   qty        Decimal    @db.Decimal(18, 4)
   locationId String?    @map("location_id")
+  location   Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
   isReturn   Boolean    @default(false) @map("is_return")
   notes      String?
   createdAt  DateTime   @default(now()) @map("created_at")
@@ -775,6 +782,7 @@ model AccountingIntegration {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
   syncLogs     AccountingSyncLog[]
+  syncJobs     SyncJob[]
   entityMappings AccountingEntityMapping[]
   @@unique([provider])
   @@map("accounting_integrations")
