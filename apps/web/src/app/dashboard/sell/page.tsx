@@ -57,16 +57,18 @@ function getProductionStatus(so: any): string {
 }
 
 function getSalesItemsStatus(so: any): string {
-  if (so.status === "fulfilled") return "in_stock";
+  if (so.status === "fulfilled") return "done";
   if (so.status === "partial") return "partial";
   if (!so.rows || so.rows.length === 0) return "not_applicable";
+  if ((so.rows || []).some((r: any) => Number(r.qty ?? r.qtyOrdered) <= 0)) return "blocked";
   return "in_stock";
 }
 
 function getIngredientsStatus(so: any): string {
   if (!so.rows || so.rows.length === 0) return "not_applicable";
-  if (so.status === "fulfilled" || so.status === "done") return "in_stock";
+  if (so.status === "fulfilled" || so.status === "done") return "done";
   if (so.status === "cancelled") return "not_applicable";
+  if ((so.rows || []).some((r: any) => Number(r.qty ?? r.qtyOrdered) <= 0)) return "blocked";
   return "in_stock";
 }
 
@@ -75,6 +77,7 @@ export default function SalesOrdersPage() {
   const qc = useQueryClient();
   const { addToast } = useToast();
   const [status, setStatus] = useState("open");
+  const [locationId, setLocationId] = useState("");
   const [open, setOpen] = useState(false);
   const [customerId, setCustomerId] = useState("");
   const [dueAt, setDueAt] = useState("");
@@ -90,9 +93,11 @@ export default function SalesOrdersPage() {
   }, [router]);
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["sales-orders", status],
+    queryKey: ["sales-orders", status, locationId],
     queryFn: async () => {
-      const r = await api.get("/sales-orders", { params: { status } });
+      const r = await api.get("/sales-orders", {
+        params: { status, ...(locationId ? { locationId } : {}) },
+      });
       const body = r.data;
       if (Array.isArray(body?.data)) return body.data;
       if (Array.isArray(body)) return body;
@@ -101,7 +106,12 @@ export default function SalesOrdersPage() {
     retry: false,
   });
   const { data: customers } = useQuery({ queryKey: ["customers"], queryFn: () => api.get("/customers").then(r => r.data.data) });
+  const { data: locations } = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data.data) });
   const custOpts = useMemo(() => customerOptions(customers), [customers]);
+  const locationToolbarOpts = useMemo(
+    () => (locations || []).map((l: any) => ({ id: l.id, name: l.name })),
+    [locations],
+  );
 
   const create = useMutation({
     mutationFn: () => api.post("/sales-orders", { customerId, dueAt: dueAt || undefined, notes: notes || undefined, rows: [] }),
@@ -154,15 +164,31 @@ export default function SalesOrdersPage() {
     { key: "actions", header: "", filterable: false, render: (r: any) => (
       <ActionMenu actions={[
         { label: "Duplicate", icon: <Copy size={13} />, onClick: () => duplicateSO.mutate(r.id) },
-        { label: "Delete", icon: <Trash2 size={13} />, variant: "danger", onClick: () => { if (window.confirm("Delete this sales order?")) deleteSO.mutate(r.id); } },
+        {
+        label: "Delete",
+        icon: <Trash2 size={13} />,
+        variant: "danger",
+        onClick: () => {
+          if (window.confirm("Delete this sales order? Fulfilled lines must be reverted first or the server will reject the delete.")) deleteSO.mutate(r.id);
+        },
+      },
       ]} />
     )},
   ];
 
   return (
     <>
-      <ListToolbar statusFilter={status} onStatusChange={setStatus} statuses={statuses} actionLabel="Sales order" onAction={() => setOpen(true)}>
-        <ExportToolbar resource="sales-orders" filters={{ status }} />
+      <ListToolbar
+        statusFilter={status}
+        onStatusChange={setStatus}
+        statuses={statuses}
+        actionLabel="Sales order"
+        onAction={() => setOpen(true)}
+        locations={locationToolbarOpts}
+        locationFilter={locationId}
+        onLocationChange={setLocationId}
+      >
+        <ExportToolbar resource="sales-orders" filters={{ status, ...(locationId ? { locationId } : {}) }} />
       </ListToolbar>
       <div className="px-4 py-3">
         {isError && (

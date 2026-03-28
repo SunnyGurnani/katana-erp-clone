@@ -23,11 +23,34 @@ async function nextSoNumber(): Promise<string> {
   return `SO-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
 }
 
-// SalesOrderRow has no Prisma relations other than order/fulfillments
-const include = {
+const includeList = {
   customer: { select: { id: true, name: true } },
   rows: { include: { fulfillments: true } },
 };
+
+const includeDetail = {
+  customer: { select: { id: true, name: true } },
+  rows: { include: { fulfillments: true } },
+  fulfillments: {
+    orderBy: { createdAt: 'desc' as const },
+    include: {
+      location: { select: { id: true, name: true } },
+      row: { select: { id: true, description: true } },
+    },
+  },
+};
+
+/** Parse YYYY-MM-DD for @db.Date without local-TZ drift */
+function parseDueDate(input: string | null | undefined): Date | null | undefined {
+  if (input === undefined) return undefined;
+  if (input === null || input === '') return null;
+  const m = String(input).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return new Date(input);
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  return new Date(Date.UTC(y, mo - 1, d));
+}
 
 async function buildSoRowLookups(rows: any[]) {
   const variantIds = Array.from(new Set((rows || []).map((r: any) => r.variantId).filter(Boolean)));
@@ -99,17 +122,22 @@ router.get('/', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
   const where: any = {};
   if (req.query.status === 'open') {
+    // Open = active pipeline (exclude draft, fulfilled, cancelled)
     where.NOT = {
       OR: [
         { status: { equals: 'fulfilled', mode: 'insensitive' } },
         { status: { equals: 'cancelled', mode: 'insensitive' } },
+        { status: { equals: 'draft', mode: 'insensitive' } },
       ],
     };
   } else if (req.query.status) {
     where.status = { equals: String(req.query.status).trim(), mode: 'insensitive' };
   }
+  if (req.query.locationId && String(req.query.locationId).trim()) {
+    where.locationId = String(req.query.locationId).trim();
+  }
   const [items, total] = await Promise.all([
-    prisma.salesOrder.findMany({ where, include, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.salesOrder.findMany({ where, include: includeList, skip, take, orderBy: { createdAt: 'desc' } }),
     prisma.salesOrder.count({ where }),
   ]);
   const lookups = await buildSoRowLookups(items.flatMap((so: any) => so.rows || []));
@@ -161,20 +189,22 @@ router.post('/', async (req, res) => {
     dueAt: z.string().nullish(),
     notes: z.string().nullish(),
     locationId: z.string().min(1).nullish(),
-    rows: z.array(z.object({
-      variantId: z.string().uuid().nullish(),
-      description: z.string().nullish(),
-      qty: z.coerce.number().optional().default(1),
-      qtyOrdered: z.coerce.number().optional(),
-      salePrice: z.coerce.number().nullish(),
-      unitPrice: z.coerce.number().nullish(),
-    })).default([]),
+    rows: z.array(
+      z.object({
+        variantId: z.string().uuid().nullish(),
+        description: z.string().nullish(),
+        qty: z.coerce.number().optional().default(1),
+        qtyOrdered: z.coerce.number().optional(),
+        salePrice: z.coerce.number().nullish(),
+        unitPrice: z.coerce.number().nullish(),
+      }).refine((r) => (r.qtyOrdered ?? r.qty) > 0, { message: 'Quantity must be greater than 0', path: ['qty'] }),
+    ).default([]),
   }).parse(req.body);
   const number = data.number || await nextSoNumber();
   const so = await prisma.salesOrder.create({
     data: {
       number, customerId: data.customerId, currency: data.currency,
-      requiredDate: data.dueAt ? new Date(data.dueAt) : undefined,
+      requiredDate: data.dueAt ? parseDueDate(data.dueAt) ?? undefined : undefined,
       notes: data.notes ?? undefined, locationId: data.locationId ?? undefined,
       rows: {
         create: data.rows.map(r => ({
@@ -185,7 +215,7 @@ router.post('/', async (req, res) => {
         })),
       },
     },
-    include,
+    include: includeList,
   });
   const lookups = await buildSoRowLookups(so.rows || []);
   res.status(201).json(normalizeSo(so, lookups));
@@ -212,13 +242,19 @@ router.post('/', async (req, res) => {
  *         description: Not found
  */
 router.get('/:id', async (req, res) => {
-  const so = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include });
+  const so = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include: includeDetail });
   if (!so) return res.status(404).json({ error: 'Not found' });
   const lookups = await buildSoRowLookups(so.rows || []);
   res.json(normalizeSo(so, lookups));
 });
 
 async function updateSoById(req: any, res: any) {
+  const existing = await prisma.salesOrder.findUnique({
+    where: { id: req.params.id },
+    include: { rows: true },
+  });
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+
   const data = z.object({
     customerId: z.string().uuid().nullish(), status: z.string().nullish(),
     currency: z.string().nullish(), dueAt: z.string().nullish(),
@@ -230,14 +266,34 @@ async function updateSoById(req: any, res: any) {
       return res.status(422).json({ error: 'Due date year must be between 2000 and 2100' });
     }
   }
+
+  if (data.status !== undefined && data.status !== existing.status) {
+    const newSt = String(data.status).toLowerCase();
+    const hasFulfillmentQty = (existing.rows || []).some((r: any) => Number(r.qtyFulfilled) > 0);
+    if (hasFulfillmentQty && (newSt === 'draft' || newSt === 'confirmed')) {
+      return res.status(422).json({
+        error: 'Cannot set status to draft or confirmed while lines have fulfilled quantity. Use Revert fulfillment first.',
+      });
+    }
+    if (newSt === 'fulfilled') {
+      const rows = existing.rows || [];
+      const incomplete = rows.some(
+        (r: any) => Number(r.qtyOrdered) > 0 && Number(r.qtyFulfilled) < Number(r.qtyOrdered),
+      );
+      if (incomplete) {
+        return res.status(422).json({ error: 'Cannot mark fulfilled until every line with quantity is fully fulfilled.' });
+      }
+    }
+  }
+
   const soData: any = {};
   if (data.customerId !== undefined) soData.customerId = data.customerId;
   if (data.status) soData.status = data.status;
   if (data.currency) soData.currency = data.currency;
   if (data.notes !== undefined) soData.notes = data.notes;
   if (data.locationId !== undefined) soData.locationId = data.locationId;
-  if (data.dueAt !== undefined) soData.requiredDate = data.dueAt ? new Date(data.dueAt) : null;
-  const so = await prisma.salesOrder.update({ where: { id: req.params.id }, data: soData, include });
+  if (data.dueAt !== undefined) soData.requiredDate = data.dueAt ? parseDueDate(data.dueAt) : null;
+  const so = await prisma.salesOrder.update({ where: { id: req.params.id }, data: soData, include: includeDetail });
   const lookups = await buildSoRowLookups(so.rows || []);
   res.json(normalizeSo(so, lookups));
 }
@@ -302,6 +358,80 @@ router.put('/:id', updateSoById);
 router.patch('/:id', updateSoById);
 
 /**
+ * Restore stock from outbound fulfillments, remove those fulfillment rows, recompute line qty & status.
+ */
+router.post('/:id/revert-fulfillment', async (req, res) => {
+  const orderId = req.params.id;
+  const so = await prisma.salesOrder.findUnique({
+    where: { id: orderId },
+    include: { rows: true },
+  });
+  if (!so) return res.status(404).json({ error: 'Not found' });
+
+  const outbound = await prisma.salesOrderFulfillment.findMany({
+    where: { orderId, isReturn: false },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (!outbound.length) {
+    return res.status(422).json({ error: 'No outbound fulfillments to revert.' });
+  }
+
+  await prisma.$transaction(async (tx: any) => {
+    for (const f of outbound) {
+      if (!f.locationId) continue;
+      const row = so.rows.find((r: any) => r.id === f.rowId);
+      if (!row?.variantId) continue;
+      const q = Number(f.qty);
+      if (q <= 0) continue;
+      await adjustStock(tx, row.variantId, f.locationId, q, 'so_fulfillment_reversal', {
+        referenceType: 'sales_order',
+        referenceId: so.id,
+        note: `Revert ${so.number}`,
+      });
+    }
+    await tx.salesOrderFulfillment.deleteMany({ where: { orderId, isReturn: false } });
+    const remaining = await tx.salesOrderFulfillment.findMany({ where: { orderId } });
+    const sumByRow = new Map<string, number>();
+    for (const f of remaining) {
+      sumByRow.set(f.rowId, (sumByRow.get(f.rowId) || 0) + Number(f.qty));
+    }
+    for (const row of so.rows) {
+      await tx.salesOrderRow.update({
+        where: { id: row.id },
+        data: { qtyFulfilled: sumByRow.get(row.id) || 0 },
+      });
+    }
+    const rowsAfter = await tx.salesOrderRow.findMany({ where: { orderId } });
+    const allFulfilled = rowsAfter.every(
+      (r: any) => Number(r.qtyOrdered) <= 0 || Number(r.qtyFulfilled) >= Number(r.qtyOrdered),
+    );
+    const anyFulfilled = rowsAfter.some((r: any) => Number(r.qtyFulfilled) > 0);
+    const newStatus = allFulfilled ? 'fulfilled' : anyFulfilled ? 'partial' : 'confirmed';
+    await tx.salesOrder.update({ where: { id: orderId }, data: { status: newStatus } });
+  });
+
+  const updated = await prisma.salesOrder.findUnique({ where: { id: orderId }, include: includeDetail });
+  const lookups = await buildSoRowLookups(updated!.rows || []);
+  res.json(normalizeSo(updated!, lookups));
+});
+
+router.delete('/:id', async (req, res) => {
+  const so = await prisma.salesOrder.findUnique({
+    where: { id: req.params.id },
+    include: { rows: true },
+  });
+  if (!so) return res.status(404).json({ error: 'Not found' });
+  const hasFulfilled = (so.rows || []).some((r: any) => Number(r.qtyFulfilled) > 0);
+  if (hasFulfilled) {
+    return res.status(422).json({
+      error: 'Cannot delete an order with fulfilled lines. Revert fulfillment first.',
+    });
+  }
+  await prisma.salesOrder.delete({ where: { id: req.params.id } });
+  res.status(204).send();
+});
+
+/**
  * @openapi
  * /sales-orders/{id}/rows:
  *   post:
@@ -333,7 +463,8 @@ router.patch('/:id', updateSoById);
 router.post('/:id/rows', async (req, res) => {
   const data = z.object({
     variantId: z.string().uuid().nullish(), description: z.string().nullish(),
-    qty: z.coerce.number().default(1), salePrice: z.coerce.number().nullish(),
+    qty: z.coerce.number().positive({ message: 'Quantity must be greater than 0' }),
+    salePrice: z.coerce.number().nullish(),
   }).parse(req.body);
   const row = await prisma.salesOrderRow.create({
     data: { orderId: req.params.id, variantId: data.variantId ?? undefined, description: data.description ?? undefined, qtyOrdered: data.qty, unitPrice: data.salePrice ?? undefined },
@@ -384,9 +515,12 @@ router.post('/:id/fulfill', async (req, res) => {
     locationId: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.string().min(1).optional()),
     rows: z.array(z.object({ rowId: z.string().uuid(), qty: z.coerce.number().positive(), isReturn: z.boolean().default(false) })).optional(),
   }).parse(req.body);
-  const so = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include });
+  const so = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include: includeList });
   if (!so) return res.status(404).json({ error: 'Not found' });
   if (so.status === 'cancelled') return res.status(422).json({ error: 'Cannot fulfill cancelled SO' });
+  if (String(so.status).toLowerCase() === 'draft') {
+    return res.status(422).json({ error: 'Confirm the order (leave Draft status) before fulfilling.' });
+  }
   const srcLocationId = body.locationId ?? so.locationId;
   if (!srcLocationId) return res.status(422).json({ error: 'Provide a locationId (or set a default location on the sales order).' });
 
@@ -429,10 +563,12 @@ router.post('/:id/fulfill', async (req, res) => {
   });
 
   const allRows = await prisma.salesOrderRow.findMany({ where: { orderId: so.id } });
-  const allFulfilled = allRows.every((r: any) => Number(r.qtyFulfilled) >= Number(r.qtyOrdered));
+  const allFulfilled = allRows.every(
+    (r: any) => Number(r.qtyOrdered) <= 0 || Number(r.qtyFulfilled) >= Number(r.qtyOrdered),
+  );
   const anyFulfilled = allRows.some((r: any) => Number(r.qtyFulfilled) > 0);
   const newStatus = allFulfilled ? 'fulfilled' : anyFulfilled ? 'partial' : so.status;
-  const updated = await prisma.salesOrder.update({ where: { id: so.id }, data: { status: newStatus }, include });
+  const updated = await prisma.salesOrder.update({ where: { id: so.id }, data: { status: newStatus }, include: includeDetail });
   const lookups = await buildSoRowLookups(updated.rows || []);
   res.json(normalizeSo(updated, lookups));
 });
