@@ -135,7 +135,6 @@ router.get('/quickbooks/status', async (_req, res) => {
   requireQuickBooksEnv();
   const integration = await prisma.accountingIntegration.findUnique({
     where: { provider: 'quickbooks' },
-    include: { syncLogs: { orderBy: { createdAt: 'desc' }, take: 1 } },
   });
 
   if (!integration) {

@@ -52,3 +52,64 @@ export async function adjustStock(
   });
   return { level, movement };
 }
+
+/**
+ * Decrement (or increment if qty positive) batch on-hand at a location, then mirror on aggregate inventory_level + movement.
+ * Use qty as positive amount to remove from stock (same as passing negative to adjustStock).
+ */
+export async function adjustVariantStockWithBatch(
+  tx: TX,
+  params: { variantId: string; locationId: string; qtyToShip: number; batchId: string },
+  movementOpts: { referenceType?: string; referenceId?: string; note?: string },
+) {
+  const q = Number(params.qtyToShip);
+  if (q <= 0) return;
+
+  const batch = await tx.batch.findFirst({
+    where: { id: params.batchId, variantId: params.variantId },
+  });
+  if (!batch) {
+    throw Object.assign(new Error('Selected lot does not belong to this product variant.'), { statusCode: 422 });
+  }
+
+  const bs = await tx.batchStock.findUnique({
+    where: { batchId_locationId: { batchId: params.batchId, locationId: params.locationId } },
+  });
+  const bOn = bs ? Number(bs.onHand) : 0;
+  if (bOn < q) {
+    throw Object.assign(
+      new Error(`Insufficient quantity in the selected lot at this location (on hand: ${bOn}).`),
+      { statusCode: 422 },
+    );
+  }
+
+  await tx.batchStock.update({
+    where: { batchId_locationId: { batchId: params.batchId, locationId: params.locationId } },
+    data: { onHand: { decrement: q } },
+  });
+
+  await adjustStock(tx, params.variantId, params.locationId, -q, 'so_fulfillment', movementOpts);
+}
+
+/** Put quantity back into a lot and aggregate level (e.g. revert fulfillment). */
+export async function restoreVariantStockWithBatch(
+  tx: TX,
+  params: { variantId: string; locationId: string; qty: number; batchId: string },
+  movementOpts: { referenceType?: string; referenceId?: string; note?: string },
+) {
+  const q = Number(params.qty);
+  if (q <= 0) return;
+
+  const batch = await tx.batch.findFirst({
+    where: { id: params.batchId, variantId: params.variantId },
+  });
+  if (!batch) return;
+
+  await tx.batchStock.upsert({
+    where: { batchId_locationId: { batchId: params.batchId, locationId: params.locationId } },
+    create: { batchId: params.batchId, locationId: params.locationId, onHand: q, allocated: 0 },
+    update: { onHand: { increment: q } },
+  });
+
+  await adjustStock(tx, params.variantId, params.locationId, q, 'so_fulfillment_reversal', movementOpts);
+}

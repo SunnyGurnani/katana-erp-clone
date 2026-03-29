@@ -10,7 +10,7 @@ import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
 import { requireOperatorForMutations } from '../middleware/roles';
 import { getPagination, paginated } from '../middleware/paginate';
-import { adjustStock } from '../lib/inventory';
+import { adjustStock, adjustVariantStockWithBatch, restoreVariantStockWithBatch } from '../lib/inventory';
 import { nextSalesOrderNumber } from '../lib/nextSalesOrderNumber';
 import { z } from 'zod';
 import soAddressesRouter from './soAddresses';
@@ -39,6 +39,7 @@ const includeDetail = {
     include: {
       location: { select: { id: true, name: true } },
       row: { select: { id: true, description: true } },
+      batch: { select: { id: true, batchNumber: true, expiryDate: true } },
     },
   },
 };
@@ -64,7 +65,7 @@ async function buildSoRowLookups(rows: any[]) {
           id: true,
           name: true,
           sku: true,
-          product: { select: { id: true, name: true } },
+          product: { select: { id: true, name: true, trackLotsAndExpiry: true } },
         },
       })
     : [];
@@ -77,13 +78,17 @@ function normalizeSo(so: any, lookups?: { variantById: Map<string, any> }) {
     soNumber: so.number,
     dueAt: so.requiredDate,
     totalPrice: so.rows?.reduce((s: number, r: any) => s + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0) ?? 0,
-    rows: so.rows?.map((r: any) => ({
-      ...r,
-      qty: r.qtyOrdered,
-      salePrice: r.unitPrice,
-      fulfilledQty: r.qtyFulfilled,
-      variant: r.variant ?? (r.variantId && lookups ? lookups.variantById.get(r.variantId) || null : null),
-    })),
+    rows: so.rows?.map((r: any) => {
+      const v = r.variant ?? (r.variantId && lookups ? lookups.variantById.get(r.variantId) || null : null);
+      return {
+        ...r,
+        qty: r.qtyOrdered,
+        salePrice: r.unitPrice,
+        fulfilledQty: r.qtyFulfilled,
+        variant: v,
+        trackLotsAndExpiry: Boolean(v?.product?.trackLotsAndExpiry),
+      };
+    }),
   };
 }
 
@@ -205,8 +210,12 @@ router.get('/', async (req, res) => {
   } else if (req.query.status) {
     where.status = { equals: String(req.query.status).trim(), mode: 'insensitive' };
   }
-  if (req.query.locationId && String(req.query.locationId).trim()) {
-    where.locationId = String(req.query.locationId).trim();
+  const locFilter = req.query.locationId && String(req.query.locationId).trim();
+  if (locFilter) {
+    const lid = String(locFilter);
+    where.AND = [...(where.AND ?? []), {
+      OR: [{ locationId: lid }, { rows: { some: { locationId: lid } } }],
+    }];
   }
   const [items, total] = await Promise.all([
     prisma.salesOrder.findMany({ where, include: includeList, skip, take, orderBy: { createdAt: 'desc' } }),
@@ -273,6 +282,12 @@ router.post('/', async (req, res) => {
       }).refine((r) => (r.qtyOrdered ?? r.qty) > 0, { message: 'Quantity must be greater than 0', path: ['qty'] }),
     ).default([]),
   }).parse(req.body);
+  if (data.dueAt) {
+    const y = Number(String(data.dueAt).slice(0, 4));
+    if (Number.isFinite(y) && (y < 2000 || y > 2100)) {
+      return res.status(422).json({ error: 'Due date year must be between 2000 and 2100' });
+    }
+  }
   const number = data.number || (await nextSalesOrderNumber());
   const so = await prisma.salesOrder.create({
     data: {
@@ -338,6 +353,9 @@ async function updateSoById(req: any, res: any) {
     if (Number.isFinite(y) && (y < 2000 || y > 2100)) {
       return res.status(422).json({ error: 'Due date year must be between 2000 and 2100' });
     }
+  }
+  if (data.customerId === null && String(existing.status).toLowerCase() !== 'draft') {
+    return res.status(422).json({ error: 'Cannot remove the customer unless the order is in Draft status.' });
   }
 
   if (data.status !== undefined && data.status !== existing.status) {
@@ -455,11 +473,20 @@ router.post('/:id/revert-fulfillment', async (req, res) => {
       if (!row?.variantId) continue;
       const q = Number(f.qty);
       if (q <= 0) continue;
-      await adjustStock(tx, row.variantId, f.locationId, q, 'so_fulfillment_reversal', {
-        referenceType: 'sales_order',
+      const revNote = {
+        referenceType: 'sales_order' as const,
         referenceId: so.id,
         note: `Revert ${so.number}`,
-      });
+      };
+      if (f.batchId) {
+        await restoreVariantStockWithBatch(
+          tx,
+          { variantId: row.variantId, locationId: f.locationId, qty: q, batchId: f.batchId },
+          revNote,
+        );
+      } else {
+        await adjustStock(tx, row.variantId, f.locationId, q, 'so_fulfillment_reversal', revNote);
+      }
     }
     await tx.salesOrderFulfillment.deleteMany({ where: { orderId, isReturn: false } });
     const remaining = await tx.salesOrderFulfillment.findMany({ where: { orderId } });
@@ -554,6 +581,51 @@ router.post('/:id/rows', async (req, res) => {
 });
 
 /**
+ * Lots available to ship for one line (at the line or order default location).
+ */
+router.get('/:id/rows/:rowId/available-batches', async (req, res) => {
+  const so = await prisma.salesOrder.findUnique({
+    where: { id: req.params.id },
+    include: { rows: true },
+  });
+  if (!so) return res.status(404).json({ error: 'Not found' });
+  const row = (so.rows as any[]).find((r) => r.id === req.params.rowId);
+  if (!row) return res.status(404).json({ error: 'Line not found' });
+  if (!row.variantId) {
+    return res.json({ trackLotsAndExpiry: false, locationId: row.locationId ?? so.locationId, batches: [] });
+  }
+  const v = await prisma.variant.findUnique({
+    where: { id: row.variantId },
+    select: { product: { select: { trackLotsAndExpiry: true } } },
+  });
+  const trackLotsAndExpiry = Boolean(v?.product?.trackLotsAndExpiry);
+  const locationId = row.locationId ?? so.locationId;
+  if (!locationId) {
+    return res.status(422).json({ error: 'Set a ship-from location on the line or order to list lots.' });
+  }
+  const stocks = await prisma.batchStock.findMany({
+    where: {
+      locationId,
+      batch: { variantId: row.variantId },
+      onHand: { gt: 0 },
+    },
+    include: { batch: { select: { id: true, batchNumber: true, expiryDate: true } } },
+    orderBy: { batch: { expiryDate: 'asc' } },
+  });
+  res.json({
+    trackLotsAndExpiry,
+    locationId,
+    batches: stocks.map((s) => ({
+      batchStockId: s.id,
+      batchId: s.batchId,
+      batchNumber: s.batch.batchNumber,
+      expiryDate: s.batch.expiryDate,
+      onHand: Number(s.onHand),
+    })),
+  });
+});
+
+/**
  * @openapi
  * /sales-orders/{id}/fulfill:
  *   post:
@@ -594,7 +666,16 @@ router.post('/:id/rows', async (req, res) => {
 router.post('/:id/fulfill', async (req, res) => {
   const body = z.object({
     locationId: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.string().min(1).optional()),
-    rows: z.array(z.object({ rowId: z.string().uuid(), qty: z.coerce.number().positive(), isReturn: z.boolean().default(false) })).optional(),
+    carrier: z.string().max(160).nullish(),
+    trackingNumber: z.string().max(160).nullish(),
+    shipMethod: z.string().max(160).nullish(),
+    rows: z.array(z.object({
+      rowId: z.string().uuid(),
+      qty: z.coerce.number().positive(),
+      isReturn: z.boolean().default(false),
+      locationId: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.string().uuid().optional()),
+      batchId: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.string().uuid().optional()),
+    })).optional(),
   }).parse(req.body);
   const so = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include: includeList });
   if (!so) return res.status(404).json({ error: 'Not found' });
@@ -602,17 +683,30 @@ router.post('/:id/fulfill', async (req, res) => {
   if (String(so.status).toLowerCase() === 'draft') {
     return res.status(422).json({ error: 'Confirm the order (leave Draft status) before fulfilling.' });
   }
-  const srcLocationId = body.locationId ?? so.locationId;
-  if (!srcLocationId) return res.status(422).json({ error: 'Provide a locationId (or set a default location on the sales order).' });
 
   const rowsArr = so.rows as any[];
   if (!rowsArr.length) {
     return res.status(422).json({ error: 'Add at least one line item before fulfilling.' });
   }
 
-  const rowsToFulfill = body.rows ?? rowsArr.map((r: any) => ({
-    rowId: r.id, qty: Number(r.qtyOrdered) - Number(r.qtyFulfilled || 0), isReturn: false,
-  }));
+  const rowsToFulfill = (body.rows ?? rowsArr.map((r: any) => ({
+    rowId: r.id,
+    qty: Number(r.qtyOrdered) - Number(r.qtyFulfilled || 0),
+    isReturn: false as boolean,
+    locationId: undefined as string | undefined,
+  }))) as { rowId: string; qty: number; isReturn: boolean; locationId?: string; batchId?: string }[];
+
+  const variantIds = [...new Set(rowsArr.map((r: any) => r.variantId).filter(Boolean))] as string[];
+  const variants = variantIds.length
+    ? await prisma.variant.findMany({
+        where: { id: { in: variantIds } },
+        select: { id: true, sku: true, name: true, product: { select: { name: true, trackLotsAndExpiry: true } } },
+      })
+    : [];
+  const variantLabel = new Map(
+    variants.map((v) => [v.id, [v.product?.name, v.sku || v.name].filter(Boolean).join(' · ') || v.id]),
+  );
+  const trackLotsByVariant = new Map(variants.map((v) => [v.id, Boolean(v.product?.trackLotsAndExpiry)]));
 
   for (const item of rowsToFulfill) {
     if (item.qty <= 0) continue;
@@ -623,25 +717,97 @@ router.post('/:id/fulfill', async (req, res) => {
         error: 'Cannot fulfill lines without a product variant. Assign a product to each line or remove the line.',
       });
     }
+    const remaining = Number(row.qtyOrdered) - Number(row.qtyFulfilled || 0);
+    if (item.qty > remaining) {
+      const lab = variantLabel.get(row.variantId) || row.description || row.variantId;
+      return res.status(422).json({
+        error: `Ship quantity exceeds remaining open quantity for ${lab} (remaining: ${remaining}).`,
+      });
+    }
+    const lineLoc = item.locationId ?? body.locationId ?? row.locationId ?? so.locationId;
+    if (!lineLoc) {
+      const lab = variantLabel.get(row.variantId) || row.description || 'line';
+      return res.status(422).json({
+        error:
+          `No ship-from location for ${lab}. Set a line-level or order default location, or pick one location for the whole shipment in the fulfill dialog.`,
+      });
+    }
+    const mustLot = row.variantId && trackLotsByVariant.get(row.variantId);
+    if (mustLot && !item.batchId) {
+      const lab = variantLabel.get(row.variantId) || row.description || 'line';
+      return res.status(422).json({
+        error: `${lab} is lot/expiry tracked — select a lot with available quantity at the ship-from location.`,
+      });
+    }
   }
 
   if (!rowsToFulfill.some((i) => i.qty > 0)) {
     return res.status(422).json({ error: 'Nothing left to fulfill on this order.' });
   }
 
-  await prisma.$transaction(async (tx: any) => {
-    for (const item of rowsToFulfill) {
-      if (item.qty <= 0) continue;
-      const row = (so.rows as any[]).find((r: any) => r.id === item.rowId);
-      if (!row || !row.variantId) continue;
-      await adjustStock(tx, row.variantId, srcLocationId, -item.qty, 'so_fulfillment', { referenceType: 'sales_order', referenceId: so.id, note: `SO ${so.number}` });
-      await tx.salesOrderRow.update({ where: { id: row.id }, data: { qtyFulfilled: { increment: item.qty } } });
-      // Create per-row fulfillment record
-      await tx.salesOrderFulfillment.create({
-        data: { orderId: so.id, rowId: row.id, qty: item.qty, locationId: srcLocationId, isReturn: item.isReturn },
-      });
+  const tracking = {
+    carrier: body.carrier?.trim() || undefined,
+    trackingNumber: body.trackingNumber?.trim() || undefined,
+    shipMethod: body.shipMethod?.trim() || undefined,
+  };
+
+  try {
+    await prisma.$transaction(async (tx: any) => {
+      for (const item of rowsToFulfill) {
+        if (item.qty <= 0) continue;
+        const row = rowsArr.find((r: any) => r.id === item.rowId);
+        if (!row || !row.variantId) continue;
+        const srcLocationId = item.locationId ?? body.locationId ?? row.locationId ?? so.locationId;
+        if (!srcLocationId) continue;
+        const mov = {
+          referenceType: 'sales_order' as const,
+          referenceId: so.id,
+          note: `SO ${so.number}`,
+        };
+        try {
+          if (item.batchId) {
+            await adjustVariantStockWithBatch(
+              tx,
+              {
+                variantId: row.variantId,
+                locationId: srcLocationId,
+                qtyToShip: item.qty,
+                batchId: item.batchId,
+              },
+              mov,
+            );
+          } else {
+            await adjustStock(tx, row.variantId, srcLocationId, -item.qty, 'so_fulfillment', mov);
+          }
+        } catch (e: any) {
+          if (e?.statusCode === 422) {
+            const lab = variantLabel.get(row.variantId) || row.description || row.variantId;
+            throw Object.assign(new Error(`${e.message} (${lab})`), { statusCode: 422 });
+          }
+          throw e;
+        }
+        await tx.salesOrderRow.update({ where: { id: row.id }, data: { qtyFulfilled: { increment: item.qty } } });
+        await tx.salesOrderFulfillment.create({
+          data: {
+            orderId: so.id,
+            rowId: row.id,
+            qty: item.qty,
+            locationId: srcLocationId,
+            isReturn: item.isReturn,
+            carrier: tracking.carrier,
+            trackingNumber: tracking.trackingNumber,
+            shipMethod: tracking.shipMethod,
+            batchId: item.batchId ?? undefined,
+          },
+        });
+      }
+    });
+  } catch (e: any) {
+    if (e?.statusCode === 422) {
+      return res.status(422).json({ error: e.message });
     }
-  });
+    throw e;
+  }
 
   const allRows = await prisma.salesOrderRow.findMany({ where: { orderId: so.id } });
   const allFulfilled = allRows.every(

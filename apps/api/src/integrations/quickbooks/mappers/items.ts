@@ -1,5 +1,7 @@
-import type { ItemType } from '@prisma/client';
 import type { Material, Product, Service, Variant } from '@prisma/client';
+
+/** QuickBooks Item.Type values we emit (not a Prisma enum). */
+type QboItemType = 'Service' | 'NonInventory' | 'Inventory';
 
 type SourceKind = 'variant' | 'product' | 'material' | 'service';
 
@@ -30,7 +32,7 @@ export function mapToQboItem(input: ItemMapperInput): Record<string, unknown> {
       Name: input.service.name,
       Sku: input.service.sku ?? undefined,
       Description: input.service.description ?? undefined,
-      Type: 'Service' satisfies ItemType,
+      Type: 'Service' satisfies QboItemType,
       Active: input.service.isActive,
       UnitPrice: amount(input.service.price),
       IncomeAccountRef: incomeAccountRef,
@@ -42,7 +44,7 @@ export function mapToQboItem(input: ItemMapperInput): Record<string, unknown> {
       Name: input.material.name,
       Sku: input.material.sku ?? undefined,
       Description: input.material.description ?? undefined,
-      Type: 'NonInventory' satisfies ItemType,
+      Type: 'NonInventory' satisfies QboItemType,
       Active: input.material.isActive,
       UnitPrice: amount(input.material.purchasePrice),
       ExpenseAccountRef: expenseAccountRef,
@@ -59,7 +61,7 @@ export function mapToQboItem(input: ItemMapperInput): Record<string, unknown> {
     Name: name ?? 'Item',
     Sku: base?.sku ?? undefined,
     Description: (base as Product | Variant | undefined)?.name ?? undefined,
-    Type: (isInventory ? 'Inventory' : 'NonInventory') satisfies ItemType,
+    Type: (isInventory ? 'Inventory' : 'NonInventory') satisfies QboItemType,
     Active: base?.isActive ?? true,
     UnitPrice: amount((base as Variant | Product | undefined)?.salesPrice),
     PurchaseCost: amount((base as Variant | Product | undefined)?.purchasePrice),

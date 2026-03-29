@@ -119,6 +119,7 @@ model Product {
   salesPrice      Decimal?  @map("sales_price") @db.Decimal(18, 4)
   purchasePrice   Decimal?  @map("purchase_price") @db.Decimal(18, 4)
   imageUrl        String?   @map("image_url")
+  trackLotsAndExpiry Boolean @default(false) @map("track_lots_and_expiry")
   variants        Variant[]
   boms            BOM[]
   manufacturingOrders ManufacturingOrder[]
@@ -322,9 +323,14 @@ model SalesOrderFulfillment {
   qty        Decimal    @db.Decimal(18, 4)
   locationId String?    @map("location_id")
   location   Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  isReturn   Boolean    @default(false) @map("is_return")
-  notes      String?
-  createdAt  DateTime   @default(now()) @map("created_at")
+  isReturn        Boolean    @default(false) @map("is_return")
+  notes           String?
+  carrier         String?    @map("carrier")
+  trackingNumber  String?    @map("tracking_number")
+  shipMethod      String?    @map("ship_method")
+  batchId         String?    @map("batch_id")
+  batch           Batch?     @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  createdAt       DateTime   @default(now()) @map("created_at")
   @@map("sales_order_fulfillments")
 }
 
@@ -475,6 +481,7 @@ model Batch {
   expiryDate   DateTime?    @map("expiry_date") @db.Date
   notes        String?
   stocks       BatchStock[]
+  fulfillments SalesOrderFulfillment[]
   createdAt    DateTime     @default(now()) @map("created_at")
   @@unique([variantId, batchNumber])
   @@map("batches")

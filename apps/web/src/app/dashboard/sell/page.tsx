@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -9,7 +9,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { ActionMenu } from "@/components/shared/ActionMenu";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Copy, Trash2 } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
@@ -64,16 +64,11 @@ function getSalesItemsStatus(so: any): string {
   return "in_stock";
 }
 
-function getIngredientsStatus(so: any): string {
-  if (!so.rows || so.rows.length === 0) return "not_applicable";
-  if (so.status === "fulfilled" || so.status === "done") return "done";
-  if (so.status === "cancelled") return "not_applicable";
-  if ((so.rows || []).some((r: any) => Number(r.qty ?? r.qtyOrdered) <= 0)) return "blocked";
-  return "in_stock";
-}
+export const dynamic = "force-dynamic";
 
 export default function SalesOrdersPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const qc = useQueryClient();
   const { addToast } = useToast();
   const [status, setStatus] = useState("open");
@@ -82,6 +77,23 @@ export default function SalesOrdersPage() {
   const [customerId, setCustomerId] = useState("");
   const [dueAt, setDueAt] = useState("");
   const [notes, setNotes] = useState("");
+
+  const syncSellUrl = useCallback(
+    (nextStatus: string, nextLoc: string) => {
+      const params = new URLSearchParams();
+      params.set("status", nextStatus);
+      if (nextLoc) params.set("locationId", nextLoc);
+      router.replace(`/dashboard/sell?${params.toString()}`, { scroll: false });
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    const s = searchParams.get("status");
+    const loc = searchParams.get("locationId") || "";
+    if (s && statuses.some((x) => x.value === s)) setStatus(s);
+    setLocationId(loc);
+  }, [searchParams]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -120,6 +132,7 @@ export default function SalesOrdersPage() {
       // New orders are `draft`; the Open tab hides drafts — switch so the row is visible.
       setStatus("draft");
       setLocationId("");
+      syncSellUrl("draft", "");
       addToast("Sales order created (Draft). Add lines on the order page.", "success");
       setOpen(false);
       setCustomerId("");
@@ -141,6 +154,7 @@ export default function SalesOrdersPage() {
       qc.invalidateQueries({ queryKey: ["sales-orders"] });
       setStatus("draft");
       setLocationId("");
+      syncSellUrl("draft", "");
       addToast("Duplicated (Draft)", "success");
     },
     onError: () => addToast("Error duplicating SO", "error"),
@@ -158,9 +172,18 @@ export default function SalesOrdersPage() {
   const columns: Column[] = [
     { key: "createdAt", header: "Created on", sortable: true, render: (r: any) => formatSoListDate(r.createdAt) },
     { key: "soNumber", header: "Order #", sortable: true, render: (r: any) => (
-      <Link href={`/dashboard/sell/${r.id}`} className="text-brand-600 font-medium hover:underline" onClick={e => e.stopPropagation()}>
-        {r.soNumber}
-      </Link>
+      <span className="inline-flex items-center gap-1 flex-wrap">
+        <Link
+          href={`/dashboard/sell/${r.id}?listStatus=${encodeURIComponent(status)}`}
+          className="text-brand-600 font-medium hover:underline"
+          onClick={e => e.stopPropagation()}
+        >
+          {r.soNumber}
+        </Link>
+        {(r.rows?.length ?? 0) === 0 && (
+          <span className="text-[10px] font-medium uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">Empty</span>
+        )}
+      </span>
     )},
     { key: "customer", header: "Customer", render: (r: any) => r.customer?.name || "—" },
     { key: "totalPrice", header: "Total amount", sortable: true, render: (r: any) => (
@@ -169,11 +192,10 @@ export default function SalesOrdersPage() {
     { key: "dueAt", header: "Delivery deadline", sortable: true, render: (r: any) => {
       if (!r.dueAt) return "—";
       const ymd = formatSoListDate(r.dueAt);
-      const overdue = ymd !== "—" && new Date(ymd + "T12:00:00") < new Date() && !["fulfilled", "cancelled"].includes(r.status);
+      const overdue = ymd !== "—" && new Date(ymd + "T12:00:00") < new Date() && r.status !== "cancelled";
       return <span className={overdue ? "text-red-600 font-medium" : ""}>{ymd}</span>;
     }},
     { key: "salesItems", header: "Sales items", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getSalesItemsStatus(r)} /> },
-    { key: "ingredients", header: "Ingredients", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getIngredientsStatus(r)} /> },
     { key: "production", header: "Production", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getProductionStatus(r)} /> },
     { key: "delivery", header: "Delivery", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getDeliveryStatus(r)} /> },
     { key: "actions", header: "", filterable: false, render: (r: any) => (
@@ -195,13 +217,19 @@ export default function SalesOrdersPage() {
     <>
       <ListToolbar
         statusFilter={status}
-        onStatusChange={setStatus}
+        onStatusChange={(v) => {
+          setStatus(v);
+          syncSellUrl(v, locationId);
+        }}
         statuses={statuses}
         actionLabel="Sales order"
         onAction={() => setOpen(true)}
         locations={locationToolbarOpts}
         locationFilter={locationId}
-        onLocationChange={setLocationId}
+        onLocationChange={(v) => {
+          setLocationId(v);
+          syncSellUrl(status, v);
+        }}
       >
         <ExportToolbar resource="sales-orders" filters={{ status, ...(locationId ? { locationId } : {}) }} />
       </ListToolbar>
@@ -217,14 +245,14 @@ export default function SalesOrdersPage() {
           <span className="text-xs font-medium text-gray-700">
             {totalsByCurrency.length <= 1
               ? `Total: ${(totalsByCurrency[0]?.[1] ?? 0).toFixed(2)} ${totalsByCurrency[0]?.[0] ?? "USD"}`
-              : `Totals: ${totalsByCurrency.map(([c, v]) => `${v.toFixed(2)} ${c}`).join(" · ")}`}
+              : `Totals (by currency): ${totalsByCurrency.map(([c, v]) => `${v.toFixed(2)} ${c}`).join(" · ")}`}
           </span>
         </div>
         <DataTable
           columns={columns}
           data={data || []}
           isLoading={isLoading}
-          onRowClick={(row) => router.push(`/dashboard/sell/${row.id}`)}
+          onRowClick={(row) => router.push(`/dashboard/sell/${row.id}?listStatus=${encodeURIComponent(status)}`)}
           emptyMessage="No sales orders found"
           showRank
           totalLabel="orders"

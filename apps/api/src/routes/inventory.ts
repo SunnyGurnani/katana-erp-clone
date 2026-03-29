@@ -87,13 +87,14 @@ router.get('/levels', async (req, res) => {
       variantId: true,
       qtyOrdered: true,
       qtyFulfilled: true,
+      locationId: true,
       order: { select: { locationId: true } },
     },
   });
 
   const reservedMap: Record<string, number> = {};
   for (const r of soRows) {
-    const locId = r.order.locationId ?? defaultLoc?.id;
+    const locId = r.locationId ?? r.order.locationId ?? defaultLoc?.id;
     if (!locId || !r.variantId) continue;
     const key = `${r.variantId}|${locId}`;
     reservedMap[key] = (reservedMap[key] || 0) + (Number(r.qtyOrdered) - Number(r.qtyFulfilled));
@@ -101,7 +102,9 @@ router.get('/levels', async (req, res) => {
 
   const enriched = items.map((l: any) => {
     const key = `${l.variantId}|${l.locationId}`;
-    const reserved = reservedMap[key] || 0;
+    const fromOrders = reservedMap[key] || 0;
+    const fromLevel = Number(l.allocated || 0);
+    const reserved = fromOrders + fromLevel;
     return { ...l, reserved };
   });
 
