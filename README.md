@@ -7,35 +7,49 @@ A production-structured manufacturing ERP inspired by Katana MRP, built with:
 - **Monorepo:** Turborepo + pnpm workspaces
 - **Auth:** JWT (access + refresh tokens)
 
-## 🚀 Easy Run (Windows & MacBook)
+## 🚀 Easy Run with Docker (Windows & Mac)
 
-Run these commands to get started immediately:
+If you have Docker installed, you can spin up the entire application (Frontend, Backend API, Postgres, MinIO) with a single command:
 
-```bash
-git pull origin master
-pnpm install
-docker compose -f docker-compose.local.yml up --build
-```
+1. Copy the environment variables file:
+   ```bash
+   # Windows (PowerShell/CMD): copy .env.example .env
+   # Mac/Linux: cp .env.example .env
+   ```
+2. Start the Docker containers:
+   ```bash
+   docker compose -f docker-compose.local.yml up --build
+   ```
+3. Visit the applications:
+   - **Frontend:** http://localhost:3000
+   - **API Docs:** http://localhost:8000/docs
 
-Then visit:
-- **Frontend:** http://localhost:3000
-- **API Docs:** http://localhost:8000/docs
-- **Health:** http://localhost:8000/health
+*(Note: If you are accessing the frontend from a different machine on your local Wi-Fi, update `NEXT_PUBLIC_API_URL` and `ALLOWED_ORIGINS` in your `.env` to use your computer's local IP address instead of `localhost`).*
 
-## 🛠 Local Development (Without Docker)
+## 🛠 Local Development without Docker (Mac & Windows)
 
 **Prerequisites:** Node 20, pnpm 9, PostgreSQL 15
 
-```bash
-cp .env.example .env
-# Edit .env with your DATABASE_URL (postgresql://...)
+1. Copy and configure the environment variables:
+   - **Mac/Linux:** `cp .env.example .env`
+   - **Windows:** `copy .env.example .env`
+   *Open `.env` and configure your `DATABASE_URL` to point to a running local PostgreSQL instance.* 
 
-pnpm install
-pnpm db:generate    # Regenerate Prisma Client
-pnpm db:push        # Push schema to local Postgres
-pnpm db:seed        # Seed demo data
-pnpm run dev        # Start both API + web
-```
+2. Install dependencies:
+   ```bash
+   pnpm install
+   ```
+3. Set up the Database (Schema, Client, and seed data):
+   ```bash
+   pnpm db:generate    # Generates the Prisma Client
+   pnpm db:push        # Pushes schema to your local Postgres database
+   pnpm db:seed        # Seeds the database with demo data
+   ```
+4. Start the Development Servers (Frontend + API):
+   ```bash
+   pnpm run dev
+   ```
+*(Note for cross-device testing: If you run this server on one computer and want to view it on another, you must change `NEXT_PUBLIC_API_URL` to the host computer's Local IP Address, and add the remote URL to `ALLOWED_ORIGINS` in your `.env` file).*
 
 ## Demo Credentials
 

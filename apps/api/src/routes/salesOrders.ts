@@ -20,11 +20,91 @@ const include = {
   rows: { include: { fulfillments: true } },
 };
 
+async function appendPipelineStatuses(sos: any[]) {
+  if (!sos.length) return sos;
+  const variantMap = new Set<string>();
+  const locationIdSet = new Set<string>();
+  sos.forEach(so => {
+    if (so.locationId) locationIdSet.add(so.locationId);
+    so.rows?.forEach((r: any) => {
+      if (r.variantId) variantMap.add(r.variantId);
+    });
+  });
+
+  const variantIds = Array.from(variantMap);
+  const locationIds = Array.from(locationIdSet);
+
+  const levels = await prisma.inventoryLevel.findMany({
+    where: { variantId: { in: variantIds }, locationId: { in: locationIds } }
+  });
+  
+  const poRows = await prisma.purchaseOrderRow.findMany({
+    where: { variantId: { in: variantIds }, order: { status: { notIn: ['cancelled', 'received'] } } },
+    select: { variantId: true, qtyOrdered: true, qtyReceived: true, order: { select: { locationId: true } } }
+  });
+
+  const onHandMap: Record<string, number> = {};
+  levels.forEach(l => { onHandMap[`${l.variantId}|${l.locationId}`] = Number(l.onHand); });
+  
+  const expectedMap: Record<string, number> = {};
+  poRows.forEach(r => {
+    const locId = r.order.locationId;
+    if (!locId || !r.variantId) return;
+    const key = `${r.variantId}|${locId}`;
+    expectedMap[key] = (expectedMap[key] || 0) + (Number(r.qtyOrdered) - Number(r.qtyReceived));
+  });
+
+  return sos.map(so => {
+    let sumOrdered = 0;
+    let sumFulfilled = 0;
+    let allAvailable = true;
+    let anyNotAvailable = false;
+    let anyExpected = false;
+
+    so.rows?.forEach((r: any) => {
+      const qO = Number(r.qtyOrdered);
+      const qF = Number(r.qtyFulfilled || 0);
+      sumOrdered += qO;
+      sumFulfilled += qF;
+
+      if (!r.variantId || !so.locationId) return;
+      const key = `${r.variantId}|${so.locationId}`;
+      const onHand = onHandMap[key] || 0;
+      const expected = expectedMap[key] || 0;
+      const remainingReq = qO - qF;
+
+      if (remainingReq > 0) {
+        if (onHand >= remainingReq) {
+          // available
+        } else if (onHand + expected >= remainingReq) {
+          anyExpected = true;
+          allAvailable = false;
+        } else {
+          anyNotAvailable = true;
+          allAvailable = false;
+        }
+      }
+    });
+
+    let deliveryStatus = 'not_shipped';
+    if (sumFulfilled >= sumOrdered && sumOrdered > 0) deliveryStatus = 'shipped';
+    else if (sumFulfilled > 0) deliveryStatus = 'partially_shipped';
+
+    let salesItemsStatus = 'expected';
+    if (anyNotAvailable) salesItemsStatus = 'not_available';
+    else if (allAvailable) salesItemsStatus = 'available';
+
+    return { ...so, deliveryStatus, salesItemsStatus };
+  });
+}
+
 function normalizeSo(so: any) {
   return {
     ...so,
     soNumber: so.number,
     dueAt: so.requiredDate,
+    deliveryStatus: so.deliveryStatus || 'not_shipped',
+    salesItemsStatus: so.salesItemsStatus || 'available',
     totalPrice: so.rows?.reduce((s: number, r: any) => s + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0) ?? 0,
     rows: so.rows?.map((r: any) => ({ ...r, qty: r.qtyOrdered, salePrice: r.unitPrice, fulfilledQty: r.qtyFulfilled })),
   };
@@ -38,7 +118,8 @@ router.get('/', async (req, res) => {
     prisma.salesOrder.findMany({ where, include, skip, take, orderBy: { createdAt: 'desc' } }),
     prisma.salesOrder.count({ where }),
   ]);
-  res.json(paginated(items.map(normalizeSo), total, page, pageSize));
+  const enriched = await appendPipelineStatuses(items);
+  res.json(paginated(enriched.map(normalizeSo), total, page, pageSize));
 });
 
 router.post('/', async (req, res) => {
@@ -81,7 +162,8 @@ router.post('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const so = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include });
   if (!so) return res.status(404).json({ error: 'Not found' });
-  res.json(normalizeSo(so));
+  const enriched = await appendPipelineStatuses([so]);
+  res.json(normalizeSo(enriched[0]));
 });
 
 async function updateSoById(req: any, res: any) {
@@ -98,7 +180,8 @@ async function updateSoById(req: any, res: any) {
   if (data.locationId !== undefined) soData.locationId = data.locationId;
   if (data.dueAt !== undefined) soData.requiredDate = data.dueAt ? new Date(data.dueAt) : null;
   const so = await prisma.salesOrder.update({ where: { id: req.params.id }, data: soData, include });
-  res.json(normalizeSo(so));
+  const enriched = await appendPipelineStatuses([so]);
+  res.json(normalizeSo(enriched[0]));
 }
 
 router.put('/:id', updateSoById);
@@ -169,7 +252,8 @@ router.post('/:id/fulfill', async (req, res) => {
   const anyFulfilled = allRows.some((r: any) => Number(r.qtyFulfilled) > 0);
   const newStatus = allFulfilled ? 'fulfilled' : anyFulfilled ? 'partial' : so.status;
   const updated = await prisma.salesOrder.update({ where: { id: so.id }, data: { status: newStatus }, include });
-  res.json(normalizeSo(updated));
+  const enriched = await appendPipelineStatuses([updated]);
+  res.json(normalizeSo(enriched[0]));
 });
 
 // GET /sales_orders/:id/returnable_items — fulfilled rows not yet fully returned

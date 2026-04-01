@@ -29,6 +29,7 @@ model User {
   role           Role?     @relation(fields: [roleId], references: [id])
   apiKeys        ApiKey[]
   auditLogs      AuditLog[]
+  moOperations   MOOperationRow[]
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
   @@map("users")
@@ -406,6 +407,8 @@ model MOOperationRow {
   mo            ManufacturingOrder  @relation(fields: [moId], references: [id], onDelete: Cascade)
   operationId   String?             @map("operation_id")
   operation     ProductOperation?   @relation(fields: [operationId], references: [id], onDelete: SetNull)
+  operatorId    String?             @map("operator_id")
+  operator      User?               @relation(fields: [operatorId], references: [id], onDelete: SetNull)
   name          String
   status        String              @default("pending")
   actualMinutes Int?                @map("actual_minutes")

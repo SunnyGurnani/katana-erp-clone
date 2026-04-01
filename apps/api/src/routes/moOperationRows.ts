@@ -11,10 +11,14 @@ router.post('/', async (req, res) => {
   const data = z.object({
     moId: z.string().uuid(),
     operationId: z.string().uuid().nullish(),
+    operatorId: z.string().uuid().nullish(),
     name: z.string(),
     status: z.string().default('pending'),
   }).parse(req.body);
-  const item = await prisma.mOOperationRow.create({ data });
+  const item = await prisma.mOOperationRow.create({ 
+    data,
+    include: { operator: { select: { id: true, fullName: true, email: true } } } 
+  });
   res.status(201).json(item);
 });
 
@@ -23,14 +27,20 @@ router.get('/', async (req, res) => {
   const where: any = {};
   if (req.query.moId) where.moId = req.query.moId;
   const [items, total] = await Promise.all([
-    prisma.mOOperationRow.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.mOOperationRow.findMany({ 
+      where, skip, take, orderBy: { createdAt: 'desc' },
+      include: { operator: { select: { id: true, fullName: true, email: true } } }
+    }),
     prisma.mOOperationRow.count({ where }),
   ]);
   res.json(paginated(items, total, page, pageSize));
 });
 
 router.get('/:id', async (req, res) => {
-  const item = await prisma.mOOperationRow.findUnique({ where: { id: req.params.id } });
+  const item = await prisma.mOOperationRow.findUnique({ 
+    where: { id: req.params.id },
+    include: { operator: { select: { id: true, fullName: true, email: true } } }
+  });
   if (!item) return res.status(404).json({ error: 'Not found' });
   res.json(item);
 });
@@ -40,8 +50,13 @@ router.patch('/:id', async (req, res) => {
     name: z.string().optional(),
     status: z.string().optional(),
     actualMinutes: z.coerce.number().nullish(),
+    operatorId: z.string().uuid().nullish(),
   }).parse(req.body);
-  const item = await prisma.mOOperationRow.update({ where: { id: req.params.id }, data });
+  const item = await prisma.mOOperationRow.update({ 
+    where: { id: req.params.id }, 
+    data,
+    include: { operator: { select: { id: true, fullName: true, email: true } } }
+  });
   res.json(item);
 });
 
