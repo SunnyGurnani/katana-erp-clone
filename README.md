@@ -35,30 +35,21 @@ If you have Docker installed, you can spin up the entire application (Frontend, 
    - **Windows:** `copy .env.example .env`
    *Open `.env` and configure your `DATABASE_URL` to point to a running local PostgreSQL instance.* 
 
-<<<<<<< HEAD
 2. Install dependencies:
    ```bash
    pnpm install
    ```
 3. Set up the Database (Schema, Client, and seed data):
    ```bash
-   pnpm db:generate    # Generates the Prisma Client
-   pnpm db:push        # Pushes schema to your local Postgres database
-   pnpm db:seed        # Seeds the database with demo data
+   pnpm db:generate    # Generates or regenerates the Prisma Client
+   pnpm db:push        # Pushes schema to your local Postgres database (or use db:migrate for migrations)
+   pnpm db:seed        # Seeds the database with demo data (idempotent)
    ```
 4. Start the Development Servers (Frontend + API):
    ```bash
    pnpm run dev
    ```
 *(Note for cross-device testing: If you run this server on one computer and want to view it on another, you must change `NEXT_PUBLIC_API_URL` to the host computer's Local IP Address, and add the remote URL to `ALLOWED_ORIGINS` in your `.env` file).*
-=======
-pnpm install
-pnpm db:generate    # Regenerate Prisma Client
-pnpm db:migrate     # Apply migrations (uses prisma migrate deploy)
-pnpm db:seed        # Seed demo data (idempotent)
-pnpm run dev        # Start both API + web
-```
->>>>>>> ade227f9e862b333b370e8805a2922004a1de846
 
 ## Demo Credentials
 

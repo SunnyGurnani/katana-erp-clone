@@ -668,6 +668,58 @@ router.post('/:id/rows', async (req, res) => {
   res.status(201).json({ ...row, qty: row.qtyOrdered, salePrice: row.unitPrice });
 });
 
+router.patch('/:id/rows/:rowId', async (req, res) => {
+  const data = z.object({
+    variantId: z.string().uuid().nullish(),
+    description: z.string().nullish(),
+    qty: z.coerce.number().positive().optional(),
+    salePrice: z.coerce.number().nullish(),
+    locationId: z.string().min(1).nullish(),
+  }).partial().parse(req.body);
+
+  const row = await prisma.salesOrderRow.findUnique({ where: { id: req.params.rowId } });
+  if (!row) return res.status(404).json({ error: 'Line not found' });
+
+  if (Number(row.qtyFulfilled) > 0) {
+    return res.status(422).json({ error: 'Cannot edit a line that has already been fulfilled.' });
+  }
+
+  const updateData: any = {};
+  if (data.variantId !== undefined) updateData.variantId = data.variantId ?? null;
+  if (data.description !== undefined) updateData.description = data.description ?? null;
+  if (data.qty !== undefined) updateData.qtyOrdered = data.qty;
+  if (data.salePrice !== undefined) updateData.unitPrice = data.salePrice ?? null;
+  if (data.locationId !== undefined) updateData.locationId = data.locationId ?? null;
+
+  await prisma.salesOrderRow.update({
+    where: { id: req.params.rowId },
+    data: updateData,
+  });
+
+  const so = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include: includeDetail });
+  if (so) {
+    res.json(await respondSalesOrder(so));
+  } else {
+    res.status(204).send();
+  }
+});
+
+router.delete('/:id/rows/:rowId', async (req, res) => {
+  const row = await prisma.salesOrderRow.findUnique({ where: { id: req.params.rowId } });
+  if (!row) return res.status(404).json({ error: 'Line not found' });
+  if (Number(row.qtyFulfilled) > 0) {
+    return res.status(422).json({ error: 'Cannot delete a line that has already been fulfilled.' });
+  }
+  await prisma.salesOrderRow.delete({ where: { id: req.params.rowId } });
+  
+  const so = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include: includeDetail });
+  if (so) {
+    res.json(await respondSalesOrder(so));
+  } else {
+    res.status(204).send();
+  }
+});
+
 /**
  * Lots available to ship for one line (at the line or order default location).
  */
