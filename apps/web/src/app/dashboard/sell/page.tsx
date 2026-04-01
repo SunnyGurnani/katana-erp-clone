@@ -37,16 +37,14 @@ function formatSoListDate(iso: string | Date | null | undefined): string {
 }
 
 const statuses = [
-  { label: "Open", value: "open" },
   { label: "Draft", value: "draft" },
-  { label: "Partial", value: "partial" },
-  { label: "Fulfilled", value: "fulfilled" },
-  { label: "Cancelled", value: "cancelled" },
+  { label: "Confirmed", value: "open" },
+  { label: "Done", value: "done" },
 ];
 
 function getDeliveryStatus(so: any): string {
   if (so.status === "fulfilled") return "done";
-  if (so.status === "cancelled") return "cancelled";
+  if (so.status === "cancelled") return "done";
   return "not_shipped";
 }
 

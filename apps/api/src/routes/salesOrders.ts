@@ -288,6 +288,12 @@ router.get('/', async (req, res) => {
         { status: { equals: 'draft', mode: 'insensitive' } },
       ],
     };
+  } else if (req.query.status === 'done') {
+    // Done = shipped or manually closed
+    where.OR = [
+      { status: { equals: 'fulfilled', mode: 'insensitive' } },
+      { status: { equals: 'cancelled', mode: 'insensitive' } },
+    ];
   } else if (req.query.status) {
     where.status = { equals: String(req.query.status).trim(), mode: 'insensitive' };
   }
@@ -897,14 +903,8 @@ router.post('/:id/fulfill', async (req, res) => {
   );
   const anyFulfilled = allRows.some((r: any) => Number(r.qtyFulfilled) > 0);
   const newStatus = allFulfilled ? 'fulfilled' : anyFulfilled ? 'partial' : so.status;
-<<<<<<< HEAD
-  const updated = await prisma.salesOrder.update({ where: { id: so.id }, data: { status: newStatus }, include });
-  const enriched = await appendPipelineStatuses([updated]);
-  res.json(normalizeSo(enriched[0]));
-=======
   const updated = await prisma.salesOrder.update({ where: { id: so.id }, data: { status: newStatus }, include: includeDetail });
   res.json(await respondSalesOrder(updated));
->>>>>>> ade227f9e862b333b370e8805a2922004a1de846
 });
 
 // GET /sales_orders/:id/returnable_items — fulfilled rows not yet fully returned

@@ -219,19 +219,24 @@ export default function SODetailPage() {
   if (!so) return <div className="p-6 text-gray-500">SO not found.</div>;
 
   const st = String(so.status || "").toLowerCase();
+  const displayStatus =
+    st === "draft" ? "Draft" : st === "fulfilled" || st === "cancelled" ? "Done" : "Confirmed";
   const hasLines = (so.rows?.length ?? 0) > 0;
   const canFulfill = hasLines && ["confirmed", "partial", "sent"].includes(st);
   const hasOutboundFulfillment = (so.rows || []).some((r: any) => Number(r.fulfilledQty || 0) > 0);
   const canRevertFulfillment =
     hasOutboundFulfillment && (st === "fulfilled" || st === "partial");
+  const canConfirmFromDraft = st === "draft";
+  const canManuallyClose =
+    st === "draft" || st === "confirmed" || st === "partial" || st === "sent";
 
-  const statusEditOptions = hasOutboundFulfillment
-    ? ["partial", "fulfilled", "cancelled"]
-    : ["draft", "confirmed", "partial", "fulfilled", "cancelled"];
+  const statusEditOptions = ["draft", "open", "done"];
 
   function openEditModal() {
+    const cat =
+      st === "draft" ? "draft" : st === "fulfilled" || st === "cancelled" ? "done" : "open";
     setEditForm({
-      status: so.status || "",
+      status: cat,
       dueAt: so.dueAt ? formatLocalDateYmd(so.dueAt) : "",
       notes: so.notes || "",
       customerId: so.customer?.id || "",
@@ -421,7 +426,7 @@ export default function SODetailPage() {
           <h1 className="text-2xl font-bold text-gray-900">SO {so.soNumber}</h1>
           <p className="text-sm text-gray-500">{so.customer?.name || "No customer"}</p>
         </div>
-        <StatusBadge status={so.status} />
+        <StatusBadge status={displayStatus} />
         <button className="btn btn-ghost text-sm" onClick={downloadPdf}><FileDown size={14} />PDF</button>
         <button className="btn btn-ghost text-sm" onClick={openEditModal}><Save size={14} />Edit</button>
         <button className="btn btn-ghost text-sm" onClick={() => duplicateSO.mutate()}><Copy size={14} />Duplicate</button>
@@ -438,6 +443,18 @@ export default function SODetailPage() {
         >
           <Trash2 size={14} />Delete
         </button>
+        {canConfirmFromDraft && (
+          <button
+            type="button"
+            className="btn btn-ghost text-sm"
+            disabled={updateSO.isPending}
+            onClick={() => {
+              updateSO.mutate({ status: "confirmed" });
+            }}
+          >
+            Confirm
+          </button>
+        )}
         {canFulfill && (
           <button type="button" className="btn btn-primary" onClick={openFulfillModal}>
             <Truck size={15} />Fulfill
@@ -453,6 +470,24 @@ export default function SODetailPage() {
             }}
           >
             Revert fulfillment
+          </button>
+        )}
+        {canManuallyClose && (
+          <button
+            type="button"
+            className="btn btn-ghost text-sm text-amber-800 border border-amber-200"
+            disabled={updateSO.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Close this sales order? This will move it to Done and prevent further fulfillment.",
+                )
+              ) {
+                updateSO.mutate({ status: "cancelled" });
+              }
+            }}
+          >
+            Close
           </button>
         )}
       </div>
@@ -824,7 +859,7 @@ export default function SODetailPage() {
             <select className="input" value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}>
               {statusEditOptions.map((s) => (
                 <option key={s} value={s}>
-                  {s === "confirmed" ? "Confirmed (appears on Open list)" : s}
+                  {s === "open" ? "Confirmed (active pipeline)" : s === "done" ? "Done (shipped or closed)" : "Draft"}
                 </option>
               ))}
             </select>
@@ -846,7 +881,12 @@ export default function SODetailPage() {
                 customerId: editForm.customerId ? editForm.customerId : null,
                 currency: editForm.currency || undefined,
                 locationId: editForm.locationId || null,
-                status: editForm.status || undefined,
+                status:
+                  editForm.status === "open"
+                    ? "confirmed"
+                    : editForm.status === "done"
+                      ? "fulfilled"
+                      : editForm.status || undefined,
                 dueAt: editForm.dueAt || null,
                 notes: editForm.notes,
               })
