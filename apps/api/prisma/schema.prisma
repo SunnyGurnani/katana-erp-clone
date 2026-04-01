@@ -89,6 +89,9 @@ model Location {
   inventoryLevels InventoryLevel[]
   inventoryMovements InventoryMovement[]
   batchStocks     BatchStock[]
+  salesOrders            SalesOrder[]
+  salesOrderRows         SalesOrderRow[]
+  salesOrderFulfillments SalesOrderFulfillment[]
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
   @@map("locations")
@@ -117,6 +120,7 @@ model Product {
   salesPrice      Decimal?  @map("sales_price") @db.Decimal(18, 4)
   purchasePrice   Decimal?  @map("purchase_price") @db.Decimal(18, 4)
   imageUrl        String?   @map("image_url")
+  trackLotsAndExpiry Boolean @default(false) @map("track_lots_and_expiry")
   variants        Variant[]
   boms            BOM[]
   manufacturingOrders ManufacturingOrder[]
@@ -283,6 +287,7 @@ model SalesOrder {
   requiredDate DateTime?               @map("required_date") @db.Date
   notes        String?
   locationId   String?                 @map("location_id")
+  location     Location?               @relation(fields: [locationId], references: [id], onDelete: SetNull)
   rows         SalesOrderRow[]
   fulfillments SalesOrderFulfillment[]
   shippingFees SalesOrderShippingFee[]
@@ -297,6 +302,8 @@ model SalesOrderRow {
   orderId      String                 @map("order_id")
   order        SalesOrder             @relation(fields: [orderId], references: [id], onDelete: Cascade)
   variantId    String?                @map("variant_id")
+  locationId   String?                @map("location_id")
+  location     Location?              @relation(fields: [locationId], references: [id], onDelete: SetNull)
   description  String?
   qtyOrdered   Decimal                @map("qty_ordered") @db.Decimal(18, 4)
   qtyFulfilled Decimal                @default(0) @map("qty_fulfilled") @db.Decimal(18, 4)
@@ -316,9 +323,15 @@ model SalesOrderFulfillment {
   row        SalesOrderRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
   qty        Decimal    @db.Decimal(18, 4)
   locationId String?    @map("location_id")
-  isReturn   Boolean    @default(false) @map("is_return")
-  notes      String?
-  createdAt  DateTime   @default(now()) @map("created_at")
+  location   Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  isReturn        Boolean    @default(false) @map("is_return")
+  notes           String?
+  carrier         String?    @map("carrier")
+  trackingNumber  String?    @map("tracking_number")
+  shipMethod      String?    @map("ship_method")
+  batchId         String?    @map("batch_id")
+  batch           Batch?     @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  createdAt       DateTime   @default(now()) @map("created_at")
   @@map("sales_order_fulfillments")
 }
 
@@ -471,6 +484,7 @@ model Batch {
   expiryDate   DateTime?    @map("expiry_date") @db.Date
   notes        String?
   stocks       BatchStock[]
+  fulfillments SalesOrderFulfillment[]
   createdAt    DateTime     @default(now()) @map("created_at")
   @@unique([variantId, batchNumber])
   @@map("batches")
@@ -778,6 +792,8 @@ model AccountingIntegration {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
   syncLogs     AccountingSyncLog[]
+  syncJobs     SyncJob[]
+  entityMappings AccountingEntityMapping[]
   @@unique([provider])
   @@map("accounting_integrations")
 }
@@ -789,12 +805,56 @@ model AccountingSyncLog {
   direction     String                // push | pull
   entityType    String                @map("entity_type") // invoice | bill | contact | payment
   entityId      String                @map("entity_id")   // local ID
+  operation     String                @default("create") // create | update | delete
   externalId    String?               @map("external_id") // QB/Xero ID
   status        String                // success | error | skipped
+  startedAt     DateTime?             @map("started_at")
+  completedAt   DateTime?             @map("completed_at")
+  errorCode     String?               @map("error_code")
   error         String?
   payload       String?               // JSON
+  requestPayload  String?             @map("request_payload")
+  responsePayload String?             @map("response_payload")
   createdAt     DateTime              @default(now()) @map("created_at")
   @@map("accounting_sync_logs")
+}
+
+model AccountingEntityMapping {
+  id               String                @id @default(uuid())
+  integrationId    String                @map("integration_id")
+  integration      AccountingIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  entityType       String                @map("entity_type")
+  localEntityId    String                @map("local_entity_id")
+  externalEntityId String                @map("external_entity_id")
+  syncToken        String?               @map("sync_token")
+  lastSyncedAt     DateTime?             @map("last_synced_at")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+
+  @@unique([integrationId, entityType, localEntityId])
+  @@map("accounting_entity_mappings")
+}
+
+model SyncJob {
+  id            String                @id @default(uuid())
+  integrationId String                @map("integration_id")
+  integration   AccountingIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  entityType    String                @map("entity_type")
+  localEntityId String                @map("local_entity_id")
+  operation     String
+  status        String                @default("queued") // queued | processing | success | failed
+  attempts      Int                   @default(0)
+  nextRetryAt   DateTime?             @map("next_retry_at")
+  error         String?
+  payload       String?
+  lastErrorAt   DateTime?             @map("last_error_at")
+  idempotencyKey String               @map("idempotency_key")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+
+  @@index([status, nextRetryAt])
+  @@unique([integrationId, idempotencyKey])
+  @@map("sync_jobs")
 }
 
 // ─── E-Commerce Integrations ──────────────────────────────────────────────────

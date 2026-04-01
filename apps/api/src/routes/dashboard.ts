@@ -25,18 +25,18 @@ router.get('/stats', async (_req, res) => {
   const lowStockCount = await prisma.inventoryLevel.count({ where: { reorderPoint: { not: null, gt: 0 } } }).catch(() => 0);
 
   // Aggregate revenue/spend — SalesOrder and PurchaseOrder don't have totalPrice/totalCost columns;
-  // compute from rows instead
-  const revenue30dRows = await prisma.salesOrderRow.aggregate({
+  // compute from rows instead (qtyOrdered * unitPrice)
+  const revenueRows = await prisma.salesOrderRow.findMany({
     where: { order: { status: 'fulfilled', updatedAt: { gte: thirtyDaysAgo } } },
-    _sum: { unitPrice: true },
+    select: { qtyOrdered: true, unitPrice: true },
   });
-  const poSpend30dRows = await prisma.purchaseOrderRow.aggregate({
-    where: { order: { status: 'received', updatedAt: { gte: thirtyDaysAgo } } },
-    _sum: { unitPrice: true },
-  });
+  const revenue30d = revenueRows.reduce((sum: number, r: any) => sum + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0);
 
-  const revenue30d = Number(revenue30dRows._sum.unitPrice || 0);
-  const poSpend30d = Number(poSpend30dRows._sum.unitPrice || 0);
+  const poRows = await prisma.purchaseOrderRow.findMany({
+    where: { order: { status: 'received', updatedAt: { gte: thirtyDaysAgo } } },
+    select: { qtyOrdered: true, unitPrice: true },
+  });
+  const poSpend30d = poRows.reduce((sum: number, r: any) => sum + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0);
 
   res.json({
     productCount, materialCount, supplierCount, customerCount,

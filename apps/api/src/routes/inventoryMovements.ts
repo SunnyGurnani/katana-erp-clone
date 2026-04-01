@@ -24,7 +24,14 @@ router.get('/', async (req, res) => {
     }),
     prisma.inventoryMovement.count({ where }),
   ]);
-  res.json(paginated(items, total, page, pageSize));
+  const enriched = items.map((m: any) => ({
+    ...m,
+    reference:
+      m.note ||
+      (m.referenceType && m.referenceId ? `${m.referenceType} ${m.referenceId.slice(0, 8)}…` : null) ||
+      null,
+  }));
+  res.json(paginated(enriched, total, page, pageSize));
 });
 
 export default router;

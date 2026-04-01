@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -33,6 +33,15 @@ export default function ManufacturingPage() {
   const [bomId, setBomId] = useState("");
   const [qty, setQty] = useState("1");
   const [scheduledAt, setScheduledAt] = useState("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("newMo") === "1") {
+      setOpen(true);
+      router.replace("/dashboard/make", { scroll: false });
+    }
+  }, [router]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["mfg-orders", status],

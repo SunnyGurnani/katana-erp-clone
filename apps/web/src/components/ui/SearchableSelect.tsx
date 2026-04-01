@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { ChevronDown } from "lucide-react";
 import clsx from "clsx";
+import { createPortal } from "react-dom";
 
 export type SearchableOption = { value: string; label: string };
 
@@ -38,7 +39,9 @@ export function SearchableSelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties | null>(null);
 
   const selectedLabel = useMemo(() => {
     if (!selectedValue) return "";
@@ -60,11 +63,44 @@ export function SearchableSelect({
 
   useEffect(() => {
     function onDocMouseDown(e: MouseEvent) {
-      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (containerRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", onDocMouseDown);
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function updateMenuPosition() {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const viewportBottom = window.innerHeight;
+      const spaceBelow = viewportBottom - rect.bottom - 8;
+      const maxHeight = Math.max(160, Math.min(320, spaceBelow));
+      setMenuStyle({
+        position: "fixed",
+        left: rect.left,
+        top: rect.bottom + 4,
+        width: rect.width,
+        maxHeight,
+        zIndex: 9999,
+      });
+    }
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [open, list.length, query]);
+
+  useEffect(() => {
+    if (!open) setMenuStyle(null);
+  }, [open]);
 
   const pick = useCallback(
     (v: string) => {
@@ -114,48 +150,55 @@ export function SearchableSelect({
           )}
         />
       </div>
-      {open && !disabled && (
-        <div
-          className="absolute z-[100] mt-1 max-h-60 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
-          role="listbox"
-        >
-          {emptyOptionLabel && (
-            <button
-              type="button"
-              role="option"
-              className="w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick("")}
-            >
-              {emptyOptionLabel}
-            </button>
-          )}
-          {visible.length === 0 && (
-            <div className="px-3 py-2 text-sm text-gray-400">No matches</div>
-          )}
-          {visible.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              role="option"
-              aria-selected={o.value === selectedValue}
-              className={clsx(
-                "w-full px-3 py-2 text-left text-sm hover:bg-blue-50",
-                o.value === value && "bg-blue-50/90 font-medium text-navy-900"
-              )}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick(o.value)}
-            >
-              {o.label}
-            </button>
-          ))}
-          {truncated && (
-            <div className="border-t border-gray-100 px-3 py-1.5 text-[11px] text-gray-400">
-              Showing {MAX_VISIBLE} of {filtered.length} — type to narrow
-            </div>
-          )}
-        </div>
-      )}
+      {open &&
+        !disabled &&
+        typeof document !== "undefined" &&
+        menuStyle &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+            style={menuStyle}
+            role="listbox"
+          >
+            {emptyOptionLabel && (
+              <button
+                type="button"
+                role="option"
+                className="w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick("")}
+              >
+                {emptyOptionLabel}
+              </button>
+            )}
+            {visible.length === 0 && (
+              <div className="px-3 py-2 text-sm text-gray-400">No matches</div>
+            )}
+            {visible.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="option"
+                aria-selected={o.value === selectedValue}
+                className={clsx(
+                  "w-full px-3 py-2 text-left text-sm hover:bg-blue-50",
+                  o.value === value && "bg-blue-50/90 font-medium text-navy-900"
+                )}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(o.value)}
+              >
+                {o.label}
+              </button>
+            ))}
+            {truncated && (
+              <div className="border-t border-gray-100 px-3 py-1.5 text-[11px] text-gray-400">
+                Showing {MAX_VISIBLE} of {filtered.length} — type to narrow
+              </div>
+            )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

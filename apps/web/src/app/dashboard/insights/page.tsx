@@ -37,7 +37,21 @@ export default function SalesInsightsPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="card p-4 flex items-center gap-3">
               <div className="rounded-lg p-2.5 bg-[#2E7D32]"><DollarSign size={18} className="text-white" /></div>
-              <div><p className="text-xs text-gray-500">Total Revenue</p><p className="text-xl font-bold">${Number(data.totalRevenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
+              <div>
+                <p className="text-xs text-gray-500">Total Revenue</p>
+                {data.revenueByCurrency?.length > 1 ? (
+                  <div className="text-sm font-bold space-y-0.5 mt-0.5">
+                    {data.revenueByCurrency.map((x: any) => (
+                      <p key={x.currency}>{Number(x.revenue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {x.currency}</p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xl font-bold">{Number(data.totalRevenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {(data.revenueByCurrency?.[0]?.currency || "USD")}</p>
+                )}
+                {data.revenueByCurrency?.length > 1 && (
+                  <p className="text-[11px] text-gray-400 mt-1">Sums are per currency (not converted).</p>
+                )}
+              </div>
             </div>
             <div className="card p-4 flex items-center gap-3">
               <div className="rounded-lg p-2.5 bg-[#1565C0]"><ShoppingCart size={18} className="text-white" /></div>

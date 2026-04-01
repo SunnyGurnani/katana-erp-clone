@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { requireAdminForMutations } from '../middleware/roles';
 import { z } from 'zod';
 
 const router = Router();
 router.use(authenticate);
+router.use(requireAdminForMutations);
 
 const schema = z.object({
   name: z.string().default('My Factory'),

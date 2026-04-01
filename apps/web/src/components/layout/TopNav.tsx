@@ -4,7 +4,8 @@ import { usePathname } from "next/navigation";
 import { ShoppingCart, Wrench, Package, Boxes, Grid3X3, Calendar, BarChart3, Plus, Bell, HelpCircle, Puzzle, LogOut, Settings } from "lucide-react";
 import { logout } from "@/lib/auth";
 import clsx from "clsx";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 
 const navItems = [
   { href: "/dashboard/sell", label: "Sell", icon: ShoppingCart },
@@ -18,11 +19,14 @@ const navItems = [
 ];
 
 const createItems = [
-  { label: "Sales order", href: "/dashboard/sell" },
+  { label: "Sales order", href: "/dashboard/sell?newSo=1" },
   { label: "Quote", href: "/dashboard/sell/quotes" },
-  { label: "Purchase order", href: "/dashboard/buy" },
-  { label: "Manufacturing order", href: "/dashboard/make" },
+  { label: "Purchase order", href: "/dashboard/buy?newPo=1" },
+  { label: "Manufacturing order", href: "/dashboard/make?newMo=1" },
 ];
+
+const GAP = 4;
+const Z_DROPDOWN = 9999;
 
 export function TopNav() {
   const pathname = usePathname();
@@ -30,11 +34,80 @@ export function TopNav() {
   const [userOpen, setUserOpen] = useState(false);
   const createRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
+  const createMenuRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const [createMenuStyle, setCreateMenuStyle] = useState<React.CSSProperties | null>(null);
+  const [userMenuStyle, setUserMenuStyle] = useState<React.CSSProperties | null>(null);
+
+  useLayoutEffect(() => {
+    if (!createOpen) {
+      setCreateMenuStyle(null);
+      return;
+    }
+    const update = () => {
+      const el = createRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const mh = createMenuRef.current?.offsetHeight ?? 168;
+      let top = rect.bottom + GAP;
+      if (top + mh > window.innerHeight - 8) top = Math.max(8, rect.top - mh - GAP);
+      setCreateMenuStyle({
+        position: "fixed",
+        top,
+        right: window.innerWidth - rect.right,
+        zIndex: Z_DROPDOWN,
+        minWidth: 180,
+      });
+    };
+    update();
+    const id = requestAnimationFrame(update);
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      cancelAnimationFrame(id);
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [createOpen]);
+
+  useLayoutEffect(() => {
+    if (!userOpen) {
+      setUserMenuStyle(null);
+      return;
+    }
+    const update = () => {
+      const el = userRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const mh = userMenuRef.current?.offsetHeight ?? 88;
+      let top = rect.bottom + GAP;
+      if (top + mh > window.innerHeight - 8) top = Math.max(8, rect.top - mh - GAP);
+      setUserMenuStyle({
+        position: "fixed",
+        top,
+        right: window.innerWidth - rect.right,
+        zIndex: Z_DROPDOWN,
+        minWidth: 160,
+      });
+    };
+    update();
+    const id = requestAnimationFrame(update);
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      cancelAnimationFrame(id);
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [userOpen]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (createRef.current && !createRef.current.contains(e.target as Node)) setCreateOpen(false);
-      if (userRef.current && !userRef.current.contains(e.target as Node)) setUserOpen(false);
+      const t = e.target as Node;
+      const inCreate = createRef.current?.contains(t) || createMenuRef.current?.contains(t);
+      const inUser = userRef.current?.contains(t) || userMenuRef.current?.contains(t);
+      if (!inCreate) setCreateOpen(false);
+      if (!inUser) setUserOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -78,20 +151,28 @@ export function TopNav() {
             <Plus size={16} strokeWidth={2} className="opacity-80" />
             <span>Create</span>
           </button>
-          {createOpen && (
-            <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[180px] z-50">
-              {createItems.map(item => (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  onClick={() => setCreateOpen(false)}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          )}
+          {createOpen &&
+            createMenuStyle &&
+            typeof document !== "undefined" &&
+            createPortal(
+              <div
+                ref={createMenuRef}
+                className="rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+                style={createMenuStyle}
+              >
+                {createItems.map((item) => (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    onClick={() => setCreateOpen(false)}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>,
+              document.body
+            )}
         </div>
 
         <button className="p-1.5 text-gray-400 hover:text-white rounded-md hover:bg-white/10 transition-colors">
@@ -114,23 +195,31 @@ export function TopNav() {
           >
             U
           </button>
-          {userOpen && (
-            <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[160px] z-50">
-              <Link
-                href="/dashboard/settings"
-                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                onClick={() => setUserOpen(false)}
+          {userOpen &&
+            userMenuStyle &&
+            typeof document !== "undefined" &&
+            createPortal(
+              <div
+                ref={userMenuRef}
+                className="rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+                style={userMenuStyle}
               >
-                <Settings size={14} /> Settings
-              </Link>
-              <button
-                onClick={() => logout()}
-                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-              >
-                <LogOut size={14} /> Sign out
-              </button>
-            </div>
-          )}
+                <Link
+                  href="/dashboard/settings"
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  onClick={() => setUserOpen(false)}
+                >
+                  <Settings size={14} /> Settings
+                </Link>
+                <button
+                  onClick={() => logout()}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <LogOut size={14} /> Sign out
+                </button>
+              </div>,
+              document.body
+            )}
         </div>
       </div>
     </nav>

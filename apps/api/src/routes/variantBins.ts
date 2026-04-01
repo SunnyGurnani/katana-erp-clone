@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { requireOperatorForMutations } from '../middleware/roles';
 import { z } from 'zod';
 
 const router = Router();
 router.use(authenticate);
+router.use(requireOperatorForMutations);
 
 router.post('/link', async (req, res) => {
   const data = z.object({

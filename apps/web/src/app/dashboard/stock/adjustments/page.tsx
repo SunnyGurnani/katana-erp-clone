@@ -83,9 +83,13 @@ export default function StockAdjustmentsPage() {
             <tbody>
               {(data || []).map((a: any) => (
                 <tr key={a.id}>
-                  <td>{a.variant?.material?.name || a.variant?.product?.name || a.variant?.sku || "—"}</td>
+                  <td>
+                    {a.variant?.product?.name
+                      ? `${a.variant.product.name} / ${a.variant.name || a.variant.sku || ""}`
+                      : a.variant?.name || a.variant?.sku || "—"}
+                  </td>
                   <td>{a.location?.name || "—"}</td>
-                  <td className={Number(a.qty) < 0 ? "text-red-600 font-medium" : "text-green-600 font-medium"}>{a.qty > 0 ? "+" : ""}{a.qty}</td>
+                  <td className={Number(a.qty ?? a.qtyDelta) < 0 ? "text-red-600 font-medium" : "text-green-600 font-medium"}>{Number(a.qty ?? a.qtyDelta) > 0 ? "+" : ""}{a.qty ?? a.qtyDelta}</td>
                   <td><span className="badge">{a.reason}</span></td>
                   <td className="text-gray-500 text-sm">{new Date(a.createdAt).toLocaleDateString()}</td>
                 </tr>

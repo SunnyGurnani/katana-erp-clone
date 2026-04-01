@@ -60,7 +60,18 @@ export default function StocktakesPage() {
         <button className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={15} />New Stocktake</button>
       </div>
 
-      {isLoading ? <div className="card"><table className="table"><tbody><SkeletonRows rows={4} /></tbody></table></div> : (data || []).map((st: any) => (
+      {isLoading ? (
+        <div className="card">
+          <table className="table">
+            <tbody>
+              <SkeletonRows rows={4} />
+            </tbody>
+          </table>
+        </div>
+      ) : !(data || []).length ? (
+        <div className="card p-10 text-center text-gray-500 text-sm">No stocktakes yet. Create one to start a count.</div>
+      ) : (
+        (data || []).map((st: any) => (
         <div key={st.id} className="space-y-3">
           <div className="card">
             <div className="flex items-center justify-between px-5 py-4 cursor-pointer" onClick={() => setExpanded(expanded === st.id ? null : st.id)}>
@@ -95,7 +106,8 @@ export default function StocktakesPage() {
             />
           )}
         </div>
-      ))}
+        ))
+      )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="New Stocktake">
         <div className="space-y-3">

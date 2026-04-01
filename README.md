@@ -35,6 +35,7 @@ If you have Docker installed, you can spin up the entire application (Frontend, 
    - **Windows:** `copy .env.example .env`
    *Open `.env` and configure your `DATABASE_URL` to point to a running local PostgreSQL instance.* 
 
+<<<<<<< HEAD
 2. Install dependencies:
    ```bash
    pnpm install
@@ -50,6 +51,14 @@ If you have Docker installed, you can spin up the entire application (Frontend, 
    pnpm run dev
    ```
 *(Note for cross-device testing: If you run this server on one computer and want to view it on another, you must change `NEXT_PUBLIC_API_URL` to the host computer's Local IP Address, and add the remote URL to `ALLOWED_ORIGINS` in your `.env` file).*
+=======
+pnpm install
+pnpm db:generate    # Regenerate Prisma Client
+pnpm db:migrate     # Apply migrations (uses prisma migrate deploy)
+pnpm db:seed        # Seed demo data (idempotent)
+pnpm run dev        # Start both API + web
+```
+>>>>>>> ade227f9e862b333b370e8805a2922004a1de846
 
 ## Demo Credentials
 
@@ -155,7 +164,7 @@ cp .env.example .env
 | `DB_USER` | `forge` | PostgreSQL user |
 | `DB_PASSWORD` | `forge_secret` | PostgreSQL password |
 | `DB_NAME` | `forgeerp` | PostgreSQL database name |
-| `JWT_SECRET` | — | Secret key for JWT signing |
+| `SECRET_KEY` | — | Secret key for JWT signing |
 | `MINIO_ROOT_USER` | `minioadmin` | MinIO admin username |
 | `MINIO_ROOT_PASSWORD` | `minioadmin123` | MinIO admin password |
 | `PUBLIC_API_URL` | `http://localhost` | Public-facing API base URL |

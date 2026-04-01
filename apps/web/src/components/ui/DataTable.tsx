@@ -119,7 +119,11 @@ export function DataTable<T extends Record<string, any>>({
               <tr className="border-b border-gray-200">
                 {allCols.map(col => (
                   <th key={`f-${col.key}`} className="px-3 py-1.5 font-normal">
-                    {col.filterable !== false && col.key !== "__rank" && col.key !== "actions" && col.key !== "edit" && !col.isStatus ? (
+                    {col.filterable !== false &&
+                    col.key !== "__rank" &&
+                    col.key !== "actions" &&
+                    col.key !== "edit" &&
+                    (!col.isStatus || col.filterable === true) ? (
                       <input
                         type="text"
                         placeholder="Filter"

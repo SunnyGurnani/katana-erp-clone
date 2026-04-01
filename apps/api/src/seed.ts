@@ -13,7 +13,8 @@ async function main() {
 
   // Roles
   const adminRole = await prisma.role.upsert({ where: { name: 'admin' }, update: {}, create: { name: 'admin', description: 'Full access' } });
-  await prisma.role.upsert({ where: { name: 'operator' }, update: {}, create: { name: 'operator', description: 'Production floor' } });
+  const operatorRole = await prisma.role.upsert({ where: { name: 'operator' }, update: {}, create: { name: 'operator', description: 'Production floor' } });
+  await prisma.role.upsert({ where: { name: 'viewer' }, update: {}, create: { name: 'viewer', description: 'Read-only' } });
 
   // Users — always refresh password hashes so re-seed fixes "invalid credentials" after DB drift
   const adminHash = await bcrypt.hash('Admin1234!', 12);
@@ -25,8 +26,8 @@ async function main() {
   });
   await prisma.user.upsert({
     where: { email: 'operator@forgeerp.com' },
-    update: { fullName: 'Floor Operator', hashedPassword: operatorHash, isActive: true },
-    create: { email: 'operator@forgeerp.com', fullName: 'Floor Operator', hashedPassword: operatorHash, isActive: true },
+    update: { fullName: 'Floor Operator', hashedPassword: operatorHash, isActive: true, roleId: operatorRole.id },
+    create: { email: 'operator@forgeerp.com', fullName: 'Floor Operator', hashedPassword: operatorHash, isActive: true, roleId: operatorRole.id },
   });
 
   // Locations

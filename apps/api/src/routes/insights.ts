@@ -31,7 +31,7 @@ router.get('/sales/summary', async (req, res) => {
     prisma.salesOrder.findMany({ where: dateWhere, select: { id: true, customerId: true, createdAt: true } }),
     prisma.salesOrderRow.findMany({
       where: { order: dateWhere },
-      select: { qtyOrdered: true, unitPrice: true, order: { select: { createdAt: true } } },
+      select: { qtyOrdered: true, unitPrice: true, order: { select: { createdAt: true, currency: true } } },
     }),
     prisma.salesOrder.groupBy({
       by: ['customerId'],
@@ -43,6 +43,11 @@ router.get('/sales/summary', async (req, res) => {
   ]);
 
   const totalRevenue = rows.reduce((s: number, r: any) => s + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0);
+  const revenueByCurrency: Record<string, number> = {};
+  for (const r of rows) {
+    const cur = (r.order as any).currency || 'USD';
+    revenueByCurrency[cur] = (revenueByCurrency[cur] || 0) + Number(r.qtyOrdered) * Number(r.unitPrice || 0);
+  }
   const orderCount = orders.length;
   const avgOrderValue = orderCount > 0 ? totalRevenue / orderCount : 0;
 
@@ -62,6 +67,7 @@ router.get('/sales/summary', async (req, res) => {
 
   res.json({
     totalRevenue,
+    revenueByCurrency: Object.entries(revenueByCurrency).map(([currency, revenue]) => ({ currency, revenue })),
     orderCount,
     avgOrderValue,
     topCustomers: topCustomers.map((c: any) => ({

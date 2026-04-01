@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { requireOperatorForMutations } from '../middleware/roles';
 import { z } from 'zod';
 import multer from 'multer';
 import { parse } from 'csv-parse/sync';
@@ -9,6 +10,7 @@ import * as XLSX from 'xlsx';
 
 const router = Router();
 router.use(authenticate);
+router.use(requireOperatorForMutations);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 

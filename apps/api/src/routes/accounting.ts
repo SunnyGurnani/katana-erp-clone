@@ -1,17 +1,198 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { requireOperatorForMutations } from '../middleware/roles';
 import { getPagination, paginated } from '../middleware/paginate';
 import { z } from 'zod';
+import { logger } from '../lib/logger';
+import {
+  buildAuthorizationUrl,
+  decryptSecret,
+  encryptSecret,
+  ensureQuickBooksAccessToken,
+  exchangeCodeForTokens,
+  revokeToken,
+} from '../integrations/quickbooks/client';
 
 const router = Router();
 router.use(authenticate);
+router.use(requireOperatorForMutations);
+
+const quickBooksSettingsSchema = z.object({
+  accountMappings: z.record(z.string()).optional(),
+  taxMappings: z.record(z.string()).optional(),
+  syncToggles: z.record(z.boolean()).optional(),
+}).passthrough();
+
+function requireQuickBooksEnv() {
+  if (!process.env.QUICKBOOKS_CLIENT_ID || !process.env.QUICKBOOKS_CLIENT_SECRET || !process.env.QUICKBOOKS_REDIRECT_URI) {
+    throw Object.assign(new Error('QuickBooks OAuth is not configured'), { status: 500 });
+  }
+  if (!process.env.INTEGRATION_ENCRYPTION_KEY) {
+    throw Object.assign(new Error('INTEGRATION_ENCRYPTION_KEY is required for QuickBooks'), { status: 500 });
+  }
+}
 
 const PROVIDERS = ['quickbooks', 'xero'] as const;
 type Provider = typeof PROVIDERS[number];
 function assertProvider(p: string): asserts p is Provider {
   if (!PROVIDERS.includes(p as Provider)) throw Object.assign(new Error('Invalid provider'), { status: 400 });
 }
+
+/**
+ * Load or create QuickBooks integration row.
+ */
+async function getOrCreateQuickBooksIntegration() {
+  return prisma.accountingIntegration.upsert({
+    where: { provider: 'quickbooks' },
+    create: { provider: 'quickbooks', status: 'disconnected' },
+    update: {},
+  });
+}
+
+// POST /accounting/quickbooks/connect
+router.post('/quickbooks/connect', async (req, res) => {
+  requireQuickBooksEnv();
+  const { state } = z.object({ state: z.string().optional() }).parse(req.body ?? {});
+  const oauthState = state || `qb_${Date.now()}`;
+  const integration = await getOrCreateQuickBooksIntegration();
+  const authorizationUrl = buildAuthorizationUrl(oauthState);
+  res.json({
+    provider: 'quickbooks',
+    integrationId: integration.id,
+    authorizationUrl,
+    state: oauthState,
+  });
+});
+
+// GET /accounting/quickbooks/callback
+router.get('/quickbooks/callback', async (req, res) => {
+  requireQuickBooksEnv();
+  const query = z.object({
+    code: z.string().optional(),
+    state: z.string().optional(),
+    realmId: z.string().optional(),
+  }).parse(req.query);
+
+  if (!query.code) return res.status(400).json({ error: 'Missing authorization code' });
+
+  const integration = await getOrCreateQuickBooksIntegration();
+  const tokens = await exchangeCodeForTokens(query.code);
+  const updated = await prisma.accountingIntegration.update({
+    where: { id: integration.id },
+    data: {
+      status: 'connected',
+      realmId: query.realmId ?? integration.realmId ?? null,
+      accessToken: encryptSecret(tokens.access_token),
+      refreshToken: tokens.refresh_token ? encryptSecret(tokens.refresh_token) : null,
+      tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
+      updatedAt: new Date(),
+    },
+  });
+
+  res.json({
+    provider: 'quickbooks',
+    connected: true,
+    state: query.state ?? null,
+    realmId: updated.realmId,
+    tokenExpiry: updated.tokenExpiry,
+  });
+});
+
+// POST /accounting/quickbooks/disconnect
+router.post('/quickbooks/disconnect', async (_req, res) => {
+  requireQuickBooksEnv();
+  const integration = await prisma.accountingIntegration.findUnique({ where: { provider: 'quickbooks' } });
+
+  if (integration?.accessToken) {
+    try {
+      await revokeToken(decryptSecret(integration.accessToken));
+    } catch (error) {
+      logger.warn({ err: error }, 'QuickBooks token revoke failed during disconnect');
+    }
+  }
+
+  const item = await prisma.accountingIntegration.upsert({
+    where: { provider: 'quickbooks' },
+    create: { provider: 'quickbooks', status: 'disconnected' },
+    update: {
+      status: 'disconnected',
+      accessToken: null,
+      refreshToken: null,
+      tokenExpiry: null,
+      updatedAt: new Date(),
+    },
+  });
+  res.json({
+    provider: 'quickbooks',
+    connected: false,
+    status: item.status,
+  });
+});
+
+// GET /accounting/quickbooks/status
+router.get('/quickbooks/status', async (_req, res) => {
+  requireQuickBooksEnv();
+  const integration = await prisma.accountingIntegration.findUnique({
+    where: { provider: 'quickbooks' },
+  });
+
+  if (!integration) {
+    return res.json({
+      provider: 'quickbooks',
+      connected: false,
+      status: 'disconnected',
+      realmId: null,
+      tokenExpiry: null,
+      tokenExpiresInSeconds: null,
+      lastSyncAt: null,
+      refreshed: false,
+    });
+  }
+
+  let refreshed = false;
+  let hydrated = integration;
+  if (integration.status === 'connected' && integration.accessToken && integration.refreshToken) {
+    try {
+      const refreshedResult = await ensureQuickBooksAccessToken(integration);
+      refreshed = refreshedResult.refreshed;
+      hydrated = refreshedResult.integration;
+    } catch (error) {
+      logger.warn({ err: error }, 'QuickBooks token health check failed');
+    }
+  }
+
+  const expiryMs = hydrated.tokenExpiry ? hydrated.tokenExpiry.getTime() - Date.now() : null;
+  return res.json({
+    provider: 'quickbooks',
+    connected: hydrated.status === 'connected',
+    status: hydrated.status,
+    integrationId: hydrated.id,
+    realmId: hydrated.realmId,
+    tokenExpiry: hydrated.tokenExpiry,
+    tokenExpiresInSeconds: expiryMs === null ? null : Math.max(0, Math.floor(expiryMs / 1000)),
+    lastSyncAt: hydrated.lastSyncAt,
+    refreshed,
+  });
+});
+
+// POST /accounting/quickbooks/settings
+router.post('/quickbooks/settings', async (req, res) => {
+  requireQuickBooksEnv();
+  const settings = quickBooksSettingsSchema.parse(req.body ?? {});
+  const integration = await getOrCreateQuickBooksIntegration();
+  const updated = await prisma.accountingIntegration.update({
+    where: { id: integration.id },
+    data: {
+      settings: JSON.stringify(settings),
+      updatedAt: new Date(),
+    },
+  });
+  res.json({
+    provider: 'quickbooks',
+    settings: updated.settings ? JSON.parse(updated.settings) : {},
+  });
+});
 
 // GET /accounting/integrations
 router.get('/integrations', async (_req, res) => {
@@ -24,6 +205,8 @@ router.get('/integrations', async (_req, res) => {
 // POST /accounting/:provider/connect
 router.post('/:provider/connect', async (req, res) => {
   assertProvider(req.params.provider);
+  const isQuickBooks = req.params.provider === 'quickbooks';
+  if (isQuickBooks) requireQuickBooksEnv();
   const body = z.object({
     accessToken: z.string(),
     refreshToken: z.string().optional(),
@@ -38,8 +221,8 @@ router.post('/:provider/connect', async (req, res) => {
     create: {
       provider: req.params.provider,
       status: 'connected',
-      accessToken: body.accessToken,
-      refreshToken: body.refreshToken,
+      accessToken: isQuickBooks ? encryptSecret(body.accessToken) : body.accessToken,
+      refreshToken: body.refreshToken ? (isQuickBooks ? encryptSecret(body.refreshToken) : body.refreshToken) : undefined,
       tokenExpiry: body.tokenExpiry,
       realmId: body.realmId,
       tenantId: body.tenantId,
@@ -47,8 +230,8 @@ router.post('/:provider/connect', async (req, res) => {
     },
     update: {
       status: 'connected',
-      accessToken: body.accessToken,
-      refreshToken: body.refreshToken ?? undefined,
+      accessToken: isQuickBooks ? encryptSecret(body.accessToken) : body.accessToken,
+      refreshToken: body.refreshToken ? (isQuickBooks ? encryptSecret(body.refreshToken) : body.refreshToken) : undefined,
       tokenExpiry: body.tokenExpiry ?? undefined,
       realmId: body.realmId ?? undefined,
       tenantId: body.tenantId ?? undefined,
@@ -74,6 +257,10 @@ async function getIntegration(provider: string) {
   const integration = await prisma.accountingIntegration.findUnique({ where: { provider } });
   if (!integration || integration.status !== 'connected') {
     throw Object.assign(new Error(`${provider} not connected`), { status: 400 });
+  }
+  if (provider === 'quickbooks' && integration.accessToken && integration.refreshToken) {
+    const refreshed = await ensureQuickBooksAccessToken(integration);
+    return refreshed.integration;
   }
   return integration;
 }

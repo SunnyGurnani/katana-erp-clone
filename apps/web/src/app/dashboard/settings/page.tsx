@@ -18,7 +18,22 @@ export default function SettingsPage() {
   const [keyOpen, setKeyOpen] = useState(false);
   const [keyName, setKeyName] = useState("");
   const [newKey, setNewKey] = useState("");
-  const { data: keys, isLoading: keysLoading } = useQuery({ queryKey: ["api-keys"], queryFn: () => api.get("/api-keys").then(r => r.data.data) });
+  const {
+    data: keys,
+    isLoading: keysLoading,
+    isError: keysError,
+    error: keysErr,
+  } = useQuery({
+    queryKey: ["api-keys"],
+    queryFn: async () => {
+      const r = await api.get("/api-keys");
+      const body = r.data;
+      if (Array.isArray(body?.data)) return body.data;
+      if (Array.isArray(body)) return body;
+      return [];
+    },
+    retry: false,
+  });
   const createKey = useMutation({
     mutationFn: () => api.post("/api-keys", { name: keyName }),
     onSuccess: (res) => { qc.invalidateQueries({ queryKey: ["api-keys"] }); setNewKey(res.data.plainKey || ""); addToast("API key created", "success"); setKeyName(""); },
@@ -33,7 +48,22 @@ export default function SettingsPage() {
   const [whOpen, setWhOpen] = useState(false);
   const [whUrl, setWhUrl] = useState("");
   const [whEvents, setWhEvents] = useState("");
-  const { data: webhooks, isLoading: whLoading } = useQuery({ queryKey: ["webhooks"], queryFn: () => api.get("/webhooks").then(r => r.data.data) });
+  const {
+    data: webhooks,
+    isLoading: whLoading,
+    isError: whError,
+    error: whErr,
+  } = useQuery({
+    queryKey: ["webhooks"],
+    queryFn: async () => {
+      const r = await api.get("/webhooks");
+      const body = r.data;
+      if (Array.isArray(body?.data)) return body.data;
+      if (Array.isArray(body)) return body;
+      return [];
+    },
+    retry: false,
+  });
   const createWh = useMutation({
     mutationFn: () => api.post("/webhooks", { url: whUrl, events: whEvents.split(",").map(s => s.trim()).filter(Boolean) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["webhooks"] }); addToast("Webhook created", "success"); setWhOpen(false); setWhUrl(""); setWhEvents(""); },
@@ -62,6 +92,11 @@ export default function SettingsPage() {
             <h2 className="font-semibold">API Keys</h2>
             <button className="btn btn-primary text-sm" onClick={() => setKeyOpen(true)}><Plus size={14} className="mr-1" />New Key</button>
           </div>
+          {keysError && (
+            <div className="px-5 py-3 text-sm text-red-700 bg-red-50 border-b border-red-100">
+              {(keysErr as any)?.response?.data?.error || (keysErr as Error)?.message || "Could not load API keys (admin access may be required)."}
+            </div>
+          )}
           {keysLoading ? <SkeletonRows rows={4} /> : (
             <table className="table">
               <thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th>Last Used</th><th></th></tr></thead>
@@ -69,7 +104,7 @@ export default function SettingsPage() {
                 {(keys || []).map((k: any) => (
                   <tr key={k.id}>
                     <td className="font-medium">{k.name}</td>
-                    <td className="font-mono text-sm">{k.prefix}…</td>
+                    <td className="font-mono text-sm">{(k.keyPrefix || k.prefix || "—")}…</td>
                     <td className="text-gray-500 text-sm">{new Date(k.createdAt).toLocaleDateString()}</td>
                     <td className="text-gray-500 text-sm">{k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString() : "Never"}</td>
                     <td><button className="icon-btn text-red-400" onClick={() => deleteKey.mutate(k.id)}><Trash2 size={14} /></button></td>
@@ -88,6 +123,11 @@ export default function SettingsPage() {
             <h2 className="font-semibold">Webhooks</h2>
             <button className="btn btn-primary text-sm" onClick={() => setWhOpen(true)}><Plus size={14} className="mr-1" />New Webhook</button>
           </div>
+          {whError && (
+            <div className="px-5 py-3 text-sm text-red-700 bg-red-50 border-b border-red-100">
+              {(whErr as any)?.response?.data?.error || (whErr as Error)?.message || "Could not load webhooks."}
+            </div>
+          )}
           {whLoading ? <SkeletonRows rows={4} /> : (
             <table className="table">
               <thead><tr><th>URL</th><th>Events</th><th>Active</th><th></th></tr></thead>

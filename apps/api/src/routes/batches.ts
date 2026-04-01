@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { requireOperatorForMutations } from '../middleware/roles';
 import { getPagination, paginated } from '../middleware/paginate';
 import { z } from 'zod';
 
 const router = Router();
 router.use(authenticate);
+router.use(requireOperatorForMutations);
 
 const batchSchema = z.object({
   variantId: z.string().uuid(),
@@ -20,10 +22,19 @@ router.get('/', async (req, res) => {
   const { variantId } = req.query as Record<string, string>;
   const where: any = {};
   if (variantId) where.variantId = variantId;
-  const [items, total] = await Promise.all([
+  const [raw, total] = await Promise.all([
     prisma.batch.findMany({ where, include: { stocks: { include: { location: true } } }, skip, take, orderBy: { createdAt: 'desc' } }),
     prisma.batch.count({ where }),
   ]);
+  const vIds = [...new Set(raw.map((b) => b.variantId))];
+  const variants = vIds.length
+    ? await prisma.variant.findMany({
+        where: { id: { in: vIds } },
+        select: { id: true, name: true, sku: true, product: { select: { name: true } } },
+      })
+    : [];
+  const vMap = new Map(variants.map((v) => [v.id, v]));
+  const items = raw.map((b) => ({ ...b, variant: vMap.get(b.variantId) ?? null }));
   res.json(paginated(items, total, page, pageSize));
 });
 
