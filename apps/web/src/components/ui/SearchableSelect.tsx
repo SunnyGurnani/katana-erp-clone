@@ -58,8 +58,11 @@ export function SearchableSelect({
   const truncated = filtered.length > visible.length;
 
   useEffect(() => {
-    if (!open) setQuery(selectedLabel);
-  }, [open, selectedLabel]);
+    if (!open) {
+      // When closed, clear the internal query so the next open starts with the full list.
+      setQuery("");
+    }
+  }, [open]);
 
   useEffect(() => {
     function onDocMouseDown(e: MouseEvent) {
@@ -77,17 +80,34 @@ export function SearchableSelect({
     function updateMenuPosition() {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const viewportBottom = window.innerHeight;
-      const spaceBelow = viewportBottom - rect.bottom - 8;
-      const maxHeight = Math.max(160, Math.min(320, spaceBelow));
-      setMenuStyle({
-        position: "fixed",
-        left: rect.left,
-        top: rect.bottom + 4,
-        width: rect.width,
-        maxHeight,
-        zIndex: 9999,
-      });
+      const viewportHeight = window.innerHeight;
+      const spaceBelow = viewportHeight - rect.bottom - 8;
+      const spaceAbove = rect.top - 8;
+      const desiredHeight = 240;
+
+      // Prefer opening downward; if there's not enough space, open upward.
+      if (spaceBelow >= 160 || spaceBelow >= spaceAbove) {
+        const maxHeight = Math.max(160, Math.min(320, spaceBelow));
+        setMenuStyle({
+          position: "fixed",
+          left: rect.left,
+          top: rect.bottom + 4,
+          width: rect.width,
+          maxHeight,
+          zIndex: 9999,
+        });
+      } else {
+        const maxHeight = Math.max(160, Math.min(320, spaceAbove));
+        const height = Math.min(desiredHeight, maxHeight);
+        setMenuStyle({
+          position: "fixed",
+          left: rect.left,
+          top: Math.max(4, rect.top - height - 4),
+          width: rect.width,
+          maxHeight: height,
+          zIndex: 9999,
+        });
+      }
     }
     updateMenuPosition();
     window.addEventListener("resize", updateMenuPosition);
@@ -133,8 +153,9 @@ export function SearchableSelect({
             if (!open) setOpen(true);
           }}
           onFocus={() => {
+            // Open with an empty query so all options are visible initially.
             setOpen(true);
-            setQuery(selectedLabel);
+            setQuery("");
           }}
           onKeyDown={(e) => {
             if (e.key === "Escape") {

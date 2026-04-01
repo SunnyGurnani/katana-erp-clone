@@ -34,7 +34,12 @@ router.patch('/:id', async (req, res) => {
     description: z.string().nullish(),
     qty: z.coerce.number().nullish(),
     salePrice: z.coerce.number().nullish(),
-    locationId: z.string().uuid().nullish(),
+    locationId: z.preprocess(
+      (v) => (v === '' || v === null ? null : v),
+      // Allow non-UUID location ids (e.g. seeded codes like "loc-warehouse-001"),
+      // matching how other routes (e.g. add-row) accept locationId.
+      z.string().min(1).nullish(),
+    ),
   }).parse(req.body);
   const update: any = {};
   if (data.variantId !== undefined) update.variantId = data.variantId;

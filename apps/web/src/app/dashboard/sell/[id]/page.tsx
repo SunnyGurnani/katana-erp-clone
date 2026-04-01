@@ -44,6 +44,18 @@ export default function SODetailPage() {
   const [lineFulfillQty, setLineFulfillQty] = useState("");
   const [lineFulfillBatchId, setLineFulfillBatchId] = useState("");
   const [lineFulfillError, setLineFulfillError] = useState("");
+  const [editingRowId, setEditingRowId] = useState("");
+  const [editingRowForm, setEditingRowForm] = useState<{
+    qty: string;
+    salePrice: string;
+    locationId: string;
+    variantId: string;
+  }>({
+    qty: "",
+    salePrice: "",
+    locationId: "",
+    variantId: "",
+  });
   const searchParams = useSearchParams();
   const listStatus = searchParams.get("listStatus") || "";
   const sellListHref = listStatus
@@ -77,6 +89,14 @@ export default function SODetailPage() {
     (products || []).forEach((p: any) => (p.variants || []).forEach((v: any) => map.set(v.id, { ...v, product: p })));
     return map;
   }, [products]);
+
+  const lineLocationOptions = useMemo(() => {
+    const base = [...locOpts];
+    if (so?.locationId && so.location?.name && !base.some((o) => o.value === so.locationId)) {
+      base.push({ value: so.locationId, label: so.location.name });
+    }
+    return base;
+  }, [locOpts, so?.locationId, so?.location?.name]);
 
   const addRow = useMutation({
     mutationFn: () => api.post(`/sales-orders/${orderId}/rows`, {
@@ -182,6 +202,35 @@ export default function SODetailPage() {
     mutationFn: (rowId: string) => api.delete(`/sales-order-rows/${rowId}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["so", orderId] }); addToast("Row removed", "success"); },
     onError: () => addToast("Error removing row", "error"),
+  });
+
+  const updateRow = useMutation({
+    mutationFn: (payload: {
+      rowId: string;
+      qty: number;
+      salePrice?: number;
+      locationId?: string;
+      variantId?: string;
+    }) =>
+      api.patch(`/sales-order-rows/${payload.rowId}`, {
+        variantId: payload.variantId ?? null,
+        qty: payload.qty,
+        salePrice: payload.salePrice,
+        locationId: payload.locationId ?? null,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["so", orderId] });
+      addToast("Line updated", "success");
+      setEditingRowId("");
+      setEditingRowForm({ qty: "", salePrice: "", locationId: "", variantId: "" });
+    },
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.error ||
+        err?.response?.data?.issues?.[0]?.message ||
+        "Error updating line";
+      addToast(typeof msg === "string" ? msg : "Error updating line", "error");
+    },
   });
 
   function downloadPdf() {
@@ -290,6 +339,38 @@ export default function SODetailPage() {
       return;
     }
     addRow.mutate();
+  }
+
+  function startInlineEditRow(row: any) {
+    setEditingRowId(row.id);
+    setEditingRowForm({
+      qty: String(row.qty),
+      salePrice: String(row.salePrice ?? row.unitPrice ?? 0),
+      // If the line has no explicit ship-from location, fall back to the order default.
+      locationId: row.locationId || so.locationId || "",
+      variantId: row.variantId || "",
+    });
+  }
+
+  function saveInlineEditRow() {
+    if (!editingRowId) return;
+    const q = Number(editingRowForm.qty);
+    if (!Number.isFinite(q) || q <= 0) {
+      addToast("Quantity must be greater than 0.", "error");
+      return;
+    }
+    const price = editingRowForm.salePrice === "" ? undefined : Number(editingRowForm.salePrice);
+    if (price !== undefined && !Number.isFinite(price)) {
+      addToast("Enter a valid price.", "error");
+      return;
+    }
+    updateRow.mutate({
+      rowId: editingRowId,
+      qty: q,
+      salePrice: price,
+      locationId: editingRowForm.locationId || undefined,
+      variantId: editingRowForm.variantId || undefined,
+    });
   }
 
   function openFulfillModal() {
@@ -510,7 +591,6 @@ export default function SODetailPage() {
         <table className="table">
           <thead>
             <tr>
-              <th>SKU</th>
               <th>Product</th>
               <th>Location</th>
               <th>In stock</th>
@@ -527,14 +607,95 @@ export default function SODetailPage() {
                 {(() => {
                   const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
                   const rem = Number(r.qty) - Number(r.fulfilledQty || 0);
+                  const currentVariantId =
+                    editingRowId === r.id && st === "draft"
+                      ? editingRowForm.variantId
+                      : r.variantId || "";
                   return (
                     <>
-                      <td className="font-mono text-sm">{v?.sku || "—"}</td>
-                      <td>{v?.product?.name || r.description || r.variantId || "—"}</td>
-                      <td className="text-sm text-gray-700 max-w-[160px]">{lineLocationLabel(r)}</td>
+                      <td>
+                        {editingRowId === r.id && st === "draft" ? (
+                          <SearchableSelect
+                            value={currentVariantId}
+                            onChange={(nextId) => {
+                              setEditingRowForm((f) => {
+                                const next = { ...f, variantId: nextId };
+                                const vv = nextId ? variantById.get(nextId) : undefined;
+                                if (vv) {
+                                  const p =
+                                    vv.salesPrice != null && vv.salesPrice !== ""
+                                      ? String(vv.salesPrice)
+                                      : vv.product?.salesPrice != null &&
+                                          vv.product?.salesPrice !== ""
+                                        ? String(vv.product.salesPrice)
+                                        : "";
+                                  next.salePrice = p;
+                                }
+                                return next;
+                              });
+                            }}
+                            options={variantOpts}
+                            placeholder="Search products…"
+                            emptyOptionLabel="— Select —"
+                            aria-label="Product variant"
+                          />
+                        ) : (
+                          <div className="flex flex-col">
+                            <span>{v?.product?.name || r.description || r.variantId || "—"}</span>
+                            {v?.sku && (
+                              <span className="text-[11px] text-gray-500 font-mono">
+                                {v.sku}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="text-sm text-gray-700 max-w-[160px]">
+                        {editingRowId === r.id && st === "draft" ? (
+                          <SearchableSelect
+                            value={editingRowForm.locationId}
+                            onChange={(v) => setEditingRowForm((f) => ({ ...f, locationId: v }))}
+                            options={lineLocationOptions}
+                            placeholder="Search locations…"
+                            emptyOptionLabel={so.locationId ? "— Use order default —" : "— Select —"}
+                            aria-label="Line ship-from location"
+                          />
+                        ) : (
+                          lineLocationLabel(r)
+                        )}
+                      </td>
                       <td className="text-sm text-gray-600 whitespace-nowrap">{r.variantId ? stockLineSummary(r) : "—"}</td>
-                      <td>{r.qty}</td>
-                      <td>{Number(r.salePrice || 0).toFixed(2)} {so.currency || "USD"}</td>
+                      <td>
+                        {editingRowId === r.id && st === "draft" ? (
+                          <input
+                            className="input w-20"
+                            type="number"
+                            value={editingRowForm.qty}
+                            onChange={(e) =>
+                              setEditingRowForm((f) => ({ ...f, qty: e.target.value }))
+                            }
+                          />
+                        ) : (
+                          r.qty
+                        )}
+                      </td>
+                      <td>
+                        {editingRowId === r.id && st === "draft" ? (
+                          <input
+                            className="input w-24"
+                            type="number"
+                            step="0.01"
+                            value={editingRowForm.salePrice}
+                            onChange={(e) =>
+                              setEditingRowForm((f) => ({ ...f, salePrice: e.target.value }))
+                            }
+                          />
+                        ) : (
+                          <>
+                            {Number(r.salePrice || 0).toFixed(2)} {so.currency || "USD"}
+                          </>
+                        )}
+                      </td>
                       <td>{r.fulfilledQty || 0}</td>
                       <td>{(Number(r.qty) * Number(r.salePrice || 0)).toFixed(2)} {so.currency || "USD"}</td>
                       <td className="text-right whitespace-nowrap">
@@ -547,7 +708,20 @@ export default function SODetailPage() {
                             <Truck size={13} className="inline mr-0.5" />Ship line
                           </button>
                         )}
-                        {["draft", "confirmed"].includes(so.status) && (
+                        {st === "draft" && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost text-xs mr-1"
+                            onClick={() =>
+                              editingRowId === r.id
+                                ? saveInlineEditRow()
+                                : startInlineEditRow(r)
+                            }
+                          >
+                            {editingRowId === r.id ? "Save" : "Edit"}
+                          </button>
+                        )}
+                        {st === "draft" && (
                           <button type="button" className="icon-btn text-red-400 hover:text-red-600" onClick={(e) => { e.stopPropagation(); if (window.confirm("Remove this row?")) deleteRow.mutate(r.id); }}><X size={14} /></button>
                         )}
                       </td>
