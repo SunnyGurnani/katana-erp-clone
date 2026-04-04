@@ -1,0 +1,26 @@
+{
+  "name": "secretguard",
+  "version": "1.0.0",
+  "description": "Scan your own websites and codebases for exposed AI API keys and secrets",
+  "main": "src/index.js",
+  "bin": {
+    "secretguard": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node test/scanner.test.js"
+  },
+  "keywords": [
+    "security",
+    "secrets",
+    "api-keys",
+    "scanner",
+    "ai",
+    "openai",
+    "anthropic"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
