@@ -25,6 +25,7 @@ export default function PODetailPage() {
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [receiveLocationId, setReceiveLocationId] = useState("");
+  const [receiveRows, setReceiveRows] = useState<{ rowId: string; receivedQty: number }[]>([]);
   const [editForm, setEditForm] = useState({ status: "", expectedAt: "", notes: "" });
   const [newLine, setNewLine] = useState({ itemValue: "", qty: "1", unitCost: "" });
 
@@ -72,7 +73,7 @@ export default function PODetailPage() {
     mutationFn: () =>
       api.post(`/purchase-orders/${id}/receive`, {
         locationId: receiveLocationId,
-        rows: (po?.rows || []).map((r: any) => ({ rowId: r.id, receivedQty: Number(r.qty) })),
+        rows: receiveRows.filter(r => r.receivedQty > 0),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["po", id] });
@@ -431,19 +432,51 @@ export default function PODetailPage() {
               value={receiveLocationId}
               onChange={setReceiveLocationId}
               options={locOpts}
-              placeholder="Search locations…"
-              emptyOptionLabel="— Select —"
+              placeholder="Search locations..."
+              emptyOptionLabel="--- Select ---"
               aria-label="Receive location"
             />
           </div>
-          <p className="text-xs text-gray-500">Outstanding quantities will be received into this location.</p>
+          <div>
+            <p className="text-xs font-medium text-gray-600 mb-2">Qty to receive per line:</p>
+            <div className="space-y-2">
+              {(po?.rows || []).map((r: any) => {
+                const received = r.qtyReceived ?? r.receivedQty ?? 0;
+                const remaining = Number(r.qty) - received;
+                const row = receiveRows.find(rr => rr.rowId === r.id);
+                return (
+                  <div key={r.id} className="flex items-center gap-3">
+                    <span className="text-sm text-gray-700 flex-1 truncate">
+                      {r.variant?.sku ? `[${r.variant.sku}] ` : ""}{r.variant?.product?.name || r.variant?.material?.name || r.description || "Item"}
+                    </span>
+                    <span className="text-xs text-gray-400 whitespace-nowrap">({remaining} remaining)</span>
+                    <input
+                      className="input w-20 py-1 text-center"
+                      type="number"
+                      min={0}
+                      max={remaining}
+                      value={row?.receivedQty ?? 0}
+                      onChange={e => {
+                        const val = Math.min(Number(e.target.value) || 0, remaining);
+                        setReceiveRows(prev => {
+                          const existing = prev.find(rr => rr.rowId === r.id);
+                          if (existing) return prev.map(rr => rr.rowId === r.id ? { ...rr, receivedQty: val } : rr);
+                          return [...prev, { rowId: r.id, receivedQty: val }];
+                        });
+                      }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <button className="btn btn-ghost" onClick={() => setReceiveOpen(false)}>
             Cancel
           </button>
           <button className="btn btn-primary" disabled={receive.isPending || !receiveLocationId} onClick={() => receive.mutate()}>
-            {receive.isPending ? "Receiving…" : "Confirm receive"}
+            {receive.isPending ? "Receiving..." : "Confirm receive"}
           </button>
         </div>
       </Modal>

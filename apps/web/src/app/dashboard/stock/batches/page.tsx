@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -7,6 +7,8 @@ import { ListToolbar } from "@/components/layout/ListToolbar";
 import { StatusCell } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { productVariantOptions } from "@/lib/catalogOptions";
 
 export default function BatchesPage() {
   const qc = useQueryClient();
@@ -20,6 +22,8 @@ export default function BatchesPage() {
     queryKey: ["batches"],
     queryFn: () => api.get("/batches").then(r => r.data.data),
   });
+  const { data: products } = useQuery({ queryKey: ["products"], queryFn: () => api.get("/products").then(r => r.data.data) });
+  const variantOpts = useMemo(() => productVariantOptions(products), [products]);
 
   const create = useMutation({
     mutationFn: () => api.post("/batches", { batchNumber, variantId, expiryDate: expiryDate || undefined }),
@@ -29,7 +33,7 @@ export default function BatchesPage() {
 
   const columns: Column[] = [
     { key: "batchNumber", header: "Batch #", sortable: true, render: (r: any) => <span className="font-mono font-medium">{r.batchNumber}</span> },
-    { key: "variantId", header: "Variant", render: (r: any) => r.variantId || "—" },
+    { key: "variantId", header: "Variant", render: (r: any) => r.variant?.sku ? `[${r.variant.sku}] ${r.variant.product?.name || r.variant.material?.name || ""}` : r.variantId?.slice(0, 8) || "—" },
     { key: "expiryDate", header: "Expiry", sortable: true, render: (r: any) => {
       if (!r.expiryDate) return "—";
       const d = new Date(r.expiryDate);
@@ -58,7 +62,17 @@ export default function BatchesPage() {
       <Modal open={open} onClose={() => setOpen(false)} title="New Batch">
         <div className="space-y-3">
           <div><label className="label">Batch Number</label><input className="input" value={batchNumber} onChange={e => setBatchNumber(e.target.value)} placeholder="e.g., BATCH-001" /></div>
-          <div><label className="label">Variant ID</label><input className="input" value={variantId} onChange={e => setVariantId(e.target.value)} /></div>
+          <div>
+            <label className="label">Variant</label>
+            <SearchableSelect
+              value={variantId}
+              onChange={setVariantId}
+              options={variantOpts}
+              placeholder="Search items…"
+              emptyOptionLabel="— Select variant —"
+              aria-label="Variant"
+            />
+          </div>
           <div><label className="label">Expiry Date</label><input className="input" type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)} /></div>
         </div>
         <div className="flex justify-end gap-2 mt-4">

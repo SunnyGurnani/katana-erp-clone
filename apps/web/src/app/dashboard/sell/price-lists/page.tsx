@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -10,6 +10,7 @@ import { ActionMenu } from "@/components/shared/ActionMenu";
 import { ChildTable, ColumnDef, FieldDef } from "@/components/shared/ChildTable";
 import { FileImport } from "@/components/shared/FileImport";
 import { Trash2 } from "lucide-react";
+import { productVariantOptions, customerOptions } from "@/lib/catalogOptions";
 
 const plRowCols: ColumnDef[] = [
   { key: "variantId", header: "Variant", render: (r: any) => r.variant?.sku || r.variantId?.slice(0, 8) || "—" },
@@ -17,7 +18,7 @@ const plRowCols: ColumnDef[] = [
   { key: "minQty", header: "Min Qty" },
 ];
 const plRowFields: FieldDef[] = [
-  { key: "variantId", label: "Variant ID", required: true },
+  { key: "variantId", label: "Item (variant)", type: "select", required: true },
   { key: "price", label: "Price", type: "number", required: true },
   { key: "minQty", label: "Min Qty", type: "number" },
 ];
@@ -26,7 +27,7 @@ const plCustCols: ColumnDef[] = [
   { key: "customerId", header: "Customer", render: (r: any) => r.customer?.name || r.customerId?.slice(0, 8) || "—" },
 ];
 const plCustFields: FieldDef[] = [
-  { key: "customerId", label: "Customer ID", required: true },
+  { key: "customerId", label: "Customer", type: "select", required: true },
 ];
 
 export default function PriceListsPage() {
@@ -41,6 +42,10 @@ export default function PriceListsPage() {
     queryKey: ["price-lists"],
     queryFn: () => api.get("/price-lists").then(r => r.data.data),
   });
+  const { data: products } = useQuery({ queryKey: ["products"], queryFn: () => api.get("/products").then(r => r.data.data) });
+  const { data: customers } = useQuery({ queryKey: ["customers"], queryFn: () => api.get("/customers").then(r => r.data.data) });
+  const variantOpts = useMemo(() => productVariantOptions(products), [products]);
+  const custOpts = useMemo(() => customerOptions(customers), [customers]);
 
   const create = useMutation({
     mutationFn: () => api.post("/price-lists", { name, currency }),
@@ -88,6 +93,7 @@ export default function PriceListsPage() {
               columns={plRowCols}
               formFields={plRowFields}
               queryKey="price-list-rows"
+              selectOptionsByField={{ variantId: variantOpts }}
             />
             <ChildTable
               title="Price List Customers"
@@ -98,6 +104,7 @@ export default function PriceListsPage() {
               formFields={plCustFields}
               queryKey="price-list-customers"
               canEdit={false}
+              selectOptionsByField={{ customerId: custOpts }}
             />
           </>
         )}

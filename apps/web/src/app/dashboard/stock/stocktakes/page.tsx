@@ -22,7 +22,7 @@ const stRowCols: ColumnDef[] = [
   }},
 ];
 const stRowFields: FieldDef[] = [
-  { key: "variantId", label: "Item (variant)", type: "select", options: [], required: true },
+  { key: "variantId", label: "Item (variant)", type: "select", required: true },
   { key: "countedQty", label: "Counted Qty", type: "number", required: true },
   { key: "systemQty", label: "System Qty", type: "number" },
 ];

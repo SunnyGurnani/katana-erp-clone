@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -11,6 +11,8 @@ import { ActionMenu } from "@/components/shared/ActionMenu";
 import { ChildTable, ColumnDef, FieldDef } from "@/components/shared/ChildTable";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { Pencil, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { productVariantOptions } from "@/lib/catalogOptions";
 
 const blank = { name: "", sku: "", description: "", category: "", unitCost: "", salePrice: "", reorderPoint: "" };
 
@@ -31,7 +33,7 @@ const bomRowCols: ColumnDef[] = [
   { key: "unitCost", header: "Unit Cost", render: (r: any) => `$${Number(r.unitCost || 0).toFixed(2)}` },
 ];
 const bomRowFields: FieldDef[] = [
-  { key: "variantId", label: "Variant ID", required: true },
+  { key: "variantId", label: "Item (variant)", type: "select", required: true },
   { key: "qty", label: "Qty", type: "number", required: true },
   { key: "unitCost", label: "Unit Cost", type: "number" },
 ];
@@ -58,6 +60,7 @@ export default function ProductsPage() {
   const [bomId, setBomId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({ queryKey: ["products"], queryFn: () => api.get("/products").then(r => r.data.data) });
+  const variantOpts = useMemo(() => productVariantOptions(data), [data]);
   const { data: boms } = useQuery({
     queryKey: ["product-boms", expanded],
     queryFn: () => api.get("/recipes", { params: { productId: expanded } }).then(r => r.data.data || r.data),
@@ -84,7 +87,7 @@ export default function ProductsPage() {
 
   const columns: Column[] = [
     { key: "name", header: "Name", sortable: true, render: (r: any) => (
-      <button className="font-medium text-brand-600 hover:underline" onClick={e => { e.stopPropagation(); setExpanded(expanded === r.id ? null : r.id); setBomId(null); }}>{r.name}</button>
+      <Link href={`/dashboard/items/products/${r.id}`} className="font-medium text-brand-600 hover:underline" onClick={e => e.stopPropagation()}>{r.name}</Link>
     )},
     { key: "category", header: "Category", render: (r: any) => r.category || "—" },
     { key: "sku", header: "SKU(s)", render: (r: any) => <span className="font-mono text-xs">{r.variants?.map((v: any) => v.sku).join(", ") || "—"}</span> },
@@ -133,6 +136,7 @@ export default function ProductsPage() {
                   columns={bomRowCols}
                   formFields={bomRowFields}
                   queryKey="bom-rows"
+                  selectOptionsByField={{ variantId: variantOpts }}
                 />
                 <ChildTable
                   title="Product Operations"
