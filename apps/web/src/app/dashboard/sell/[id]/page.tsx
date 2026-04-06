@@ -1,6 +1,6 @@
 "use client";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
@@ -110,6 +110,17 @@ export default function SODetailPage() {
     (products || []).forEach((p: any) => (p.variants || []).forEach((v: any) => map.set(v.id, { ...v, product: p })));
     return map;
   }, [products]);
+
+  useEffect(() => {
+    if (!lineFulfillOpen) return;
+    const lfRow = (so?.rows || []).find((r: any) => r.id === lineFulfillRowId);
+    const needLot = Boolean(lfRow?.trackLotsAndExpiry);
+    if (!needLot) return;
+    if (lineFulfillBatchId) return;
+    const batches = lineBatchOptions?.batches ?? [];
+    if (!batches.length) return;
+    setLineFulfillBatchId(String(batches[0].batchId));
+  }, [lineFulfillOpen, lineFulfillRowId, lineBatchOptions, so?.rows, lineFulfillBatchId]);
 
   const lineLocationOptions = useMemo(() => {
     const base = [...locOpts];
@@ -585,6 +596,13 @@ export default function SODetailPage() {
       if (!lineFulfillBatchId) {
         setLineFulfillError("Select a lot with available quantity.");
         addToast("Select a lot.", "error");
+        return;
+      }
+      const selected = (lineBatchOptions?.batches ?? []).find(
+        (b: { batchId: string }) => b.batchId === lineFulfillBatchId,
+      ) as { allocated?: number } | undefined;
+      if (Number(row.pickedQty ?? 0) > 0 && Number(selected?.allocated ?? 0) < q) {
+        setLineFulfillError("Selected lot does not have enough picked quantity for shipment.");
         return;
       }
       const batches = lineBatchOptions?.batches ?? [];
@@ -1301,6 +1319,7 @@ export default function SODetailPage() {
         {(() => {
           const lfRow = (so.rows || []).find((r: any) => r.id === lineFulfillRowId);
           const needLot = Boolean(lfRow?.trackLotsAndExpiry);
+          const pickedOnly = Boolean(lineBatchOptions?.shipFromPickedOnly);
           const selectedLot = lineBatchOptions?.batches?.find((b: { batchId: string }) => b.batchId === lineFulfillBatchId);
           return (
             <div className="space-y-3">
@@ -1343,11 +1362,14 @@ export default function SODetailPage() {
                           batchNumber: string;
                           onHand: number;
                           allocated?: number;
+                          shipable?: number;
                           expiryDate?: string | null;
                         }) => (
                           <option key={b.batchId} value={b.batchId}>
-                            {b.batchNumber} · {Number(b.onHand)} on hand
-                            {Number(b.allocated) > 0 ? ` · ${Number(b.allocated)} picked` : ""}
+                            {b.batchNumber}
+                            {pickedOnly
+                              ? ` · ${Number(b.allocated || 0)} picked`
+                              : ` · ${Number(b.onHand)} on hand${Number(b.allocated) > 0 ? ` · ${Number(b.allocated)} picked` : ""}`}
                             {b.expiryDate ? ` · exp ${formatLocalDateDisplay(b.expiryDate)}` : ""}
                           </option>
                         ),
@@ -1363,7 +1385,9 @@ export default function SODetailPage() {
                     />
                   </div>
                   <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded px-2 py-1.5">
-                    Lot-tracked: ship from the lot that has picked quantity (or on-hand if you ship without a prior pick on this line).
+                    {pickedOnly
+                      ? "Lot-tracked and picked: shipping is restricted to lots that were picked for this line."
+                      : "Lot-tracked: select a lot with stock at this location."}
                   </p>
                 </div>
               )}

@@ -10,7 +10,7 @@ import { ActionMenu } from "@/components/shared/ActionMenu";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { Pencil, Trash2 } from "lucide-react";
 
-const blank = { name: "", sku: "", unit: "pcs", unitCost: "", reorderPoint: "" };
+const blank = { name: "", sku: "", unit: "pcs", unitCost: "", reorderPoint: "", trackLotsAndExpiry: false };
 
 export default function MaterialsPage() {
   const qc = useQueryClient();
@@ -33,14 +33,26 @@ export default function MaterialsPage() {
   });
 
   function openNew() { setForm({ ...blank, id: "" }); setOpen(true); }
-  function openEdit(m: any) { setForm({ id: m.id, name: m.name, sku: m.sku || "", unit: m.unit || "pcs", unitCost: m.unitCost || "", reorderPoint: m.reorderPoint || "" }); setOpen(true); }
+  function openEdit(m: any) {
+    setForm({
+      id: m.id,
+      name: m.name,
+      sku: m.sku || "",
+      unit: m.unitOfMeasure || m.unit || "pcs",
+      unitCost: m.purchasePrice || m.unitCost || "",
+      reorderPoint: m.reorderPoint || "",
+      trackLotsAndExpiry: !!m.trackLotsAndExpiry,
+    });
+    setOpen(true);
+  }
 
   const columns: Column[] = [
     { key: "name", header: "Name", sortable: true, render: (r: any) => <span className="font-medium">{r.name}</span> },
     { key: "sku", header: "SKU", render: (r: any) => <span className="font-mono text-xs">{r.sku || "—"}</span> },
-    { key: "unit", header: "Unit" },
-    { key: "unitCost", header: "Unit cost", sortable: true, render: (r: any) => <span className="font-medium">${Number(r.unitCost || 0).toFixed(2)}</span> },
+    { key: "unit", header: "Unit", render: (r: any) => r.unitOfMeasure || r.unit || "—" },
+    { key: "unitCost", header: "Unit cost", sortable: true, render: (r: any) => <span className="font-medium">${Number(r.purchasePrice || r.unitCost || 0).toFixed(2)}</span> },
     { key: "reorderPoint", header: "Reorder point", render: (r: any) => r.reorderPoint ?? "—" },
+    { key: "tracking", header: "Tracking", render: (r: any) => (r.trackLotsAndExpiry ? "Lots + Expiry" : "—") },
     { key: "actions", header: "", filterable: false, render: (r: any) => (
       <ActionMenu actions={[
         { label: "Edit", icon: <Pencil size={13} />, onClick: () => openEdit(r) },
@@ -64,10 +76,31 @@ export default function MaterialsPage() {
           <div><label className="label">Unit</label><input className="input" value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} /></div>
           <div><label className="label">Unit Cost</label><input className="input" type="number" value={form.unitCost} onChange={e => setForm(f => ({ ...f, unitCost: e.target.value }))} /></div>
           <div><label className="label">Reorder Point</label><input className="input" type="number" value={form.reorderPoint} onChange={e => setForm(f => ({ ...f, reorderPoint: e.target.value }))} /></div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={!!form.trackLotsAndExpiry}
+              onChange={e => setForm(f => ({ ...f, trackLotsAndExpiry: e.target.checked }))}
+            />
+            Enable Lot Tracking + Expiry Date Tracking
+          </label>
         </div>
         <div className="flex justify-end gap-2 mt-5">
           <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
-          <button className="btn btn-primary" disabled={save.isPending} onClick={() => save.mutate(form)}>{save.isPending ? "Saving..." : "Save"}</button>
+          <button
+            className="btn btn-primary"
+            disabled={save.isPending}
+            onClick={() =>
+              save.mutate({
+                ...form,
+                unitOfMeasure: form.unit,
+                purchasePrice: form.unitCost,
+                trackLotsAndExpiry: !!form.trackLotsAndExpiry,
+              })
+            }
+          >
+            {save.isPending ? "Saving..." : "Save"}
+          </button>
         </div>
       </Modal>
     </>

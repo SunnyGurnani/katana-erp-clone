@@ -12,7 +12,7 @@ import { ChildTable, ColumnDef, FieldDef } from "@/components/shared/ChildTable"
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { Pencil, Trash2 } from "lucide-react";
 
-const blank = { name: "", sku: "", description: "", category: "", unitCost: "", salePrice: "", reorderPoint: "" };
+const blank = { name: "", sku: "", description: "", category: "", unitCost: "", salePrice: "", reorderPoint: "", trackLotsAndExpiry: false };
 
 const bomCols: ColumnDef[] = [
   { key: "name", header: "BOM Name" },
@@ -78,7 +78,17 @@ export default function ProductsPage() {
 
   function openNew() { setForm({ ...blank, id: "" }); setOpen(true); }
   function openEdit(p: any) {
-    setForm({ id: p.id, name: p.name, sku: p.variants?.[0]?.sku || "", description: p.description || "", category: p.category || "", unitCost: p.variants?.[0]?.unitCost || "", salePrice: p.variants?.[0]?.salePrice || "", reorderPoint: p.variants?.[0]?.reorderPoint || "" });
+    setForm({
+      id: p.id,
+      name: p.name,
+      sku: p.variants?.[0]?.sku || "",
+      description: p.description || "",
+      category: p.category || "",
+      unitCost: p.variants?.[0]?.unitCost || "",
+      salePrice: p.variants?.[0]?.salePrice || "",
+      reorderPoint: p.variants?.[0]?.reorderPoint || "",
+      trackLotsAndExpiry: !!p.trackLotsAndExpiry,
+    });
     setOpen(true);
   }
 
@@ -157,10 +167,29 @@ export default function ProductsPage() {
           <div><label className="label">Unit Cost</label><input className="input" type="number" value={form.unitCost} onChange={e => setForm(f => ({ ...f, unitCost: e.target.value }))} /></div>
           <div><label className="label">Sale Price</label><input className="input" type="number" value={form.salePrice} onChange={e => setForm(f => ({ ...f, salePrice: e.target.value }))} /></div>
           <div><label className="label">Reorder Point</label><input className="input" type="number" value={form.reorderPoint} onChange={e => setForm(f => ({ ...f, reorderPoint: e.target.value }))} /></div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={!!form.trackLotsAndExpiry}
+              onChange={e => setForm(f => ({ ...f, trackLotsAndExpiry: e.target.checked }))}
+            />
+            Enable Lot Tracking + Expiry Date Tracking
+          </label>
         </div>
         <div className="flex justify-end gap-2 mt-5">
           <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
-          <button className="btn btn-primary" disabled={save.isPending} onClick={() => save.mutate(form)}>{save.isPending ? "Saving..." : "Save"}</button>
+          <button
+            className="btn btn-primary"
+            disabled={save.isPending}
+            onClick={() =>
+              save.mutate({
+                ...form,
+                trackLotsAndExpiry: !!form.trackLotsAndExpiry,
+              })
+            }
+          >
+            {save.isPending ? "Saving..." : "Save"}
+          </button>
         </div>
       </Modal>
     </>

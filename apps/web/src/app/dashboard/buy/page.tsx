@@ -94,16 +94,18 @@ export default function PurchaseOrdersPage() {
   );
 
   const create = useMutation({
-    mutationFn: () =>
-      api.post("/purchase-orders", {
+    mutationFn: async () => {
+      const r = await api.post("/purchase-orders", {
         supplierId: supplierId || undefined,
         locationId: locationId || undefined,
         currency: currency || "USD",
         expectedAt: expectedAt || undefined,
         notes: notes || undefined,
         rows: [],
-      }),
-    onSuccess: () => {
+      });
+      return r.data as { id?: string };
+    },
+    onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ["purchase-orders"] });
       addToast("Purchase order created", "success");
       setOpen(false);
@@ -112,6 +114,7 @@ export default function PurchaseOrdersPage() {
       setCurrency("USD");
       setExpectedAt("");
       setNotes("");
+      if (created?.id) router.push(`/dashboard/buy/${created.id}`);
     },
     onError: () => addToast("Error creating PO", "error"),
   });

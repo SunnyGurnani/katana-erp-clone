@@ -13,7 +13,13 @@ export async function adjustStock(
   locationId: string,
   qty: any | number,
   movementType: string,
-  opts?: { referenceType?: string; referenceId?: string; note?: string }
+  opts?: {
+    referenceType?: string;
+    referenceId?: string;
+    note?: string;
+    batchId?: string | null;
+    purchaseOrderRowId?: string | null;
+  },
 ) {
   const qtyNum = Number(qty);
   const existing = await tx.inventoryLevel.findUnique({
@@ -48,6 +54,8 @@ export async function adjustStock(
       referenceType: opts?.referenceType,
       referenceId: opts?.referenceId,
       note: opts?.note,
+      batchId: opts?.batchId ?? undefined,
+      purchaseOrderRowId: opts?.purchaseOrderRowId ?? undefined,
     },
   });
   return { level, movement };

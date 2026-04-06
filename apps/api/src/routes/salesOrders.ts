@@ -1009,6 +1009,7 @@ router.get('/:id/rows/:rowId/available-batches', async (req, res) => {
     select: { product: { select: { trackLotsAndExpiry: true } } },
   });
   const trackLotsAndExpiry = Boolean(v?.product?.trackLotsAndExpiry);
+  const shipFromPickedOnly = Number((row as any).qtyPicked || 0) > 0;
   const locationId = row.locationId ?? so.locationId;
   if (!locationId) {
     return res.status(422).json({ error: 'Set a ship-from location on the line or order to list lots.' });
@@ -1017,13 +1018,16 @@ router.get('/:id/rows/:rowId/available-batches', async (req, res) => {
     where: {
       locationId,
       batch: { variantId: row.variantId },
-      OR: [{ onHand: { gt: 0 } }, { allocated: { gt: 0 } }],
+      ...(shipFromPickedOnly
+        ? { allocated: { gt: 0 } }
+        : { OR: [{ onHand: { gt: 0 } }, { allocated: { gt: 0 } }] }),
     },
     include: { batch: { select: { id: true, batchNumber: true, expiryDate: true } } },
     orderBy: { batch: { expiryDate: 'asc' } },
   });
   res.json({
     trackLotsAndExpiry,
+    shipFromPickedOnly,
     locationId,
     batches: stocks.map((s) => ({
       batchStockId: s.id,
@@ -1163,7 +1167,9 @@ router.post('/:id/fulfill', async (req, res) => {
     if (mustLot && !item.batchId) {
       const lab = variantLabel.get(row.variantId) || row.description || 'line';
       return res.status(422).json({
-        error: `${lab} is lot/expiry tracked — select a lot with available quantity at the ship-from location.`,
+        error: usePickShip
+          ? `${lab} is lot/expiry tracked and has picked quantity — select the picked lot to ship from.`
+          : `${lab} is lot/expiry tracked — select a lot with available quantity at the ship-from location.`,
       });
     }
   }

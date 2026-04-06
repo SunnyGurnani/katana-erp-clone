@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo, useCallback, Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { StatusCell } from "@/components/ui/StatusBadge";
@@ -40,6 +41,14 @@ type InvVariantRow = {
 type DemandDetails = {
   variantId: string;
   locationId: string | null;
+  salesOrderAllocations: Array<{
+    salesOrderId: string;
+    salesOrderNumber: string;
+    status: string;
+    customerName: string | null;
+    locationName: string | null;
+    allocatedQty: number;
+  }>;
   salesOrders: Array<{
     salesOrderId: string;
     salesOrderNumber: string;
@@ -72,6 +81,7 @@ type DemandDetails = {
     expectedQty: number;
   }>;
   totals: {
+    allocated: number;
     salesOrders: number;
     manufacturingOrders: number;
     transferOrders: number;
@@ -155,6 +165,7 @@ export default function InventoryPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailVariant, setDetailVariant] = useState<InvVariantRow | null>(null);
+  const [detailMetric, setDetailMetric] = useState<"allocated" | "committed" | "expected">("committed");
 
   const { data: locations } = useQuery({
     queryKey: ["locations", "stock-filter"],
@@ -445,7 +456,21 @@ export default function InventoryPage() {
                           <td className="font-mono text-sm">{row.variant?.sku || "—"}</td>
                           <td className="font-medium">{row.variant?.product?.name || row.variant?.material?.name || "—"}</td>
                           <td className="tabular-nums font-semibold text-right">{Number(row.totalOnHand ?? 0).toLocaleString()}</td>
-                          <td className="tabular-nums text-right text-gray-800">{totalAllocated.toLocaleString()}</td>
+                          <td className="tabular-nums text-right text-gray-800">
+                            <button
+                              type="button"
+                              className="underline underline-offset-2 hover:text-gray-700"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDetailVariant(row);
+                                setDetailMetric("allocated");
+                                setDetailOpen(true);
+                              }}
+                              title="View orders behind allocated quantity"
+                            >
+                              {totalAllocated.toLocaleString()}
+                            </button>
+                          </td>
                           <td className="tabular-nums text-right text-amber-900/90">
                             <button
                               type="button"
@@ -453,6 +478,7 @@ export default function InventoryPage() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setDetailVariant(row);
+                                setDetailMetric("committed");
                                 setDetailOpen(true);
                               }}
                               title="View orders behind committed demand"
@@ -467,6 +493,7 @@ export default function InventoryPage() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setDetailVariant(row);
+                                setDetailMetric("expected");
                                 setDetailOpen(true);
                               }}
                               title="View purchase orders behind expected quantity"
@@ -557,7 +584,7 @@ export default function InventoryPage() {
           setDetailOpen(false);
           setDetailVariant(null);
         }}
-        title={`Demand details${detailVariant?.variant?.sku ? ` · ${detailVariant.variant.sku}` : ""}`}
+        title={`${detailMetric === "allocated" ? "Allocation details" : detailMetric === "expected" ? "Expected supply details" : "Demand details"}${detailVariant?.variant?.sku ? ` · ${detailVariant.variant.sku}` : ""}`}
         size="lg"
       >
         {demandLoading ? (
@@ -567,10 +594,46 @@ export default function InventoryPage() {
         ) : (
           <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
             <div className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded px-2 py-1.5">
+              Allocated total: <strong>{num(demandDetails.totals.allocated).toLocaleString()}</strong> ·{" "}
               Committed total: <strong>{num(demandDetails.totals.committed).toLocaleString()}</strong> (SO {num(demandDetails.totals.salesOrders).toLocaleString()} · MO {num(demandDetails.totals.manufacturingOrders).toLocaleString()} · TO {num(demandDetails.totals.transferOrders).toLocaleString()}) ·
               Expected total: <strong>{num(demandDetails.totals.expected).toLocaleString()}</strong>
             </div>
 
+            {demandDetails.salesOrderAllocations.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Sales orders creating allocation</h3>
+              <div className="overflow-x-auto border border-gray-200 rounded">
+                <table className="table text-xs">
+                  <thead>
+                    <tr>
+                      <th>Order</th>
+                      <th>Status</th>
+                      <th>Customer</th>
+                      <th>Location</th>
+                      <th className="text-right">Allocated</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {demandDetails.salesOrderAllocations.map((r) => (
+                      <tr key={`alloc-${r.salesOrderId}-${r.locationName ?? "na"}-${r.allocatedQty}`}>
+                        <td className="font-medium">
+                          <Link className="text-brand-700 hover:underline" href={`/dashboard/sell/${r.salesOrderId}`}>
+                            {r.salesOrderNumber}
+                          </Link>
+                        </td>
+                        <td>{r.status}</td>
+                        <td>{r.customerName || "—"}</td>
+                        <td>{r.locationName || "—"}</td>
+                        <td className="text-right tabular-nums">{num(r.allocatedQty).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            )}
+
+            {demandDetails.salesOrders.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Sales orders creating demand</h3>
               <div className="overflow-x-auto border border-gray-200 rounded">
@@ -585,11 +648,13 @@ export default function InventoryPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {demandDetails.salesOrders.length === 0 ? (
-                      <tr><td colSpan={5} className="text-gray-400 text-center py-4">No open sales-order demand for this item.</td></tr>
-                    ) : demandDetails.salesOrders.map((r) => (
+                    {demandDetails.salesOrders.map((r) => (
                       <tr key={`${r.salesOrderId}-${r.locationName ?? "na"}-${r.demandQty}`}>
-                        <td className="font-medium">{r.salesOrderNumber}</td>
+                        <td className="font-medium">
+                          <Link className="text-brand-700 hover:underline" href={`/dashboard/sell/${r.salesOrderId}`}>
+                            {r.salesOrderNumber}
+                          </Link>
+                        </td>
                         <td>{r.status}</td>
                         <td>{r.customerName || "—"}</td>
                         <td>{r.locationName || "—"}</td>
@@ -600,7 +665,9 @@ export default function InventoryPage() {
                 </table>
               </div>
             </div>
+            )}
 
+            {demandDetails.manufacturingOrders.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Manufacturing orders (component demand)</h3>
               <div className="overflow-x-auto border border-gray-200 rounded">
@@ -614,11 +681,13 @@ export default function InventoryPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {demandDetails.manufacturingOrders.length === 0 ? (
-                      <tr><td colSpan={4} className="text-gray-400 text-center py-4">No open MO demand for this item.</td></tr>
-                    ) : demandDetails.manufacturingOrders.map((r) => (
+                    {demandDetails.manufacturingOrders.map((r) => (
                       <tr key={`${r.manufacturingOrderId}-${r.locationName ?? "na"}-${r.demandQty}`}>
-                        <td className="font-medium">{r.manufacturingOrderNumber}</td>
+                        <td className="font-medium">
+                          <Link className="text-brand-700 hover:underline" href={`/dashboard/make/${r.manufacturingOrderId}`}>
+                            {r.manufacturingOrderNumber}
+                          </Link>
+                        </td>
                         <td>{r.status}</td>
                         <td>{r.locationName || "—"}</td>
                         <td className="text-right tabular-nums">{num(r.demandQty).toLocaleString()}</td>
@@ -628,7 +697,9 @@ export default function InventoryPage() {
                 </table>
               </div>
             </div>
+            )}
 
+            {demandDetails.transferOrders.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Transfer orders (from-location demand)</h3>
               <div className="overflow-x-auto border border-gray-200 rounded">
@@ -643,11 +714,13 @@ export default function InventoryPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {demandDetails.transferOrders.length === 0 ? (
-                      <tr><td colSpan={5} className="text-gray-400 text-center py-4">No open transfer demand for this item.</td></tr>
-                    ) : demandDetails.transferOrders.map((r) => (
+                    {demandDetails.transferOrders.map((r) => (
                       <tr key={`${r.transferOrderId}-${r.demandQty}`}>
-                        <td className="font-medium">{r.transferOrderNumber}</td>
+                        <td className="font-medium">
+                          <Link className="text-brand-700 hover:underline" href="/dashboard/stock/transfers">
+                            {r.transferOrderNumber}
+                          </Link>
+                        </td>
                         <td>{r.status}</td>
                         <td>{r.fromLocationName || "—"}</td>
                         <td>{r.toLocationName || "—"}</td>
@@ -658,7 +731,9 @@ export default function InventoryPage() {
                 </table>
               </div>
             </div>
+            )}
 
+            {demandDetails.purchaseOrders.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Purchase orders (expected supply)</h3>
               <div className="overflow-x-auto border border-gray-200 rounded">
@@ -673,11 +748,13 @@ export default function InventoryPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {demandDetails.purchaseOrders.length === 0 ? (
-                      <tr><td colSpan={5} className="text-gray-400 text-center py-4">No open purchase-order supply for this item.</td></tr>
-                    ) : demandDetails.purchaseOrders.map((r) => (
+                    {demandDetails.purchaseOrders.map((r) => (
                       <tr key={`${r.purchaseOrderId}-${r.expectedQty}`}>
-                        <td className="font-medium">{r.purchaseOrderNumber}</td>
+                        <td className="font-medium">
+                          <Link className="text-brand-700 hover:underline" href={`/dashboard/buy/${r.purchaseOrderId}`}>
+                            {r.purchaseOrderNumber}
+                          </Link>
+                        </td>
                         <td>{r.status}</td>
                         <td>{r.supplierName || "—"}</td>
                         <td>{r.locationName || "—"}</td>
@@ -688,6 +765,15 @@ export default function InventoryPage() {
                 </table>
               </div>
             </div>
+            )}
+
+            {demandDetails.salesOrderAllocations.length === 0 &&
+              demandDetails.salesOrders.length === 0 &&
+              demandDetails.manufacturingOrders.length === 0 &&
+              demandDetails.transferOrders.length === 0 &&
+              demandDetails.purchaseOrders.length === 0 && (
+                <p className="text-sm text-gray-500">No order details for this item at the selected scope.</p>
+              )}
           </div>
         )}
       </Modal>

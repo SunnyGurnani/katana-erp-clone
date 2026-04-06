@@ -47,7 +47,7 @@ async function buildPoRowLookups(rows: any[]) {
             id: true,
             name: true,
             sku: true,
-            product: { select: { id: true, name: true } },
+            product: { select: { id: true, name: true, trackLotsAndExpiry: true } },
           },
         })
       : Promise.resolve([]),
@@ -73,6 +73,56 @@ function normalizePo(po: any, lookups?: { materialById: Map<string, any>; varian
       variant: r.variant ?? (r.variantId && lookups ? lookups.variantById.get(r.variantId) || null : null),
     })),
   };
+}
+
+/** PO goods receipt movements with lot/expiry for the detail UI (legacy rows use note + batch lookup). */
+async function buildReceiptLinesForPo(poId: string) {
+  const movements = await prisma.inventoryMovement.findMany({
+    where: {
+      movementType: 'po_receipt',
+      referenceType: 'purchase_order',
+      referenceId: poId,
+    },
+    include: {
+      batch: { select: { batchNumber: true, expiryDate: true } },
+      location: { select: { name: true } },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+  const out: any[] = [];
+  for (const m of movements) {
+    let lotNumber: string | null = m.batch?.batchNumber ?? null;
+    let expiryDate: string | null =
+      m.batch?.expiryDate != null ? new Date(m.batch.expiryDate).toISOString().slice(0, 10) : null;
+    if (!lotNumber && m.note) {
+      const match = String(m.note).match(/·\s*lot\s+(.+)$/);
+      if (match) {
+        lotNumber = match[1].trim();
+        const b = await prisma.batch.findUnique({
+          where: { variantId_batchNumber: { variantId: m.variantId, batchNumber: lotNumber } },
+          select: { expiryDate: true },
+        });
+        if (b?.expiryDate) expiryDate = new Date(b.expiryDate).toISOString().slice(0, 10);
+      }
+    }
+    out.push({
+      id: m.id,
+      purchaseOrderRowId: m.purchaseOrderRowId,
+      variantId: m.variantId,
+      qty: Number(m.qty),
+      createdAt: m.createdAt,
+      locationId: m.locationId,
+      locationName: m.location?.name ?? null,
+      lotNumber,
+      expiryDate,
+    });
+  }
+  return out;
+}
+
+async function normalizePoWithReceipts(po: any, lookups?: { materialById: Map<string, any>; variantById: Map<string, any> }) {
+  const receiptLines = await buildReceiptLinesForPo(po.id);
+  return { ...normalizePo(po, lookups), receiptLines };
 }
 
 /**
@@ -231,7 +281,7 @@ router.get('/:id', async (req, res) => {
   const po = await prisma.purchaseOrder.findUnique({ where: { id: req.params.id }, include });
   if (!po) return res.status(404).json({ error: 'Not found' });
   const lookups = await buildPoRowLookups(po.rows || []);
-  res.json(normalizePo(po, lookups));
+  res.json(await normalizePoWithReceipts(po, lookups));
 });
 
 async function updatePoById(req: any, res: any) {
@@ -249,7 +299,7 @@ async function updatePoById(req: any, res: any) {
   if (data.expectedAt !== undefined) poData.expectedDate = data.expectedAt ? new Date(data.expectedAt) : null;
   const po = await prisma.purchaseOrder.update({ where: { id: req.params.id }, data: poData, include });
   const lookups = await buildPoRowLookups(po.rows || []);
-  res.json(normalizePo(po, lookups));
+  res.json(await normalizePoWithReceipts(po, lookups));
 }
 
 /**
@@ -392,7 +442,17 @@ router.post('/:id/rows', async (req, res) => {
 router.post('/:id/receive', async (req, res) => {
   const body = z.object({
     locationId: z.string().min(1).optional(),
-    rows: z.array(z.object({ rowId: z.string().uuid(), receivedQty: z.coerce.number().positive() })).optional(),
+    rows: z.array(z.object({
+      rowId: z.string().uuid(),
+      receivedQty: z.coerce.number().positive(),
+      lots: z.array(
+        z.object({
+          batchNumber: z.string().min(1),
+          expiryDate: z.coerce.date(),
+          qty: z.coerce.number().positive(),
+        }),
+      ).optional(),
+    })).optional(),
   }).parse(req.body);
   const po = await prisma.purchaseOrder.findUnique({ where: { id: req.params.id }, include });
   if (!po) return res.status(404).json({ error: 'Not found' });
@@ -401,14 +461,88 @@ router.post('/:id/receive', async (req, res) => {
   if (!destLocationId) return res.status(422).json({ error: 'Provide a locationId' });
 
   const rowsToReceive = body.rows ?? (po.rows as any[]).map((r: any) => ({ rowId: r.id, receivedQty: Number(r.qtyOrdered) - Number(r.qtyReceived || 0) }));
+  const rowById = new Map((po.rows as any[]).map((r: any) => [r.id, r]));
+  const variantIds = [...new Set((po.rows as any[]).map((r: any) => r.variantId).filter(Boolean))] as string[];
+  const variants = variantIds.length
+    ? await prisma.variant.findMany({
+        where: { id: { in: variantIds } },
+        select: { id: true, sku: true, name: true, product: { select: { name: true, trackLotsAndExpiry: true } } },
+      })
+    : [];
+  const variantById = new Map(variants.map((v: any) => [v.id, v]));
+
+  for (const recv of rowsToReceive as any[]) {
+    const row = rowById.get(recv.rowId);
+    if (!row) {
+      return res.status(422).json({ error: 'Invalid row in receive payload.' });
+    }
+    const remaining = Math.max(0, Number(row.qtyOrdered) - Number(row.qtyReceived || 0));
+    if (Number(recv.receivedQty) > remaining) {
+      return res.status(422).json({ error: `Received quantity exceeds remaining on a PO line (max ${remaining}).` });
+    }
+    if (!row.variantId) continue;
+    const track = Boolean(variantById.get(row.variantId)?.product?.trackLotsAndExpiry);
+    if (!track) continue;
+    const lots = recv.lots || [];
+    if (!lots.length) {
+      const lab = variantById.get(row.variantId)?.sku || row.description || 'line';
+      return res.status(422).json({ error: `${lab} is lot/expiry tracked — add at least one lot with expiry.` });
+    }
+    const sumLots = lots.reduce((s: number, l: any) => s + Number(l.qty || 0), 0);
+    if (Math.abs(sumLots - Number(recv.receivedQty)) > 1e-9) {
+      return res.status(422).json({ error: 'For lot-tracked items, sum of lot quantities must match received quantity.' });
+    }
+  }
 
   await prisma.$transaction(async (tx: any) => {
-    for (const recv of rowsToReceive) {
+    for (const recv of rowsToReceive as any[]) {
       if (recv.receivedQty <= 0) continue;
       const row = (po.rows as any[]).find((r: any) => r.id === recv.rowId);
       if (!row) continue;
       if (row.variantId) {
-        await adjustStock(tx, row.variantId, destLocationId, recv.receivedQty, 'po_receipt', { referenceType: 'purchase_order', referenceId: po.id, note: `PO ${po.number}` });
+        const vv = variantById.get(row.variantId);
+        const track = Boolean(vv?.product?.trackLotsAndExpiry);
+        if (track) {
+          for (const lot of recv.lots || []) {
+            const expiryDate = new Date(lot.expiryDate);
+            let batch = await tx.batch.findFirst({
+              where: {
+                variantId: row.variantId,
+                batchNumber: lot.batchNumber,
+                expiryDate,
+              },
+            });
+            if (!batch) {
+              batch = await tx.batch.create({
+                data: {
+                  variantId: row.variantId,
+                  batchNumber: lot.batchNumber,
+                  expiryDate,
+                  notes: `Received from PO ${po.number}`,
+                },
+              });
+            }
+            await tx.batchStock.upsert({
+              where: { batchId_locationId: { batchId: batch.id, locationId: destLocationId } },
+              create: { batchId: batch.id, locationId: destLocationId, onHand: Number(lot.qty), allocated: 0 },
+              update: { onHand: { increment: Number(lot.qty) } },
+            });
+            await adjustStock(tx, row.variantId, destLocationId, Number(lot.qty), 'po_receipt', {
+              referenceType: 'purchase_order',
+              referenceId: po.id,
+              note: `PO ${po.number} · lot ${lot.batchNumber}`,
+              batchId: batch.id,
+              purchaseOrderRowId: row.id,
+            });
+          }
+        } else {
+          await adjustStock(tx, row.variantId, destLocationId, recv.receivedQty, 'po_receipt', {
+            referenceType: 'purchase_order',
+            referenceId: po.id,
+            note: `PO ${po.number}`,
+            purchaseOrderRowId: row.id,
+          });
+        }
       }
       await tx.purchaseOrderRow.update({ where: { id: row.id }, data: { qtyReceived: { increment: recv.receivedQty } } });
     }
@@ -420,7 +554,7 @@ router.post('/:id/receive', async (req, res) => {
   const newStatus = allFulfilled ? 'received' : anyFulfilled ? 'partial' : po.status;
   const updated = await prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: newStatus }, include });
   const lookups = await buildPoRowLookups(updated.rows || []);
-  res.json(normalizePo(updated, lookups));
+  res.json(await normalizePoWithReceipts(updated, lookups));
 });
 
 export default router;

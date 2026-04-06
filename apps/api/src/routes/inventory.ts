@@ -219,8 +219,9 @@ router.get('/levels', async (req, res) => {
       const committedSalesOrder = committedFromSalesOrdersMap[key] || 0;
       const committedManufacturingOrder = committedFromManufacturingOrdersMap[key] || 0;
       const committedTransferOrder = committedFromTransferOrdersMap[key] || 0;
-      const committed =
+      const committedRaw =
         committedSalesOrder + committedManufacturingOrder + committedTransferOrder;
+      const committed = Math.max(0, committedRaw - allocated);
       const expected = poExpectedMap[key] || 0;
       const onHand = Number(l.onHand);
       return {
@@ -233,6 +234,7 @@ router.get('/levels', async (req, res) => {
         committedSalesOrder,
         committedManufacturingOrder,
         committedTransferOrder,
+        committedRaw,
         expected,
         /** Free to allocate: on hand − committed − allocated. */
         available: onHand - committed - allocated,
@@ -339,6 +341,24 @@ router.get('/levels/:variantId/demand-details', async (req, res) => {
     .filter((x: any) => x.demandQty > 0)
     .filter((x: any) => (locationId ? x.locationId === locationId : true));
 
+  const salesOrderAllocations = soRows
+    .map((r: any) => {
+      const resolvedLocationId = r.locationId ?? r.order.locationId ?? defaultLoc?.id ?? null;
+      const allocatedQty = Math.max(0, Number(r.qtyPicked || 0));
+      return {
+        salesOrderId: r.order.id,
+        salesOrderNumber: r.order.number,
+        status: r.order.status,
+        customerName: r.order.customer?.name ?? null,
+        rowId: r.id,
+        locationId: resolvedLocationId,
+        locationName: resolvedLocationId ? locNameById.get(resolvedLocationId) ?? null : null,
+        allocatedQty,
+      };
+    })
+    .filter((x: any) => x.allocatedQty > 0)
+    .filter((x: any) => (locationId ? x.locationId === locationId : true));
+
   const moRows = await prisma.mORecipeRow.findMany({
     where: {
       variantId,
@@ -430,11 +450,13 @@ router.get('/levels/:variantId/demand-details', async (req, res) => {
   res.json({
     variantId,
     locationId: locationId ?? null,
+    salesOrderAllocations,
     salesOrders,
     manufacturingOrders,
     transferOrders,
     purchaseOrders,
     totals: {
+      allocated: salesOrderAllocations.reduce((s: number, x: any) => s + Number(x.allocatedQty), 0),
       salesOrders: salesOrders.reduce((s: number, x: any) => s + Number(x.demandQty), 0),
       manufacturingOrders: manufacturingOrders.reduce((s: number, x: any) => s + Number(x.demandQty), 0),
       transferOrders: transferOrders.reduce((s: number, x: any) => s + Number(x.demandQty), 0),

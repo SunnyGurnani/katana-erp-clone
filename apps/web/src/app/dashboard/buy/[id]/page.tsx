@@ -25,6 +25,7 @@ export default function PODetailPage() {
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [receiveLocationId, setReceiveLocationId] = useState("");
+  const [receiveRows, setReceiveRows] = useState<Record<string, { receivedQty: string; lots: { batchNumber: string; expiryDate: string; qty: string }[] }>>({});
   const [editForm, setEditForm] = useState({ status: "", expectedAt: "", notes: "" });
   const [newLine, setNewLine] = useState({ itemValue: "", qty: "1", unitCost: "" });
 
@@ -79,17 +80,36 @@ export default function PODetailPage() {
   });
 
   const receive = useMutation({
-    mutationFn: () =>
-      api.post(`/purchase-orders/${id}/receive`, {
-        locationId: receiveLocationId,
-        rows: (po?.rows || [])
-          .map((r: any) => {
-            const ordered = Number(r.qty ?? r.qtyOrdered ?? 0);
-            const got = Number(r.qtyReceived ?? r.receivedQty ?? 0);
-            return { rowId: r.id, receivedQty: Math.max(0, ordered - got) };
-          })
-          .filter((r: { receivedQty: number }) => r.receivedQty > 0),
-      }),
+    mutationFn: () => {
+      const rowsPayload = (po?.rows || [])
+        .map((r: any) => {
+          const state = receiveRows[r.id];
+          const outstanding = lineOutstanding(r);
+          const receivedQty = Math.max(
+            0,
+            Math.min(
+              outstanding,
+              Number(state?.receivedQty ?? outstanding),
+            ),
+          );
+          if (receivedQty <= 0) return null;
+          const trackLotsAndExpiry = Boolean(r.variant?.product?.trackLotsAndExpiry);
+          if (!trackLotsAndExpiry) return { rowId: r.id, receivedQty };
+          const lots = (state?.lots || [])
+            .map((l) => ({
+              batchNumber: String(l.batchNumber || "").trim(),
+              expiryDate: String(l.expiryDate || "").trim(),
+              qty: Number(l.qty || 0),
+            }))
+            .filter((l) => l.batchNumber && l.expiryDate && l.qty > 0);
+          return { rowId: r.id, receivedQty, lots };
+        })
+        .filter(Boolean);
+      return api.post(`/purchase-orders/${id}/receive`, {
+        locationId: receiveLocationId || po?.locationId || undefined,
+        rows: rowsPayload,
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["po", id] });
       addToast("Stock received", "success");
@@ -153,6 +173,25 @@ export default function PODetailPage() {
   }
   if (!po) return <div className="p-6 text-gray-500">PO not found.</div>;
 
+  type ReceiptLine = {
+    id: string;
+    purchaseOrderRowId: string | null;
+    variantId: string;
+    qty: number;
+    lotNumber: string | null;
+    expiryDate: string | null;
+  };
+
+  function receiptLinesForRow(r: { id: string; variantId?: string | null }): ReceiptLine[] {
+    const list = (po as { receiptLines?: ReceiptLine[] }).receiptLines;
+    if (!list?.length) return [];
+    return list.filter(
+      (l) =>
+        l.purchaseOrderRowId === r.id ||
+        (!l.purchaseOrderRowId && r.variantId && l.variantId === r.variantId),
+    );
+  }
+
   function lineOutstanding(r: any): number {
     const ordered = Number(r.qty ?? r.qtyOrdered ?? 0);
     const got = Number(r.qtyReceived ?? r.receivedQty ?? 0);
@@ -178,6 +217,65 @@ export default function PODetailPage() {
       notes: po.notes || "",
     });
     setEditOpen(true);
+  }
+
+  function openReceiveModal() {
+    const init: Record<string, { receivedQty: string; lots: { batchNumber: string; expiryDate: string; qty: string }[] }> = {};
+    for (const r of notReceivedRows) {
+      const out = lineOutstanding(r);
+      const track = Boolean(r.variant?.product?.trackLotsAndExpiry);
+      init[r.id] = {
+        receivedQty: String(out),
+        lots: track ? [{ batchNumber: "", expiryDate: "", qty: String(out) }] : [],
+      };
+    }
+    setReceiveRows(init);
+    setReceiveLocationId(po.locationId ? String(po.locationId) : "");
+    setReceiveOpen(true);
+  }
+
+  function addLot(rowId: string) {
+    setReceiveRows((prev) => {
+      const cur = prev[rowId] || { receivedQty: "0", lots: [] };
+      return {
+        ...prev,
+        [rowId]: { ...cur, lots: [...cur.lots, { batchNumber: "", expiryDate: "", qty: "" }] },
+      };
+    });
+  }
+
+  function removeLot(rowId: string, idx: number) {
+    setReceiveRows((prev) => {
+      const cur = prev[rowId] || { receivedQty: "0", lots: [] };
+      const nextLots = cur.lots.filter((_, i) => i !== idx);
+      return { ...prev, [rowId]: { ...cur, lots: nextLots } };
+    });
+  }
+
+  function updateLot(rowId: string, idx: number, key: "batchNumber" | "expiryDate" | "qty", value: string) {
+    setReceiveRows((prev) => {
+      const cur = prev[rowId] || { receivedQty: "0", lots: [] };
+      const lots = [...cur.lots];
+      lots[idx] = { ...lots[idx], [key]: value };
+      return { ...prev, [rowId]: { ...cur, lots } };
+    });
+  }
+
+  function canSubmitReceive(): boolean {
+    if (!receiveLocationId && !po.locationId) return false;
+    for (const r of notReceivedRows) {
+      const state = receiveRows[r.id];
+      const q = Number(state?.receivedQty ?? 0);
+      if (q <= 0) continue;
+      const track = Boolean(r.variant?.product?.trackLotsAndExpiry);
+      if (!track) continue;
+      const lots = state?.lots || [];
+      if (!lots.length) return false;
+      const sum = lots.reduce((s, l) => s + Number(l.qty || 0), 0);
+      if (Math.abs(sum - q) > 1e-9) return false;
+      if (lots.some((l) => !String(l.batchNumber || "").trim() || !String(l.expiryDate || "").trim() || Number(l.qty || 0) <= 0)) return false;
+    }
+    return true;
   }
 
   return (
@@ -214,7 +312,7 @@ export default function PODetailPage() {
           Delete
         </button>
         {canReceive && (
-          <button className="btn btn-primary h-9" onClick={() => setReceiveOpen(true)}>
+          <button className="btn btn-primary h-9" onClick={openReceiveModal}>
             <PackageCheck size={15} />
             Receive
           </button>
@@ -315,6 +413,8 @@ export default function PODetailPage() {
                 <th>Unit cost</th>
                 <th>Line total</th>
                 <th>Received</th>
+                <th>Lot</th>
+                <th>Expiry</th>
                 <th className="w-12"></th>
               </tr>
             </thead>
@@ -333,6 +433,7 @@ export default function PODetailPage() {
                       "—";
                     const skuPrefix = v?.sku ? `[${v.sku}] ` : m?.sku ? `[${m.sku}] ` : "";
                     const variantSuffix = v?.name && v?.product ? ` / ${v.name}` : "";
+                    const recvLines = receiptLinesForRow(r);
                     return (
                       <>
                   <td className="text-gray-400">{i + 1}</td>
@@ -351,6 +452,31 @@ export default function PODetailPage() {
                     {(Number(r.qty) * Number(r.unitCost || 0)).toFixed(2)} {po.currency || "USD"}
                   </td>
                   <td>{r.qtyReceived ?? r.receivedQty ?? 0}</td>
+                  <td className="align-top text-xs text-gray-800 min-w-[88px]">
+                    {recvLines.length ? (
+                      <div className="space-y-1">
+                        {recvLines.map((l) => (
+                          <div key={l.id} className="tabular-nums">
+                            {l.lotNumber || <span className="text-gray-400">—</span>}
+                            {Number(l.qty) > 0 && <span className="text-gray-500 font-normal"> ({Number(l.qty)})</span>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td className="align-top text-xs text-gray-800 whitespace-nowrap min-w-[96px]">
+                    {recvLines.length ? (
+                      <div className="space-y-1">
+                        {recvLines.map((l) => (
+                          <div key={l.id}>{l.expiryDate || <span className="text-gray-400">—</span>}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
                   <td>
                     {canEditLines && (
                       <button
@@ -404,6 +530,8 @@ export default function PODetailPage() {
                   </td>
                   <td className="text-gray-400 text-sm">—</td>
                   <td />
+                  <td />
+                  <td />
                   <td>
                     <button
                       type="button"
@@ -418,7 +546,7 @@ export default function PODetailPage() {
               )}
               {!notReceivedRows.length && !canEditLines && (
                 <tr>
-                  <td colSpan={7} className="text-center text-gray-400 py-8">
+                  <td colSpan={9} className="text-center text-gray-400 py-8">
                     No outstanding line items
                   </td>
                 </tr>
@@ -441,6 +569,8 @@ export default function PODetailPage() {
                     <th>Unit cost</th>
                     <th>Line total</th>
                     <th>Received</th>
+                    <th>Lot</th>
+                    <th>Expiry</th>
                     <th className="w-12"></th>
                   </tr>
                 </thead>
@@ -459,6 +589,7 @@ export default function PODetailPage() {
                           "—";
                         const skuPrefix = v?.sku ? `[${v.sku}] ` : m?.sku ? `[${m.sku}] ` : "";
                         const variantSuffix = v?.name && v?.product ? ` / ${v.name}` : "";
+                        const recvLines = receiptLinesForRow(r);
                         return (
                           <>
                             <td className="text-gray-400">{i + 1}</td>
@@ -477,6 +608,31 @@ export default function PODetailPage() {
                               {(Number(r.qty) * Number(r.unitCost || 0)).toFixed(2)} {po.currency || "USD"}
                             </td>
                             <td>{r.qtyReceived ?? r.receivedQty ?? 0}</td>
+                            <td className="align-top text-xs text-gray-800 min-w-[88px]">
+                              {recvLines.length ? (
+                                <div className="space-y-1">
+                                  {recvLines.map((l) => (
+                                    <div key={l.id} className="tabular-nums">
+                                      {l.lotNumber || <span className="text-gray-400">—</span>}
+                                      {Number(l.qty) > 0 && <span className="text-gray-500 font-normal"> ({Number(l.qty)})</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">—</span>
+                              )}
+                            </td>
+                            <td className="align-top text-xs text-gray-800 whitespace-nowrap min-w-[96px]">
+                              {recvLines.length ? (
+                                <div className="space-y-1">
+                                  {recvLines.map((l) => (
+                                    <div key={l.id}>{l.expiryDate || <span className="text-gray-400">—</span>}</div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">—</span>
+                              )}
+                            </td>
                             <td>
                               {canEditLines && (
                                 <button
@@ -548,7 +704,7 @@ export default function PODetailPage() {
       )}
 
       <Modal open={receiveOpen} onClose={() => setReceiveOpen(false)} title="Receive Stock">
-        <div className="space-y-3">
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
           <div>
             <label className="label">Destination location</label>
             <SearchableSelect
@@ -560,13 +716,99 @@ export default function PODetailPage() {
               aria-label="Receive location"
             />
           </div>
-          <p className="text-xs text-gray-500">Outstanding quantities will be received into this location.</p>
+          <p className="text-xs text-gray-500">Enter receive quantities per line. For lot-tracked items, lot number and expiry are required and can be split into multiple lots.</p>
+
+          <div className="border border-gray-200 rounded">
+            <table className="table text-sm">
+              <thead>
+                <tr>
+                  <th>Line</th>
+                  <th className="w-28">Outstanding</th>
+                  <th className="w-28">Receive now</th>
+                </tr>
+              </thead>
+              <tbody>
+                {notReceivedRows.map((r: any) => {
+                  const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
+                  const m = r.material || (r.materialId ? materialById.get(r.materialId) : undefined);
+                  const itemName = m?.name || v?.product?.name || r.description || "—";
+                  const variantSuffix = v?.name && v?.product ? ` / ${v.name}` : "";
+                  const outstanding = lineOutstanding(r);
+                  const track = Boolean(v?.product?.trackLotsAndExpiry);
+                  const state = receiveRows[r.id] || { receivedQty: String(outstanding), lots: [] };
+                  return (
+                    <tr key={`recv-${r.id}`}>
+                      <td className="align-top">
+                        <div className="font-medium">{itemName}{variantSuffix}</div>
+                        {track && (
+                          <div className="mt-2 space-y-2">
+                            {(state.lots || []).map((lot, idx) => (
+                              <div key={`${r.id}-lot-${idx}`} className="grid grid-cols-12 gap-2 items-end">
+                                <div className="col-span-4">
+                                  <label className="text-[11px] text-gray-500">Lot #</label>
+                                  <input
+                                    className="input py-1.5"
+                                    value={lot.batchNumber}
+                                    onChange={(e) => updateLot(r.id, idx, "batchNumber", e.target.value)}
+                                  />
+                                </div>
+                                <div className="col-span-4">
+                                  <label className="text-[11px] text-gray-500">Expiry</label>
+                                  <input
+                                    className="input py-1.5"
+                                    type="date"
+                                    value={lot.expiryDate}
+                                    onChange={(e) => updateLot(r.id, idx, "expiryDate", e.target.value)}
+                                  />
+                                </div>
+                                <div className="col-span-3">
+                                  <label className="text-[11px] text-gray-500">Qty</label>
+                                  <input
+                                    className="input py-1.5"
+                                    type="number"
+                                    min={0}
+                                    step="any"
+                                    value={lot.qty}
+                                    onChange={(e) => updateLot(r.id, idx, "qty", e.target.value)}
+                                  />
+                                </div>
+                                <div className="col-span-1">
+                                  <button type="button" className="icon-btn text-red-500" onClick={() => removeLot(r.id, idx)}>×</button>
+                                </div>
+                              </div>
+                            ))}
+                            <button type="button" className="btn btn-ghost text-xs" onClick={() => addLot(r.id)}>
+                              + Add lot
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="tabular-nums align-top">{outstanding}</td>
+                      <td className="align-top">
+                        <input
+                          className="input py-1.5"
+                          type="number"
+                          min={0}
+                          step="any"
+                          value={state.receivedQty}
+                          onChange={(e) => {
+                            const vq = e.target.value;
+                            setReceiveRows((prev) => ({ ...prev, [r.id]: { ...(prev[r.id] || { lots: [] }), receivedQty: vq } }));
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <button className="btn btn-ghost" onClick={() => setReceiveOpen(false)}>
             Cancel
           </button>
-          <button className="btn btn-primary" disabled={receive.isPending || !receiveLocationId} onClick={() => receive.mutate()}>
+          <button className="btn btn-primary" disabled={receive.isPending || !canSubmitReceive()} onClick={() => receive.mutate()}>
             {receive.isPending ? "Receiving…" : "Confirm receive"}
           </button>
         </div>

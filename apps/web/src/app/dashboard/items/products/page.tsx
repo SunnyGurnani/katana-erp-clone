@@ -12,7 +12,7 @@ import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { Pencil, Trash2, Eye } from "lucide-react";
 import Link from "next/link";
 
-const blank = { name: "", sku: "", description: "", category: "", salesPrice: "", purchasePrice: "", trackLots: false, trackExpiry: false };
+const blank = { name: "", sku: "", description: "", category: "", salesPrice: "", purchasePrice: "", trackLotsAndExpiry: false };
 
 export default function ProductsPage() {
   const qc = useQueryClient();
@@ -58,8 +58,7 @@ export default function ProductsPage() {
       category: p.category || "",
       salesPrice: p.salesPrice?.toString() || "",
       purchasePrice: p.purchasePrice?.toString() || "",
-      trackLots: !!p.trackLots,
-      trackExpiry: !!p.trackExpiry,
+      trackLotsAndExpiry: !!p.trackLotsAndExpiry,
     });
     setOpen(true);
   }
@@ -103,8 +102,7 @@ export default function ProductsPage() {
       header: "Tracking", 
       render: (r: any) => {
         const badges = [];
-        if (r.trackLots) badges.push("Lots");
-        if (r.trackExpiry) badges.push("Expiry");
+        if (r.trackLotsAndExpiry) badges.push("Lots + Expiry");
         return badges.length > 0 ? badges.join(", ") : "—";
       }
     },
@@ -167,17 +165,26 @@ export default function ProductsPage() {
           <div><label className="label">Sales Price</label><input className="input" type="number" step="0.01" value={form.salesPrice} onChange={e => setForm(f => ({ ...f, salesPrice: e.target.value }))} /></div>
           <div><label className="label">Purchase Price</label><input className="input" type="number" step="0.01" value={form.purchasePrice} onChange={e => setForm(f => ({ ...f, purchasePrice: e.target.value }))} /></div>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={!!form.trackLots} onChange={e => setForm(f => ({ ...f, trackLots: e.target.checked }))} />
-            Enable lot number tracking
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={!!form.trackExpiry} onChange={e => setForm(f => ({ ...f, trackExpiry: e.target.checked }))} />
-            Enable expiry date tracking
+            <input
+              type="checkbox"
+              checked={!!form.trackLotsAndExpiry}
+              onChange={e => setForm(f => ({ ...f, trackLotsAndExpiry: e.target.checked }))}
+            />
+            Enable Lot Tracking + Expiry Date Tracking
           </label>
         </div>
         <div className="flex justify-end gap-2 mt-5">
           <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
-          <button className="btn btn-primary" disabled={save.isPending} onClick={() => save.mutate(form)}>
+          <button
+            className="btn btn-primary"
+            disabled={save.isPending}
+            onClick={() =>
+              save.mutate({
+                ...form,
+                trackLotsAndExpiry: !!form.trackLotsAndExpiry,
+              })
+            }
+          >
             {save.isPending ? "Saving..." : "Save"}
           </button>
         </div>
