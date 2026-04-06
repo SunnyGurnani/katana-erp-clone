@@ -7,7 +7,7 @@ import { SkeletonRows } from "@/components/ui/Skeleton";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { ArrowLeft, Plus, Truck, Trash2, Copy, Save, FileDown, X } from "lucide-react";
+import { ArrowLeft, Plus, Truck, Trash2, Copy, Save, FileDown, X, Package } from "lucide-react";
 import Link from "next/link";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { productVariantOptions, locationOptions, customerOptions } from "@/lib/catalogOptions";
@@ -26,6 +26,7 @@ export default function SODetailPage() {
   const { addToast } = useToast();
   const [rowOpen, setRowOpen] = useState(false);
   const [fulfillOpen, setFulfillOpen] = useState(false);
+  const [pickOpen, setPickOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [variantId, setVariantId] = useState("");
   const [qty, setQty] = useState("");
@@ -33,6 +34,10 @@ export default function SODetailPage() {
   const [fulfillLocationId, setFulfillLocationId] = useState("");
   const [shipFromOneLocation, setShipFromOneLocation] = useState(false);
   const [fulfillRowsQty, setFulfillRowsQty] = useState<Record<string, string>>({});
+  const [pickRowsQty, setPickRowsQty] = useState<Record<string, string>>({});
+  const [pickError, setPickError] = useState("");
+  const [shipFromOneLocationPick, setShipFromOneLocationPick] = useState(false);
+  const [pickLocationId, setPickLocationId] = useState("");
   const [fulfillCarrier, setFulfillCarrier] = useState("");
   const [fulfillTracking, setFulfillTracking] = useState("");
   const [fulfillShipMethod, setFulfillShipMethod] = useState("");
@@ -44,6 +49,16 @@ export default function SODetailPage() {
   const [lineFulfillQty, setLineFulfillQty] = useState("");
   const [lineFulfillBatchId, setLineFulfillBatchId] = useState("");
   const [lineFulfillError, setLineFulfillError] = useState("");
+  const [linePickOpen, setLinePickOpen] = useState(false);
+  const [linePickRowId, setLinePickRowId] = useState("");
+  const [linePickQty, setLinePickQty] = useState("");
+  const [linePickBatchId, setLinePickBatchId] = useState("");
+  const [linePickError, setLinePickError] = useState("");
+  const [lineReleaseOpen, setLineReleaseOpen] = useState(false);
+  const [lineReleaseRowId, setLineReleaseRowId] = useState("");
+  const [lineReleaseQty, setLineReleaseQty] = useState("");
+  const [lineReleaseBatchId, setLineReleaseBatchId] = useState("");
+  const [lineReleaseError, setLineReleaseError] = useState("");
   const [editingRowId, setEditingRowId] = useState("");
   const [editingRowForm, setEditingRowForm] = useState<{
     qty: string;
@@ -75,10 +90,16 @@ export default function SODetailPage() {
   const { data: products } = useQuery({ queryKey: ["products"], queryFn: () => api.get("/products").then(r => r.data.data) });
   const { data: locations } = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data.data) });
   const { data: customers } = useQuery({ queryKey: ["customers"], queryFn: () => api.get("/customers").then(r => r.data.data) });
+  const lineBatchRowId = linePickOpen
+    ? linePickRowId
+    : lineFulfillOpen
+      ? lineFulfillRowId
+      : lineReleaseRowId;
+  const lineBatchModalOpen = linePickOpen || lineFulfillOpen || lineReleaseOpen;
   const { data: lineBatchOptions, isFetching: lineBatchesLoading } = useQuery({
-    queryKey: ["line-batches", orderId, lineFulfillRowId],
-    enabled: Boolean(orderId && lineFulfillRowId && lineFulfillOpen),
-    queryFn: () => api.get(`/sales-orders/${orderId}/rows/${lineFulfillRowId}/available-batches`).then((r) => r.data),
+    queryKey: ["line-batches", orderId, lineBatchRowId],
+    enabled: Boolean(orderId && lineBatchRowId && lineBatchModalOpen),
+    queryFn: () => api.get(`/sales-orders/${orderId}/rows/${lineBatchRowId}/available-batches`).then((r) => r.data),
   });
 
   const variantOpts = useMemo(() => productVariantOptions(products), [products]);
@@ -120,6 +141,53 @@ export default function SODetailPage() {
         err?.response?.data?.issues?.[0]?.message ||
         "Error adding row";
       addToast(typeof msg === "string" ? msg : "Error adding row", "error");
+    },
+  });
+
+  const pick = useMutation({
+    mutationFn: (payload: {
+      rows: { rowId: string; qty: number; batchId?: string; locationId?: string }[];
+    }) => api.post(`/sales-orders/${orderId}/pick`, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["so", orderId] });
+      qc.invalidateQueries({ queryKey: ["inventory-levels"] });
+      qc.invalidateQueries({ queryKey: ["line-batches", orderId] });
+      addToast("Pick recorded (stock allocated)", "success");
+      setPickOpen(false);
+      setPickError("");
+      setLinePickOpen(false);
+      setLinePickRowId("");
+      setLinePickQty("");
+      setLinePickBatchId("");
+      setLinePickError("");
+    },
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.error ||
+        (Array.isArray(err?.response?.data?.issues) && err.response.data.issues[0]?.message) ||
+        "Error picking";
+      addToast(typeof msg === "string" ? msg : "Error picking", "error");
+    },
+  });
+
+  const releasePick = useMutation({
+    mutationFn: (payload: {
+      rows: { rowId: string; qty: number; batchId?: string; locationId?: string }[];
+    }) => api.post(`/sales-orders/${orderId}/release-pick`, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["so", orderId] });
+      qc.invalidateQueries({ queryKey: ["inventory-levels"] });
+      qc.invalidateQueries({ queryKey: ["line-batches", orderId] });
+      addToast("Pick released", "success");
+      setLineReleaseOpen(false);
+      setLineReleaseRowId("");
+      setLineReleaseQty("");
+      setLineReleaseBatchId("");
+      setLineReleaseError("");
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.error || "Could not release pick";
+      addToast(typeof msg === "string" ? msg : "Could not release pick", "error");
     },
   });
 
@@ -267,12 +335,25 @@ export default function SODetailPage() {
   }
   if (!so) return <div className="p-6 text-gray-500">SO not found.</div>;
 
+  function rowRemPick(r: any) {
+    const remShip = Number(r.qty) - Number(r.fulfilledQty || 0);
+    const picked = Number(r.pickedQty ?? 0);
+    return Math.max(0, remShip - picked);
+  }
+  function rowMaxShip(r: any) {
+    const remShip = Number(r.qty) - Number(r.fulfilledQty || 0);
+    const picked = Number(r.pickedQty ?? 0);
+    if (picked <= 0) return remShip;
+    return Math.min(picked, remShip);
+  }
+
   const st = String(so.status || "").toLowerCase();
   const displayStatus =
     st === "draft" ? "Draft" : st === "fulfilled" || st === "cancelled" ? "Done" : "Confirmed";
   const hasLines = (so.rows?.length ?? 0) > 0;
   const canFulfill = hasLines && ["confirmed", "partial", "sent"].includes(st);
   const hasOutboundFulfillment = (so.rows || []).some((r: any) => Number(r.fulfilledQty || 0) > 0);
+  const hasPickedLines = (so.rows || []).some((r: any) => Number(r.pickedQty ?? 0) > 0);
   const canRevertFulfillment =
     hasOutboundFulfillment && (st === "fulfilled" || st === "partial");
   const canConfirmFromDraft = st === "draft";
@@ -308,7 +389,7 @@ export default function SODetailPage() {
       return `All sites: ${Number(s.onHand)} on hand · ${Number(s.available)} avail`;
     }
     const bits = [`${Number(s.onHand)} on hand`, `${Number(s.available)} avail`];
-    if (Number(s.allocated) > 0) bits.push(`${Number(s.allocated)} reserved`);
+    if (Number(s.allocated) > 0) bits.push(`${Number(s.allocated)} allocated`);
     return bits.join(" · ");
   }
 
@@ -373,6 +454,21 @@ export default function SODetailPage() {
     });
   }
 
+  function openPickModal() {
+    setPickError("");
+    const rows = (so.rows || []).filter((r: any) => rowRemPick(r) > 0 && r.variantId);
+    const initQty: Record<string, string> = {};
+    rows.forEach((r: any) => {
+      initQty[r.id] = String(rowRemPick(r));
+    });
+    const eff = rows.map((r: any) => r.locationId || so.locationId || "");
+    const uniq = [...new Set(eff.filter(Boolean))];
+    const missingLoc = rows.some((r: any) => !(r.locationId || so.locationId));
+    setShipFromOneLocationPick(!missingLoc && uniq.length === 1);
+    setPickLocationId(!missingLoc && uniq.length === 1 ? String(uniq[0]) : "");
+    setPickOpen(true);
+  }
+
   function openFulfillModal() {
     setFulfillError("");
     const rows = (so.rows || []).filter((r: any) => {
@@ -381,7 +477,7 @@ export default function SODetailPage() {
     });
     const initQty: Record<string, string> = {};
     rows.forEach((r: any) => {
-      initQty[r.id] = String(Number(r.qty) - Number(r.fulfilledQty || 0));
+      initQty[r.id] = String(rowMaxShip(r));
     });
     setFulfillRowsQty(initQty);
     const eff = rows.map((r: any) => r.locationId || so.locationId || "");
@@ -392,14 +488,68 @@ export default function SODetailPage() {
     setFulfillOpen(true);
   }
 
+  function openLinePickModal(row: any) {
+    const rp = rowRemPick(row);
+    if (rp <= 0 || !row.variantId) return;
+    setLinePickError("");
+    setLinePickRowId(row.id);
+    setLinePickQty(String(rp));
+    setLinePickBatchId("");
+    setLinePickOpen(true);
+  }
+
   function openLineFulfillModal(row: any) {
     const rem = Number(row.qty) - Number(row.fulfilledQty || 0);
     if (rem <= 0 || !row.variantId) return;
     setLineFulfillError("");
     setLineFulfillRowId(row.id);
-    setLineFulfillQty(String(rem));
+    setLineFulfillQty(String(rowMaxShip(row)));
     setLineFulfillBatchId("");
     setLineFulfillOpen(true);
+  }
+
+  function submitLinePick() {
+    const row = (so.rows || []).find((r: any) => r.id === linePickRowId);
+    if (!row?.variantId) {
+      setLinePickError("Invalid line.");
+      return;
+    }
+    const maxP = rowRemPick(row);
+    const q = Number(linePickQty);
+    if (!Number.isFinite(q) || q <= 0) {
+      setLinePickError("Enter a valid quantity.");
+      addToast("Enter quantity to pick.", "error");
+      return;
+    }
+    if (q > maxP) {
+      setLinePickError(`Cannot exceed ${maxP} remaining to pick on this line.`);
+      return;
+    }
+    const loc = row.locationId || so.locationId;
+    if (!loc) {
+      setLinePickError("Set a ship-from location on the line or order.");
+      addToast("Location required.", "error");
+      return;
+    }
+    const track = Boolean(row.trackLotsAndExpiry);
+    if (track) {
+      if (!linePickBatchId) {
+        setLinePickError("Select a lot with pickable quantity.");
+        addToast("Select a lot.", "error");
+        return;
+      }
+    }
+    setLinePickError("");
+    pick.mutate({
+      rows: [
+        {
+          rowId: row.id,
+          qty: q,
+          locationId: loc,
+          ...(track && linePickBatchId ? { batchId: linePickBatchId } : {}),
+        },
+      ],
+    });
   }
 
   function submitLineFulfill() {
@@ -409,14 +559,19 @@ export default function SODetailPage() {
       return;
     }
     const rem = Number(row.qty) - Number(row.fulfilledQty || 0);
+    const maxS = rowMaxShip(row);
     const q = Number(lineFulfillQty);
     if (!Number.isFinite(q) || q <= 0) {
       setLineFulfillError("Enter a valid quantity.");
       addToast("Enter quantity to ship.", "error");
       return;
     }
-    if (q > rem) {
-      setLineFulfillError(`Cannot exceed ${rem} remaining on this line.`);
+    if (q > maxS) {
+      setLineFulfillError(
+        Number(row.pickedQty ?? 0) > 0
+          ? `Cannot exceed ${maxS} (picked ready to ship) on this line.`
+          : `Cannot exceed ${rem} remaining on this line.`,
+      );
       return;
     }
     const loc = row.locationId || so.locationId;
@@ -452,18 +607,71 @@ export default function SODetailPage() {
     });
   }
 
+  function submitPick() {
+    const rowsPayload: { rowId: string; qty: number; locationId?: string }[] = [];
+    for (const r of so.rows || []) {
+      if (r.trackLotsAndExpiry && rowRemPick(r) > 0) {
+        setPickError("Lot-tracked lines must be picked one at a time (use Pick on the row to choose a lot).");
+        addToast("Use line pick for lot-tracked products.", "error");
+        return;
+      }
+      const maxP = rowRemPick(r);
+      if (maxP <= 0 || !r.variantId) continue;
+      const raw = pickRowsQty[r.id];
+      const q = raw === undefined || raw === "" ? maxP : Number(raw);
+      if (!Number.isFinite(q) || q <= 0) continue;
+      if (q > maxP) {
+        const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
+        const lab = v?.sku || v?.product?.name || r.description || "line";
+        setPickError(`Pick quantity for ${lab} cannot exceed ${maxP}.`);
+        addToast(`Check pick quantities (${lab}).`, "error");
+        return;
+      }
+      rowsPayload.push({ rowId: r.id, qty: q });
+    }
+    if (!rowsPayload.length) {
+      setPickError("Enter at least one positive quantity to pick.");
+      addToast("Enter pick quantities.", "error");
+      return;
+    }
+    if (shipFromOneLocationPick) {
+      const loc = pickLocationId || so.locationId;
+      if (!loc) {
+        setPickError("Select a location (or set an order default).");
+        addToast("Select location.", "error");
+        return;
+      }
+    }
+    setPickError("");
+    const payload: {
+      rows: { rowId: string; qty: number; locationId?: string; batchId?: string }[];
+    } = { rows: rowsPayload };
+    if (shipFromOneLocationPick) {
+      payload.rows = rowsPayload.map((row) => ({
+        ...row,
+        locationId: pickLocationId || so.locationId || undefined,
+      }));
+    }
+    pick.mutate(payload);
+  }
+
   function submitFulfill() {
     const rowsPayload: { rowId: string; qty: number }[] = [];
     for (const r of so.rows || []) {
       const rem = Number(r.qty) - Number(r.fulfilledQty || 0);
+      const maxS = rowMaxShip(r);
       if (rem <= 0 || !r.variantId) continue;
       const raw = fulfillRowsQty[r.id];
-      const q = raw === undefined || raw === "" ? rem : Number(raw);
+      const q = raw === undefined || raw === "" ? maxS : Number(raw);
       if (!Number.isFinite(q) || q <= 0) continue;
-      if (q > rem) {
+      if (q > maxS) {
         const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
         const lab = v?.sku || v?.product?.name || r.description || "line";
-        setFulfillError(`Quantity for ${lab} cannot exceed ${rem} (remaining).`);
+        setFulfillError(
+          Number(r.pickedQty ?? 0) > 0
+            ? `Quantity for ${lab} cannot exceed ${maxS} (picked ready to ship).`
+            : `Quantity for ${lab} cannot exceed ${rem} (remaining).`,
+        );
         addToast(`Check quantities (${lab}).`, "error");
         return;
       }
@@ -499,6 +707,55 @@ export default function SODetailPage() {
     fulfill.mutate(payload);
   }
 
+  function submitLineRelease() {
+    const row = (so.rows || []).find((r: any) => r.id === lineReleaseRowId);
+    if (!row?.variantId) {
+      setLineReleaseError("Invalid line.");
+      return;
+    }
+    const picked = Number(row.pickedQty ?? 0);
+    const q = Number(lineReleaseQty);
+    if (!Number.isFinite(q) || q <= 0) {
+      setLineReleaseError("Enter a valid quantity.");
+      addToast("Enter quantity to unpick.", "error");
+      return;
+    }
+    if (q > picked) {
+      setLineReleaseError(`Cannot exceed ${picked} picked on this line.`);
+      return;
+    }
+    const loc = row.locationId || so.locationId;
+    if (!loc) {
+      setLineReleaseError("Set a ship-from location on the line or order.");
+      addToast("Location required.", "error");
+      return;
+    }
+    const track = Boolean(row.trackLotsAndExpiry);
+    if (track) {
+      if (!lineReleaseBatchId) {
+        setLineReleaseError("Select the lot to unpick from.");
+        addToast("Select a lot.", "error");
+        return;
+      }
+      const b = lineBatchOptions?.batches?.find((x: { batchId: string }) => x.batchId === lineReleaseBatchId);
+      if (!b || Number(b.allocated) < q) {
+        setLineReleaseError("That lot does not have enough picked quantity to release.");
+        return;
+      }
+    }
+    setLineReleaseError("");
+    releasePick.mutate({
+      rows: [
+        {
+          rowId: row.id,
+          qty: q,
+          locationId: loc,
+          ...(track && lineReleaseBatchId ? { batchId: lineReleaseBatchId } : {}),
+        },
+      ],
+    });
+  }
+
   return (
     <div className="px-4 py-3 space-y-4">
       <div className="flex items-center gap-3">
@@ -519,6 +776,10 @@ export default function SODetailPage() {
               addToast("Revert fulfillment before deleting this order.", "error");
               return;
             }
+            if (hasPickedLines) {
+              addToast("Release pick or ship picked lines before deleting this order.", "error");
+              return;
+            }
             if (window.confirm("Delete this sales order? This cannot be undone.")) deleteSO.mutate();
           }}
         >
@@ -537,8 +798,13 @@ export default function SODetailPage() {
           </button>
         )}
         {canFulfill && (
+          <button type="button" className="btn btn-ghost" onClick={openPickModal}>
+            <Package size={15} />Pick
+          </button>
+        )}
+        {canFulfill && (
           <button type="button" className="btn btn-primary" onClick={openFulfillModal}>
-            <Truck size={15} />Fulfill
+            <Truck size={15} />Ship
           </button>
         )}
         {canRevertFulfillment && (
@@ -547,7 +813,12 @@ export default function SODetailPage() {
             className="btn btn-ghost text-sm text-amber-800 border border-amber-200"
             disabled={revertFulfillment.isPending}
             onClick={() => {
-              if (window.confirm("Revert fulfillment? On-hand stock will be increased by the quantities that were shipped.")) revertFulfillment.mutate();
+              if (
+                window.confirm(
+                  "Revert shipment? On-hand stock will be restored; picked (allocated) stock is restored for shipments that were shipped from pick.",
+                )
+              )
+                revertFulfillment.mutate();
             }}
           >
             Revert fulfillment
@@ -596,7 +867,8 @@ export default function SODetailPage() {
               <th>In stock</th>
               <th>Qty</th>
               <th>Sale Price</th>
-              <th>Fulfilled</th>
+              <th>Picked</th>
+              <th>Shipped</th>
               <th>Line Total</th>
               <th className="text-right">Actions</th>
             </tr>
@@ -607,6 +879,8 @@ export default function SODetailPage() {
                 {(() => {
                   const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
                   const rem = Number(r.qty) - Number(r.fulfilledQty || 0);
+                  const picked = Number(r.pickedQty ?? 0);
+                  const remPick = rowRemPick(r);
                   const currentVariantId =
                     editingRowId === r.id && st === "draft"
                       ? editingRowForm.variantId
@@ -696,16 +970,41 @@ export default function SODetailPage() {
                           </>
                         )}
                       </td>
-                      <td>{r.fulfilledQty || 0}</td>
+                      <td className="text-sm tabular-nums">{picked}</td>
+                      <td className="text-sm tabular-nums">{r.fulfilledQty || 0}</td>
                       <td>{(Number(r.qty) * Number(r.salePrice || 0)).toFixed(2)} {so.currency || "USD"}</td>
                       <td className="text-right whitespace-nowrap">
+                        {canFulfill && r.variantId && remPick > 0 && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost text-xs mr-1"
+                            onClick={() => openLinePickModal(r)}
+                          >
+                            <Package size={13} className="inline mr-0.5" />Pick
+                          </button>
+                        )}
+                        {canFulfill && r.variantId && picked > 0 && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost text-xs mr-1"
+                            onClick={() => {
+                              setLineReleaseError("");
+                              setLineReleaseRowId(r.id);
+                              setLineReleaseQty(String(picked));
+                              setLineReleaseBatchId("");
+                              setLineReleaseOpen(true);
+                            }}
+                          >
+                            Unpick
+                          </button>
+                        )}
                         {canFulfill && r.variantId && rem > 0 && (
                           <button
                             type="button"
                             className="btn btn-ghost text-xs mr-1"
                             onClick={() => openLineFulfillModal(r)}
                           >
-                            <Truck size={13} className="inline mr-0.5" />Ship line
+                            <Truck size={13} className="inline mr-0.5" />Ship
                           </button>
                         )}
                         {st === "draft" && (
@@ -730,7 +1029,7 @@ export default function SODetailPage() {
                 })()}
               </tr>
             ))}
-            {!so.rows?.length && <tr><td colSpan={10} className="text-center text-gray-400 py-8">No line items yet</td></tr>}
+            {!so.rows?.length && <tr><td colSpan={11} className="text-center text-gray-400 py-8">No line items yet</td></tr>}
           </tbody>
         </table>
       </div>
@@ -818,6 +1117,179 @@ export default function SODetailPage() {
       </Modal>
 
       <Modal
+        open={linePickOpen}
+        onClose={() => {
+          setLinePickOpen(false);
+          setLinePickRowId("");
+          setLinePickError("");
+        }}
+        title="Pick this line"
+      >
+        {(() => {
+          const pkRow = (so.rows || []).find((r: any) => r.id === linePickRowId);
+          const needLot = Boolean(pkRow?.trackLotsAndExpiry);
+          const selectedLot = lineBatchOptions?.batches?.find((b: { batchId: string }) => b.batchId === linePickBatchId);
+          return (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">
+                {pkRow
+                  ? (() => {
+                      const v = pkRow.variant || (pkRow.variantId ? variantById.get(pkRow.variantId) : undefined);
+                      return v?.product?.name || v?.sku || pkRow.description || "Line";
+                    })()
+                  : "—"}
+              </p>
+              <p className="text-xs text-gray-500">
+                Picking increases warehouse <strong>allocated</strong> for this quantity (physically still on hand until you ship).
+              </p>
+              <div>
+                <label className="label">Quantity to pick</label>
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={linePickQty}
+                  onChange={(e) => setLinePickQty(e.target.value)}
+                />
+                <p className="text-xs text-gray-500 mt-1">Location: {pkRow ? lineLocationLabel(pkRow) : "—"}</p>
+              </div>
+              {needLot && (
+                <div className="space-y-2">
+                  <label className="label">Lot / batch</label>
+                  {lineBatchesLoading ? (
+                    <p className="text-sm text-gray-500">Loading lots…</p>
+                  ) : (
+                    <select
+                      className="input"
+                      value={linePickBatchId}
+                      onChange={(e) => setLinePickBatchId(e.target.value)}
+                      aria-label="Lot or batch for pick"
+                    >
+                      <option value="">— Select lot —</option>
+                      {(lineBatchOptions?.batches ?? []).map(
+                        (b: {
+                          batchId: string;
+                          batchNumber: string;
+                          onHand: number;
+                          pickable?: number;
+                          expiryDate?: string | null;
+                        }) => {
+                          const pickable = Number(b.pickable ?? Math.max(0, Number(b.onHand)));
+                          return (
+                            <option key={b.batchId} value={b.batchId}>
+                              {b.batchNumber} · {pickable} pickable
+                              {b.expiryDate ? ` · exp ${formatLocalDateDisplay(b.expiryDate)}` : ""}
+                            </option>
+                          );
+                        },
+                      )}
+                    </select>
+                  )}
+                  <div>
+                    <label className="label">Expiry (from lot)</label>
+                    <input
+                      className="input bg-gray-50"
+                      readOnly
+                      value={selectedLot?.expiryDate ? formatLocalDateDisplay(selectedLot.expiryDate) : "—"}
+                    />
+                  </div>
+                </div>
+              )}
+              {linePickError && <p className="text-sm text-red-600">{linePickError}</p>}
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setLinePickOpen(false);
+                    setLinePickRowId("");
+                    setLinePickError("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-primary" disabled={pick.isPending} onClick={submitLinePick}>
+                  {pick.isPending ? "Picking…" : "Confirm pick"}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      <Modal
+        open={lineReleaseOpen}
+        onClose={() => {
+          setLineReleaseOpen(false);
+          setLineReleaseRowId("");
+          setLineReleaseError("");
+        }}
+        title="Unpick this line"
+      >
+        {(() => {
+          const relRow = (so.rows || []).find((r: any) => r.id === lineReleaseRowId);
+          const needLot = Boolean(relRow?.trackLotsAndExpiry);
+          return (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">
+                Releases warehouse allocation and reduces the line&apos;s picked quantity.
+              </p>
+              <div>
+                <label className="label">Quantity to unpick</label>
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={lineReleaseQty}
+                  onChange={(e) => setLineReleaseQty(e.target.value)}
+                />
+              </div>
+              {needLot && (
+                <div>
+                  <label className="label">Lot to unpick from</label>
+                  {lineBatchesLoading ? (
+                    <p className="text-sm text-gray-500">Loading lots…</p>
+                  ) : (
+                    <select
+                      className="input"
+                      value={lineReleaseBatchId}
+                      onChange={(e) => setLineReleaseBatchId(e.target.value)}
+                      aria-label="Lot for unpick"
+                    >
+                      <option value="">— Select lot —</option>
+                      {(lineBatchOptions?.batches ?? [])
+                        .filter((b: { allocated?: number }) => Number(b.allocated) > 0)
+                        .map((b: { batchId: string; batchNumber: string; allocated?: number }) => (
+                          <option key={b.batchId} value={b.batchId}>
+                            {b.batchNumber} · {Number(b.allocated)} picked in lot
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                </div>
+              )}
+              {lineReleaseError && <p className="text-sm text-red-600">{lineReleaseError}</p>}
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" className="btn btn-ghost" onClick={() => setLineReleaseOpen(false)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={releasePick.isPending}
+                  onClick={submitLineRelease}
+                >
+                  {releasePick.isPending ? "Releasing…" : "Confirm"}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      <Modal
         open={lineFulfillOpen}
         onClose={() => {
           setLineFulfillOpen(false);
@@ -865,12 +1337,21 @@ export default function SODetailPage() {
                       aria-label="Lot or batch"
                     >
                       <option value="">— Select lot —</option>
-                      {(lineBatchOptions?.batches ?? []).map((b: { batchId: string; batchNumber: string; onHand: number; expiryDate?: string | null }) => (
-                        <option key={b.batchId} value={b.batchId}>
-                          {b.batchNumber} · {Number(b.onHand)} avail
-                          {b.expiryDate ? ` · exp ${formatLocalDateDisplay(b.expiryDate)}` : ""}
-                        </option>
-                      ))}
+                      {(lineBatchOptions?.batches ?? []).map(
+                        (b: {
+                          batchId: string;
+                          batchNumber: string;
+                          onHand: number;
+                          allocated?: number;
+                          expiryDate?: string | null;
+                        }) => (
+                          <option key={b.batchId} value={b.batchId}>
+                            {b.batchNumber} · {Number(b.onHand)} on hand
+                            {Number(b.allocated) > 0 ? ` · ${Number(b.allocated)} picked` : ""}
+                            {b.expiryDate ? ` · exp ${formatLocalDateDisplay(b.expiryDate)}` : ""}
+                          </option>
+                        ),
+                      )}
                     </select>
                   )}
                   <div>
@@ -882,7 +1363,7 @@ export default function SODetailPage() {
                     />
                   </div>
                   <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded px-2 py-1.5">
-                    This product is set to track lots and expiry — you must ship from a batch that has stock at the line&apos;s location.
+                    Lot-tracked: ship from the lot that has picked quantity (or on-hand if you ship without a prior pick on this line).
                   </p>
                 </div>
               )}
@@ -906,6 +1387,103 @@ export default function SODetailPage() {
             </div>
           );
         })()}
+      </Modal>
+
+      <Modal open={pickOpen} onClose={() => { setPickOpen(false); setPickError(""); }} title="Pick order">
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+          <p className="text-sm text-gray-600">
+            Allocate stock for packing (increases <strong>allocated</strong> at the warehouse). Ship in a separate step.
+          </p>
+          <label className="flex items-start gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={shipFromOneLocationPick}
+              onChange={(e) => {
+                setShipFromOneLocationPick(e.target.checked);
+                setPickError("");
+              }}
+            />
+            <span>
+              <span className="font-medium">Pick all lines from one location</span>
+              <span className="block text-xs text-gray-500 mt-0.5">
+                Off (default): each line uses its line-level or order default location.
+              </span>
+            </span>
+          </label>
+          {shipFromOneLocationPick && (
+            <div>
+              <label className="label">Pick from location</label>
+              <SearchableSelect
+                value={pickLocationId}
+                onChange={(v) => {
+                  setPickLocationId(v);
+                  setPickError("");
+                }}
+                options={locOpts}
+                placeholder="Search locations…"
+                emptyOptionLabel={so.locationId ? "— Use order default —" : "— Select —"}
+                aria-label="Pick from location"
+              />
+            </div>
+          )}
+          <div>
+            <p className="label mb-2">Quantities to pick</p>
+            <table className="table text-sm">
+              <thead>
+                <tr>
+                  <th>Line</th>
+                  <th>Location</th>
+                  <th>Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(so.rows || []).map((r: any) => {
+                  const maxP = rowRemPick(r);
+                  if (maxP <= 0 || !r.variantId) return null;
+                  const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
+                  const lab = v?.sku || v?.product?.name || r.description || "—";
+                  const from = lineLocationLabel(r);
+                  if (r.trackLotsAndExpiry) {
+                    return (
+                      <tr key={r.id}>
+                        <td colSpan={3} className="text-xs text-amber-900 bg-amber-50">
+                          <span className="font-medium">{lab}</span> — lot-tracked: use <strong>Pick</strong> on the row to select a lot.
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return (
+                    <tr key={r.id}>
+                      <td className="max-w-[140px] truncate">{lab}</td>
+                      <td className="text-gray-600 text-xs max-w-[120px]">{from}</td>
+                      <td className="w-24">
+                        <input
+                          className="input py-1 text-sm"
+                          type="number"
+                          min={0}
+                          step="any"
+                          value={pickRowsQty[r.id] ?? String(maxP)}
+                          onChange={(e) => setPickRowsQty((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <p className="text-xs text-gray-500 mt-1">Defaults fill remaining quantity to pick per line (ordered minus shipped minus already picked).</p>
+          </div>
+          {pickError && <p className="text-sm text-red-600">{pickError}</p>}
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button type="button" className="btn btn-ghost" onClick={() => { setPickOpen(false); setPickError(""); }}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary" disabled={pick.isPending} onClick={submitPick}>
+            {pick.isPending ? "Picking…" : "Confirm pick"}
+          </button>
+        </div>
       </Modal>
 
       <Modal open={fulfillOpen} onClose={() => { setFulfillOpen(false); setFulfillError(""); }} title="Ship order">
@@ -953,6 +1531,7 @@ export default function SODetailPage() {
               <tbody>
                 {(so.rows || []).map((r: any) => {
                   const rem = Number(r.qty) - Number(r.fulfilledQty || 0);
+                  const maxS = rowMaxShip(r);
                   if (rem <= 0 || !r.variantId) return null;
                   const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
                   const lab = v?.sku || v?.product?.name || r.description || "—";
@@ -967,7 +1546,7 @@ export default function SODetailPage() {
                           type="number"
                           min={0}
                           step="any"
-                          value={fulfillRowsQty[r.id] ?? String(rem)}
+                          value={fulfillRowsQty[r.id] ?? String(maxS)}
                           onChange={(e) => setFulfillRowsQty((prev) => ({ ...prev, [r.id]: e.target.value }))}
                         />
                       </td>
@@ -976,7 +1555,9 @@ export default function SODetailPage() {
                 })}
               </tbody>
             </table>
-            <p className="text-xs text-gray-500 mt-1">Leave default to ship the full remaining quantity, or lower for a partial shipment.</p>
+            <p className="text-xs text-gray-500 mt-1">
+              If the line has picked quantity, default ship qty is capped by picked (ready to ship). Otherwise it is the full remaining open qty.
+            </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
@@ -1039,6 +1620,11 @@ export default function SODetailPage() {
             </select>
             {hasOutboundFulfillment && (
               <p className="text-xs text-amber-800 mt-1">Status is limited while lines have fulfilled quantity. Use Revert fulfillment to go back to draft/confirmed.</p>
+            )}
+            {hasPickedLines && !hasOutboundFulfillment && (
+              <p className="text-xs text-amber-800 mt-1">
+                Lines have picked (allocated) quantity. Unpick or ship before moving this order back to draft/confirmed.
+              </p>
             )}
           </div>
           <div><label className="label">Due Date</label><input className="input" type="date" value={editForm.dueAt} onChange={e => setEditForm(f => ({ ...f, dueAt: e.target.value }))} /></div>

@@ -68,6 +68,21 @@ describe('Inventory integration', () => {
       pageSize: 10,
     });
     expect(typeof res.body.meta.total).toBe('number');
+    if (res.body.data.length > 0) {
+      const row = res.body.data[0];
+      expect(row).toHaveProperty('variantId');
+      expect(row).toHaveProperty('variant');
+      expect(row).toHaveProperty('levels');
+      expect(Array.isArray(row.levels)).toBe(true);
+      expect(row).toHaveProperty('totalOnHand');
+      expect(row).toHaveProperty('totalAllocated');
+      expect(row).toHaveProperty('totalCommitted');
+      expect(row).toHaveProperty('totalExpected');
+      expect(row).toHaveProperty('totalCommittedSalesOrder');
+      expect(row).toHaveProperty('totalCommittedManufacturingOrder');
+      expect(row).toHaveProperty('totalCommittedTransferOrder');
+      expect(row).toHaveProperty('totalAvailable');
+    }
   });
 
   it('GET /inventory/movements returns movements for filters', async () => {

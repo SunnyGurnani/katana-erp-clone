@@ -91,7 +91,7 @@ echo ""
 echo "━━━ 6. INVENTORY LEVELS ━━━"
 INV=$(curl -s $BASE/inventory/levels -H "$H")
 INV_COUNT=$(py "import sys,json; d=json.load(sys.stdin); print(len(d.get('data',[])))" <<< "$INV")
-check "GET /inventory/levels → list" "true" "$(py "import sys,json; d=json.load(sys.stdin); print('true' if isinstance(d.get('data',[]),list) else 'false')" <<< "$INV")"; echo "    ($INV_COUNT levels)"
+check "GET /inventory/levels → list" "true" "$(py "import sys,json; d=json.load(sys.stdin); print('true' if isinstance(d.get('data',[]),list) else 'false')" <<< "$INV")"; echo "    ($INV_COUNT variants)"
 MOVS=$(curl -s $BASE/inventory/movements -H "$H")
 MOV_COUNT=$(py "import sys,json; d=json.load(sys.stdin); print(len(d.get('data',[])))" <<< "$MOVS")
 check "GET /inventory/movements → list" "true" "$(py "import sys,json; d=json.load(sys.stdin); print('true' if isinstance(d.get('data',[]),list) else 'false')" <<< "$MOVS")"; echo "    ($MOV_COUNT movements)"
@@ -109,11 +109,11 @@ check "POST /purchase-orders → id" "true" "$([ -n "$PO_ID" ] && echo true || e
 ADD_ROW_RESP=$(curl -s -X POST $BASE/purchase-orders/$PO_ID/rows -H "$H" -H "Content-Type: application/json" -d "{\"variantId\":\"$FIRST_PROD_VAR\",\"qty\":10,\"unitCost\":2.50}")
 ROW_ID=$(py "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" <<< "$ADD_ROW_RESP")
 check "POST /purchase-orders/:id/rows → id" "true" "$([ -n "$ROW_ID" ] && echo true || echo false)"
-INV_BEFORE=$(py "import sys,json; d=json.load(sys.stdin); items=d.get('data',[]); src=[i for i in items if i.get('locationId')=='$LOC_ID']; print(src[0]['onHand'] if src else 0)" <<< "$(curl -s "$BASE/inventory/levels" -H "$H")")
+INV_BEFORE=$(py "import sys,json; d=json.load(sys.stdin); loc='$LOC_ID'; t=sum(float(lev.get('onHand',0)) for row in d.get('data',[]) for lev in row.get('levels',[]) if lev.get('locationId')==loc); print(int(t))" <<< "$(curl -s "$BASE/inventory/levels" -H "$H")")
 RECV=$(curl -s -X POST $BASE/purchase-orders/$PO_ID/receive -H "$H" -H "Content-Type: application/json" -d "{\"locationId\":\"$LOC_ID\",\"rows\":[{\"rowId\":\"$ROW_ID\",\"receivedQty\":100}]}")
 RECV_STATUS=$(py "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" <<< "$RECV")
 check "PO receive → status in [received,partial]" "true" "$(echo "$RECV_STATUS" | grep -q -E "received|partial" && echo true || echo false)"; echo "    PO status after receive: $RECV_STATUS"
-INV_AFTER=$(py "import sys,json; d=json.load(sys.stdin); items=d.get('data',[]); src=[i for i in items if i.get('locationId')=='$LOC_ID']; print(src[0]['onHand'] if src else 0)" <<< "$(curl -s "$BASE/inventory/levels" -H "$H")")
+INV_AFTER=$(py "import sys,json; d=json.load(sys.stdin); loc='$LOC_ID'; t=sum(float(lev.get('onHand',0)) for row in d.get('data',[]) for lev in row.get('levels',[]) if lev.get('locationId')==loc); print(int(t))" <<< "$(curl -s "$BASE/inventory/levels" -H "$H")")
 check "stock increased after PO receive" "true" "$([ "${INV_AFTER:-0}" -gt "${INV_BEFORE:-0}" ] && echo true || echo false)"; echo "    onHand: $INV_BEFORE → $INV_AFTER (+$((INV_AFTER - INV_BEFORE)))"
 check "GET /purchase-orders/:id → 200" "200" "$(curl -s -o /dev/null -w "%{http_code}" $BASE/purchase-orders/$PO_ID -H "$H")"
 
@@ -200,9 +200,9 @@ echo "    $(py "import sys,json; d=json.load(sys.stdin); x=d.copy(); x.pop('rece
 
 echo ""
 echo "━━━ 13. INVENTORY INTEGRITY ━━━"
-INV_PRE=$(py "import sys,json; d=json.load(sys.stdin); items=[i for i in d.get('data',[]) if i.get('locationId')=='$LOC_ID']; print(int(float(items[0]['onHand'])) if items else 0)" <<< "$(curl -s "$BASE/inventory/levels" -H "$H")")
+INV_PRE=$(py "import sys,json; d=json.load(sys.stdin); loc='$LOC_ID'; t=sum(float(lev.get('onHand',0)) for row in d.get('data',[]) for lev in row.get('levels',[]) if lev.get('locationId')==loc); print(int(t))" <<< "$(curl -s "$BASE/inventory/levels" -H "$H")")
 curl -s -X POST $BASE/stock/adjustments -H "$H" -H "Content-Type: application/json" -d "{\"variantId\":\"$VAR_ID\",\"locationId\":\"$LOC_ID\",\"qty\":50,\"reason\":\"correction\"}" > /dev/null
-INV_POST=$(py "import sys,json; d=json.load(sys.stdin); items=[i for i in d.get('data',[]) if i.get('locationId')=='$LOC_ID']; print(int(float(items[0]['onHand'])) if items else 0)" <<< "$(curl -s "$BASE/inventory/levels" -H "$H")")
+INV_POST=$(py "import sys,json; d=json.load(sys.stdin); loc='$LOC_ID'; t=sum(float(lev.get('onHand',0)) for row in d.get('data',[]) for lev in row.get('levels',[]) if lev.get('locationId')==loc); print(int(t))" <<< "$(curl -s "$BASE/inventory/levels" -H "$H")")
 DELTA=$((INV_POST - INV_PRE))
 check "inventory delta = +50 after adjustment" "50" "$DELTA"; echo "    $INV_PRE → $INV_POST (delta=$DELTA)"
 MOV_TYPES=$(py "import sys,json; d=json.load(sys.stdin); types=list(set(m.get('movementType') for m in d.get('data',[]))); print(','.join(sorted(types)))" <<< "$(curl -s "$BASE/inventory/movements" -H "$H")")

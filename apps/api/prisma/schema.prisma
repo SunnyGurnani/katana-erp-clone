@@ -306,6 +306,7 @@ model SalesOrderRow {
   location     Location?              @relation(fields: [locationId], references: [id], onDelete: SetNull)
   description  String?
   qtyOrdered   Decimal                @map("qty_ordered") @db.Decimal(18, 4)
+  qtyPicked    Decimal                @default(0) @map("qty_picked") @db.Decimal(18, 4)
   qtyFulfilled Decimal                @default(0) @map("qty_fulfilled") @db.Decimal(18, 4)
   unitPrice    Decimal?               @map("unit_price") @db.Decimal(18, 4)
   taxRate      Decimal?               @map("tax_rate") @db.Decimal(7, 4)
@@ -321,6 +322,7 @@ model SalesOrderFulfillment {
   order      SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   rowId      String     @map("row_id")
   row        SalesOrderRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  fromPick   Boolean    @default(false) @map("from_pick")
   qty        Decimal    @db.Decimal(18, 4)
   locationId String?    @map("location_id")
   location   Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)

@@ -47,6 +47,14 @@ router.patch('/:id', async (req, res) => {
   if (data.qty != null) update.qtyOrdered = data.qty;
   if (data.salePrice != null) update.unitPrice = data.salePrice;
   if (data.locationId !== undefined) update.locationId = data.locationId;
+  const before = await prisma.salesOrderRow.findUnique({ where: { id: req.params.id } });
+  if (!before) return res.status(404).json({ error: 'Not found' });
+  if (Number(before.qtyFulfilled) > 0 || Number(before.qtyPicked || 0) > 0) {
+    return res.status(422).json({
+      error: 'Cannot edit a line that has been fulfilled or has picked quantity.',
+    });
+  }
+
   const item = await prisma.salesOrderRow.update({
     where: { id: req.params.id },
     data: update,
@@ -56,6 +64,13 @@ router.patch('/:id', async (req, res) => {
 });
 
 router.delete('/:id', async (req, res) => {
+  const row = await prisma.salesOrderRow.findUnique({ where: { id: req.params.id } });
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (Number(row.qtyFulfilled) > 0 || Number(row.qtyPicked || 0) > 0) {
+    return res.status(422).json({
+      error: 'Cannot delete a line that has been fulfilled or has picked quantity.',
+    });
+  }
   await prisma.salesOrderRow.delete({ where: { id: req.params.id } });
   res.status(204).send();
 });
