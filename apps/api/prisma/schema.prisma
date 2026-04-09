@@ -247,6 +247,12 @@ model PurchaseOrder {
   expectedDate DateTime?             @map("expected_date") @db.Date
   notes        String?
   locationId   String?               @map("location_id")
+  /// Opaque token for supplier portal (confirm / reject / request changes)
+  vendorPortalToken   String?        @unique @map("vendor_portal_token")
+  vendorInviteSentAt  DateTime?      @map("vendor_invite_sent_at")
+  vendorRespondedAt   DateTime?      @map("vendor_responded_at")
+  /// Supplier message when rejecting or requesting modifications
+  vendorResponseComment String?    @map("vendor_response_comment") @db.Text
   rows                 PurchaseOrderRow[]
   costRows             PurchaseOrderCostRow[]
   outsourcedRecipeRows OutsourcedPORecipeRow[]

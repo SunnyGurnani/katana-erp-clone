@@ -28,6 +28,13 @@ const schema = z.object({
   QUICKBOOKS_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
   QUICKBOOKS_SCOPES: z.string().default('com.intuit.quickbooks.accounting'),
   INTEGRATION_ENCRYPTION_KEY: z.string().optional(),
+  /** Public web app URL (vendor PO links, emails) */
+  APP_PUBLIC_URL: z.string().default('http://localhost:3000'),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  MAIL_FROM: z.string().optional(),
 });
 
 export const env = schema.parse(process.env);

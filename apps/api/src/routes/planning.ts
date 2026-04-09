@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { PO_STATUS_EXCLUDE_FROM_EXPECTED } from '../lib/purchaseOrderStatus';
 
 const router = Router();
 router.use(authenticate);
@@ -20,7 +21,7 @@ router.get('/forecast', async (req, res) => {
 
   const poRows = await prisma.purchaseOrderRow.findMany({
     where: {
-      order: { status: { notIn: ['cancelled', 'received'] } },
+      order: { status: { notIn: [...PO_STATUS_EXCLUDE_FROM_EXPECTED] } },
       variantId: { not: null },
     },
     select: { variantId: true, qtyOrdered: true, qtyReceived: true, order: { select: { locationId: true } } },
@@ -130,7 +131,7 @@ router.get('/replenishment', async (req, res) => {
 
   const poRows = await prisma.purchaseOrderRow.findMany({
     where: {
-      order: { status: { notIn: ['cancelled', 'received'] } },
+      order: { status: { notIn: [...PO_STATUS_EXCLUDE_FROM_EXPECTED] } },
       variantId: { not: null },
     },
     select: { variantId: true, qtyOrdered: true, qtyReceived: true, order: { select: { locationId: true } } },

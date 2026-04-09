@@ -99,7 +99,7 @@ async function main() {
 
   // Purchase Orders — skip on duplicate number
   const po1 = await upsertByNumber<any>(prisma.purchaseOrder, 'PO-2026-001', {
-    number: 'PO-2026-001', supplierId: sup1.id, status: 'confirmed', currency: 'USD',
+    number: 'PO-2026-001', supplierId: sup1.id, status: 'vendor_confirmed', currency: 'USD',
     orderDate: new Date('2026-03-01'), expectedDate: new Date('2026-03-20'), locationId: warehouse.id,
     rows: { create: [
       { materialId: mat1.id, description: 'Carbon Steel Tube 25mm', qtyOrdered: 500, qtyReceived: 200, unitPrice: 4.50 },
@@ -117,7 +117,7 @@ async function main() {
     costRows: { create: [{ description: 'Freight & Handling', amount: 150 }] },
   });
   await upsertByNumber<any>(prisma.purchaseOrder, 'PO-2026-003', {
-    number: 'PO-2026-003', supplierId: sup3.id, status: 'received', currency: 'CAD',
+    number: 'PO-2026-003', supplierId: sup3.id, status: 'done', currency: 'CAD',
     orderDate: new Date('2026-02-15'), expectedDate: new Date('2026-03-05'), locationId: factory.id,
     rows: { create: [{ materialId: mat6.id, description: 'Epoxy Paint Matte Red', qtyOrdered: 20, qtyReceived: 20, unitPrice: 18.00 }] },
   });

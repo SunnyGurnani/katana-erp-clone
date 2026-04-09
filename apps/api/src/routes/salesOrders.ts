@@ -23,6 +23,7 @@ import {
   shipPickedStockWithBatch,
 } from '../lib/inventory';
 import { nextSalesOrderNumber } from '../lib/nextSalesOrderNumber';
+import { PO_STATUS_EXCLUDE_FROM_EXPECTED } from '../lib/purchaseOrderStatus';
 import { z } from 'zod';
 import soAddressesRouter from './soAddresses';
 
@@ -60,7 +61,10 @@ async function appendPipelineStatuses(sos: any[]) {
   });
   
   const poRows = await prisma.purchaseOrderRow.findMany({
-    where: { variantId: { in: variantIds }, order: { status: { notIn: ['cancelled', 'received'] } } },
+    where: {
+      variantId: { in: variantIds },
+      order: { status: { notIn: [...PO_STATUS_EXCLUDE_FROM_EXPECTED] } },
+    },
     select: { variantId: true, qtyOrdered: true, qtyReceived: true, order: { select: { locationId: true } } }
   });
 

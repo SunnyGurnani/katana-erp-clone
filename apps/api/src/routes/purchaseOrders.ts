@@ -5,15 +5,21 @@
  *   - name: PurchaseOrders
  *     description: Supplier purchase orders and receiving
  */
+import { randomBytes } from 'crypto';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
 import { requireOperatorForMutations } from '../middleware/roles';
 import { getPagination, paginated } from '../middleware/paginate';
 import { adjustStock } from '../lib/inventory';
+import { sendMail, isMailConfigured } from '../lib/mail';
+import { env } from '../env';
 import { z } from 'zod';
+import { normalizePoStatus, PO_STATUS_VALUES, type PoStatus } from '../lib/purchaseOrderStatus';
 
 const router = Router();
+
+const poStatusZ = z.enum(PO_STATUS_VALUES);
 router.use(authenticate);
 router.use(requireOperatorForMutations);
 
@@ -24,7 +30,7 @@ async function nextPoNumber(): Promise<string> {
 
 // PurchaseOrderRow has no Prisma relations to variant/material — just IDs
 const include = {
-  supplier: { select: { id: true, name: true } },
+  supplier: { select: { id: true, name: true, email: true } },
   rows: true,
   costRows: true,
 };
@@ -59,10 +65,21 @@ async function buildPoRowLookups(rows: any[]) {
   };
 }
 
+function vendorPortalLinkFromPo(po: { vendorPortalToken?: string | null }): string | null {
+  const t = po.vendorPortalToken;
+  if (!t) return null;
+  const base = env.APP_PUBLIC_URL.replace(/\/$/, '');
+  return `${base}/vendor/po/${t}`;
+}
+
 function normalizePo(po: any, lookups?: { materialById: Map<string, any>; variantById: Map<string, any> }) {
+  const { vendorPortalToken: _omit, ...poSafe } = po;
+  const status: PoStatus = normalizePoStatus(po.status);
   return {
-    ...po,
+    ...poSafe,
+    status,
     poNumber: po.number,
+    vendorPortalLink: vendorPortalLinkFromPo(po),
     totalCost: po.rows?.reduce((s: number, r: any) => s + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0) ?? 0,
     expectedAt: po.expectedDate,
     rows: po.rows?.map((r: any) => ({
@@ -163,12 +180,7 @@ router.get('/', async (req, res) => {
   const { page, pageSize, skip, take } = getPagination(req);
   const where: any = {};
   if (req.query.status === 'open') {
-    where.NOT = {
-      OR: [
-        { status: { equals: 'received', mode: 'insensitive' } },
-        { status: { equals: 'cancelled', mode: 'insensitive' } },
-      ],
-    };
+    where.NOT = { status: { equals: 'done', mode: 'insensitive' } };
   } else if (req.query.status) {
     where.status = { equals: String(req.query.status).trim(), mode: 'insensitive' };
   }
@@ -254,7 +266,7 @@ router.post('/', async (req, res) => {
     include,
   });
   const lookups = await buildPoRowLookups(po.rows || []);
-  res.status(201).json(normalizePo(po, lookups));
+  res.status(201).json(await normalizePoWithReceipts(po, lookups));
 });
 
 /**
@@ -286,13 +298,16 @@ router.get('/:id', async (req, res) => {
 
 async function updatePoById(req: any, res: any) {
   const data = z.object({
-    supplierId: z.string().uuid().nullish(), status: z.string().nullish(),
-    currency: z.string().nullish(), expectedAt: z.string().nullish(),
-    notes: z.string().nullish(), locationId: z.string().min(1).nullish(),
+    supplierId: z.string().uuid().nullish(),
+    status: poStatusZ.nullish(),
+    currency: z.string().nullish(),
+    expectedAt: z.string().nullish(),
+    notes: z.string().nullish(),
+    locationId: z.string().min(1).nullish(),
   }).partial().parse(req.body);
   const poData: any = {};
   if (data.supplierId !== undefined) poData.supplierId = data.supplierId;
-  if (data.status) poData.status = data.status;
+  if (data.status != null) poData.status = data.status;
   if (data.currency) poData.currency = data.currency;
   if (data.notes !== undefined) poData.notes = data.notes;
   if (data.locationId !== undefined) poData.locationId = data.locationId;
@@ -360,6 +375,54 @@ async function updatePoById(req: any, res: any) {
  */
 router.put('/:id', updatePoById);
 router.patch('/:id', updatePoById);
+
+router.post('/:id/send-to-vendor', async (req, res) => {
+  const po = await prisma.purchaseOrder.findUnique({
+    where: { id: req.params.id },
+    include: { supplier: { select: { id: true, name: true, email: true } }, rows: true },
+  });
+  if (!po) return res.status(404).json({ error: 'Not found' });
+  if (String(po.status).toLowerCase() !== 'confirmed') {
+    return res.status(422).json({ error: 'Set the PO to Confirmed before emailing the vendor.' });
+  }
+  const email = po.supplier?.email?.trim();
+  if (!email) {
+    return res.status(422).json({ error: 'The supplier must have an email address to receive the PO link.' });
+  }
+  const token = randomBytes(32).toString('hex');
+  await prisma.purchaseOrder.update({
+    where: { id: po.id },
+    data: {
+      vendorPortalToken: token,
+      vendorInviteSentAt: new Date(),
+      vendorRespondedAt: null,
+      vendorResponseComment: null,
+    },
+  });
+  const link = vendorPortalLinkFromPo({ vendorPortalToken: token })!;
+  const subject = `Purchase order ${po.number} — please confirm or reply`;
+  const text = `Hello,\n\nPlease review purchase order ${po.number} and confirm it, or reply with changes / rejection using this secure link:\n\n${link}\n\nThank you.`;
+  const html = `<p>Hello,</p><p>Please review purchase order <strong>${escapeHtml(po.number)}</strong>. You can <strong>confirm</strong> the order or <strong>reject / request modifications</strong> (with a message to us) using the link below.</p><p><a href="${escapeAttr(link)}">Open purchase order</a></p><p>Thank you.</p>`;
+  try {
+    await sendMail({ to: email, subject, text, html });
+  } catch (e: any) {
+    return res.status(502).json({ error: e?.message || 'Failed to send email.' });
+  }
+  const updated = await prisma.purchaseOrder.findUnique({ where: { id: po.id }, include });
+  const lookups = await buildPoRowLookups(updated!.rows || []);
+  res.json({
+    ...(await normalizePoWithReceipts(updated!, lookups)),
+    emailSent: isMailConfigured(),
+    emailTo: email,
+  });
+});
+
+function escapeHtml(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function escapeAttr(s: string) {
+  return escapeHtml(s).replace(/'/g, '&#39;');
+}
 
 /**
  * @openapi
@@ -456,7 +519,15 @@ router.post('/:id/receive', async (req, res) => {
   }).parse(req.body);
   const po = await prisma.purchaseOrder.findUnique({ where: { id: req.params.id }, include });
   if (!po) return res.status(404).json({ error: 'Not found' });
-  if (po.status === 'cancelled') return res.status(422).json({ error: 'Cannot receive cancelled PO' });
+  const st = normalizePoStatus(po.status);
+  if (st === 'done') {
+    return res.status(422).json({ error: 'This purchase order is closed; receiving is not allowed.' });
+  }
+  if (st !== 'vendor_confirmed' && st !== 'confirmed') {
+    return res.status(422).json({
+      error: 'Receive stock only when the purchase order is Confirmed (vendor confirmation is optional).',
+    });
+  }
   const destLocationId = body.locationId ?? po.locationId;
   if (!destLocationId) return res.status(422).json({ error: 'Provide a locationId' });
 
@@ -551,7 +622,7 @@ router.post('/:id/receive', async (req, res) => {
   const allRows = await prisma.purchaseOrderRow.findMany({ where: { orderId: po.id } });
   const allFulfilled = allRows.every((r: any) => Number(r.qtyReceived) >= Number(r.qtyOrdered));
   const anyFulfilled = allRows.some((r: any) => Number(r.qtyReceived) > 0);
-  const newStatus = allFulfilled ? 'received' : anyFulfilled ? 'partial' : po.status;
+  const newStatus = allFulfilled ? 'done' : anyFulfilled ? 'vendor_confirmed' : po.status;
   const updated = await prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: newStatus }, include });
   const lookups = await buildPoRowLookups(updated.rows || []);
   res.json(await normalizePoWithReceipts(updated, lookups));

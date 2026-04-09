@@ -24,6 +24,7 @@ import customersRouter from './routes/customers';
 import locationsRouter from './routes/locations';
 import inventoryRouter from './routes/inventory';
 import purchaseOrdersRouter from './routes/purchaseOrders';
+import publicVendorPoRouter from './routes/publicVendorPo';
 import salesOrdersRouter from './routes/salesOrders';
 import manufacturingRouter from './routes/manufacturing';
 import stockOpsRouter from './routes/stockOps';
@@ -143,6 +144,7 @@ const swaggerSpec = swaggerJsdoc({
 });
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
+app.use(`${v1}/public/vendor-po`, publicVendorPoRouter);
 app.use(`${v1}/auth`, authRouter);
 app.use(`${v1}/products`, productsRouter);
 app.use(`${v1}/materials`, materialsRouter);

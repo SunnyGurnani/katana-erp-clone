@@ -14,8 +14,16 @@ import {
   locationOptions,
   supplierOptions,
 } from "@/lib/catalogOptions";
-import { ArrowLeft, PackageCheck, Save, Trash2, FileDown, X, ExternalLink } from "lucide-react";
+import { ArrowLeft, PackageCheck, Save, Trash2, FileDown, X, ExternalLink, Mail, Copy } from "lucide-react";
 import Link from "next/link";
+
+const PO_STATUS_EDIT_OPTIONS: { value: string; label: string }[] = [
+  { value: "draft", label: "Draft" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "vendor_confirmed", label: "Vendor confirmed" },
+  { value: "vendor_rejected", label: "Vendor rejected" },
+  { value: "done", label: "Done" },
+];
 
 export default function PODetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -79,6 +87,19 @@ export default function PODetailPage() {
     onError: () => addToast("Error adding row", "error"),
   });
 
+  const sendToVendor = useMutation({
+    mutationFn: () => api.post(`/purchase-orders/${id}/send-to-vendor`),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["po", id] });
+      const emailed = Boolean(res.data?.emailSent);
+      addToast(
+        emailed ? "Email sent to the supplier with the confirmation link." : "Supplier link refreshed. Configure SMTP on the API to send email automatically (link is in server logs when SMTP is off).",
+        "success",
+      );
+    },
+    onError: (err: any) => addToast(err?.response?.data?.error || "Could not send to vendor", "error"),
+  });
+
   const receive = useMutation({
     mutationFn: () => {
       const rowsPayload = (po?.rows || [])
@@ -93,7 +114,8 @@ export default function PODetailPage() {
             ),
           );
           if (receivedQty <= 0) return null;
-          const trackLotsAndExpiry = Boolean(r.variant?.product?.trackLotsAndExpiry);
+          const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
+          const trackLotsAndExpiry = Boolean(v?.product?.trackLotsAndExpiry);
           if (!trackLotsAndExpiry) return { rowId: r.id, receivedQty };
           const lots = (state?.lots || [])
             .map((l) => ({
@@ -198,13 +220,23 @@ export default function PODetailPage() {
     return Math.max(0, ordered - got);
   }
 
+  function rowTracksLots(r: any): boolean {
+    const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
+    return Boolean(v?.product?.trackLotsAndExpiry);
+  }
+
   const allRows = po.rows || [];
   const notReceivedRows = allRows.filter((r: any) => lineOutstanding(r) > 0);
   const receivedRows = allRows.filter((r: any) => lineOutstanding(r) <= 0 && Number(r.qty ?? r.qtyOrdered ?? 0) > 0);
 
-  const canReceive = po.status !== "cancelled" && notReceivedRows.length > 0;
-  const canEditLines = ["draft", "sent"].includes(po.status);
-  const canEditHeader = ["draft", "sent", "partial"].includes(po.status);
+  const st = String(po.status || "").toLowerCase();
+  const canReceive = (st === "confirmed" || st === "vendor_confirmed") && notReceivedRows.length > 0;
+  const canEditLines = ["draft", "confirmed"].includes(st);
+  const canEditHeader = ["draft", "confirmed", "vendor_confirmed", "vendor_rejected"].includes(st);
+  const canClosePO = ["draft", "confirmed", "vendor_confirmed", "vendor_rejected"].includes(st);
+  const canSendVendorInvite = st === "confirmed" && Boolean(po.supplier?.email?.trim());
+  const canConfirmFromDraft = st === "draft";
+  const vendorPortalLink = (po as { vendorPortalLink?: string | null }).vendorPortalLink;
 
   const subtotal =
     (po.rows || []).reduce((s: number, r: any) => s + Number(r.qty) * Number(r.unitCost || 0), 0) ?? 0;
@@ -223,7 +255,7 @@ export default function PODetailPage() {
     const init: Record<string, { receivedQty: string; lots: { batchNumber: string; expiryDate: string; qty: string }[] }> = {};
     for (const r of notReceivedRows) {
       const out = lineOutstanding(r);
-      const track = Boolean(r.variant?.product?.trackLotsAndExpiry);
+      const track = rowTracksLots(r);
       init[r.id] = {
         receivedQty: String(out),
         lots: track ? [{ batchNumber: "", expiryDate: "", qty: String(out) }] : [],
@@ -267,7 +299,7 @@ export default function PODetailPage() {
       const state = receiveRows[r.id];
       const q = Number(state?.receivedQty ?? 0);
       if (q <= 0) continue;
-      const track = Boolean(r.variant?.product?.trackLotsAndExpiry);
+      const track = rowTracksLots(r);
       if (!track) continue;
       const lots = state?.lots || [];
       if (!lots.length) return false;
@@ -311,13 +343,80 @@ export default function PODetailPage() {
           <Trash2 size={14} />
           Delete
         </button>
+        {canConfirmFromDraft && (
+          <button
+            type="button"
+            className="btn btn-ghost text-sm h-9"
+            disabled={updatePO.isPending}
+            onClick={() => {
+              updatePO.mutate({ status: "confirmed" });
+            }}
+          >
+            Confirm
+          </button>
+        )}
+        {canSendVendorInvite && (
+          <button
+            className="btn btn-ghost h-9 border border-navy-800 text-navy-800 hover:bg-navy-50"
+            disabled={sendToVendor.isPending}
+            onClick={() => sendToVendor.mutate()}
+            type="button"
+          >
+            <Mail size={15} />
+            {sendToVendor.isPending ? "Sending…" : "Email supplier"}
+          </button>
+        )}
+        {vendorPortalLink && (
+          <button
+            className="btn btn-ghost h-9 text-sm"
+            type="button"
+            onClick={() => {
+              void navigator.clipboard.writeText(vendorPortalLink);
+              addToast("Supplier link copied", "success");
+            }}
+          >
+            <Copy size={14} />
+            Copy supplier link
+          </button>
+        )}
         {canReceive && (
           <button className="btn btn-primary h-9" onClick={openReceiveModal}>
             <PackageCheck size={15} />
             Receive
           </button>
         )}
+        {canClosePO && (
+          <button
+            type="button"
+            className="btn btn-ghost text-sm h-9 text-amber-800 border border-amber-200"
+            disabled={updatePO.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Close this purchase order? It will move to Done. Closed orders cannot receive additional stock.",
+                )
+              ) {
+                updatePO.mutate(
+                  { status: "done" },
+                  {
+                    onSuccess: () => addToast("Purchase order closed", "success"),
+                  },
+                );
+              }
+            }}
+          >
+            Close
+          </button>
+        )}
       </div>
+
+      {st === "vendor_rejected" && (po as { vendorResponseComment?: string | null }).vendorResponseComment ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold text-amber-900">Supplier message</p>
+          <p className="mt-1 whitespace-pre-wrap">{(po as { vendorResponseComment?: string }).vendorResponseComment}</p>
+          <p className="mt-2 text-xs text-amber-800/90">Update the PO if needed, set status back to Confirmed, then send the link again.</p>
+        </div>
+      ) : null}
 
       <div className="card">
         <div className="px-5 py-4 border-b border-gray-200">
@@ -819,9 +918,9 @@ export default function PODetailPage() {
           <div>
             <label className="label">Status</label>
             <select className="input" value={editForm.status || po.status} onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}>
-              {["draft", "sent", "confirmed", "partial", "received", "cancelled"].map((s) => (
-                <option key={s} value={s}>
-                  {s}
+              {PO_STATUS_EDIT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
                 </option>
               ))}
             </select>

@@ -16,7 +16,9 @@ router.get('/stats', async (_req, res) => {
     prisma.material.count(),
     prisma.supplier.count(),
     prisma.customer.count(),
-    prisma.purchaseOrder.count({ where: { status: { in: ['draft', 'sent', 'partial', 'confirmed'] } } }),
+    prisma.purchaseOrder.count({
+      where: { NOT: { status: { equals: 'done', mode: 'insensitive' } } },
+    }),
     prisma.manufacturingOrder.count({ where: { status: { in: ['draft', 'released', 'in_progress', 'planned'] } } }),
     prisma.salesOrder.count({ where: { status: { in: ['draft', 'confirmed', 'partial'] } } }),
     prisma.inventoryMovement.findMany({ take: 10, orderBy: { createdAt: 'desc' } }),
@@ -33,7 +35,7 @@ router.get('/stats', async (_req, res) => {
   const revenue30d = revenueRows.reduce((sum: number, r: any) => sum + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0);
 
   const poRows = await prisma.purchaseOrderRow.findMany({
-    where: { order: { status: 'received', updatedAt: { gte: thirtyDaysAgo } } },
+    where: { order: { status: { equals: 'done', mode: 'insensitive' }, updatedAt: { gte: thirtyDaysAgo } } },
     select: { qtyOrdered: true, unitPrice: true },
   });
   const poSpend30d = poRows.reduce((sum: number, r: any) => sum + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0);

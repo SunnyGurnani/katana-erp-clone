@@ -7,6 +7,7 @@ import multer from 'multer';
 import { parse } from 'csv-parse/sync';
 import { Parser as Json2CsvParser } from 'json2csv';
 import * as XLSX from 'xlsx';
+import { normalizePoStatus } from '../lib/purchaseOrderStatus';
 
 const router = Router();
 router.use(authenticate);
@@ -222,7 +223,7 @@ router.post('/import', upload.single('file'), async (req: AuthRequest, res: Resp
             data: {
               number: row.number,
               supplierId: row.supplierId || undefined,
-              status: row.status || 'draft',
+              status: normalizePoStatus(row.status),
               currency: row.currency || 'USD',
               notes: row.notes || undefined,
             },

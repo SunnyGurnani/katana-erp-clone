@@ -38,10 +38,10 @@ function formatPoListDate(iso: string | Date | null | undefined): string {
 const statuses = [
   { label: "Open", value: "open" },
   { label: "Draft", value: "draft" },
-  { label: "Sent", value: "sent" },
-  { label: "Partial", value: "partial" },
-  { label: "Received", value: "received" },
-  { label: "Cancelled", value: "cancelled" },
+  { label: "Confirmed", value: "confirmed" },
+  { label: "Vendor confirmed", value: "vendor_confirmed" },
+  { label: "Vendor rejected", value: "vendor_rejected" },
+  { label: "Done", value: "done" },
 ];
 
 export default function PurchaseOrdersPage() {
@@ -146,7 +146,10 @@ export default function PurchaseOrdersPage() {
     { key: "expectedAt", header: "Expected", sortable: true, render: (r: any) => {
       if (!r.expectedAt) return "—";
       const ymd = formatPoListDate(r.expectedAt);
-      const overdue = ymd !== "—" && new Date(ymd + "T12:00:00") < new Date() && !["received", "cancelled"].includes(r.status);
+      const overdue =
+        ymd !== "—" &&
+        new Date(ymd + "T12:00:00") < new Date() &&
+        String(r.status || "").toLowerCase() !== "done";
       return <span className={overdue ? "text-red-600 font-medium" : ""}>{ymd}</span>;
     }},
     { key: "totalCost", header: "Total", sortable: true, render: (r: any) => <span className="font-medium">{`${Number(r.totalCost || 0).toFixed(2)} ${r.currency || "USD"}`}</span> },

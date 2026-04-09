@@ -8,6 +8,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { PO_STATUS_EXCLUDE_FROM_EXPECTED } from '../lib/purchaseOrderStatus';
 import { requireOperatorForMutations } from '../middleware/roles';
 import { getPagination, paginated } from '../middleware/paginate';
 import { z } from 'zod';
@@ -184,7 +185,7 @@ router.get('/levels', async (req, res) => {
   const poRows = await prisma.purchaseOrderRow.findMany({
     where: {
       variantId: { in: pageVariantIds },
-      order: { status: { notIn: ['cancelled', 'received'] } },
+      order: { status: { notIn: [...PO_STATUS_EXCLUDE_FROM_EXPECTED] } },
     },
     select: {
       variantId: true,
@@ -412,7 +413,7 @@ router.get('/levels/:variantId/demand-details', async (req, res) => {
   const poRows = await prisma.purchaseOrderRow.findMany({
     where: {
       variantId,
-      order: { status: { notIn: ['cancelled', 'received'] } },
+      order: { status: { notIn: [...PO_STATUS_EXCLUDE_FROM_EXPECTED] } },
     },
     select: {
       id: true,
