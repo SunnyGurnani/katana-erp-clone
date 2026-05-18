@@ -181,6 +181,7 @@ model InventoryLevel {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
   @@unique([variantId, locationId])
+  @@index([locationId])
   @@map("inventory_levels")
 }
 
@@ -200,6 +201,9 @@ model InventoryMovement {
   purchaseOrderRowId String? @map("purchase_order_row_id")
   purchaseOrderRow   PurchaseOrderRow? @relation(fields: [purchaseOrderRowId], references: [id], onDelete: SetNull)
   createdAt     DateTime @default(now()) @map("created_at")
+  @@index([variantId, locationId])
+  @@index([createdAt])
+  @@index([movementType])
   @@map("inventory_movements")
 }
 
@@ -256,11 +260,13 @@ model PurchaseOrder {
   vendorRespondedAt   DateTime?      @map("vendor_responded_at")
   /// Supplier message when rejecting or requesting modifications
   vendorResponseComment String?    @map("vendor_response_comment") @db.Text
-  rows                 PurchaseOrderRow[]
+  rows                  PurchaseOrderRow[]
   costRows             PurchaseOrderCostRow[]
   outsourcedRecipeRows OutsourcedPORecipeRow[]
   createdAt    DateTime              @default(now()) @map("created_at")
   updatedAt    DateTime              @updatedAt @map("updated_at")
+  @@index([status, createdAt])
+  @@index([supplierId])
   @@map("purchase_orders")
 }
 
@@ -278,6 +284,9 @@ model PurchaseOrderRow {
   inventoryMovements InventoryMovement[]
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
+  @@index([orderId])
+  @@index([variantId])
+  @@index([materialId])
   @@map("purchase_order_rows")
 }
 
@@ -309,6 +318,9 @@ model SalesOrder {
   addresses    SalesOrderAddress[]
   createdAt    DateTime                @default(now()) @map("created_at")
   updatedAt    DateTime                @updatedAt @map("updated_at")
+  @@index([status, createdAt])
+  @@index([customerId])
+  @@index([locationId])
   @@map("sales_orders")
 }
 
@@ -328,6 +340,8 @@ model SalesOrderRow {
   fulfillments SalesOrderFulfillment[]
   createdAt    DateTime               @default(now()) @map("created_at")
   updatedAt    DateTime               @updatedAt @map("updated_at")
+  @@index([orderId])
+  @@index([variantId])
   @@map("sales_order_rows")
 }
 
@@ -349,6 +363,8 @@ model SalesOrderFulfillment {
   batchId         String?    @map("batch_id")
   batch           Batch?     @relation(fields: [batchId], references: [id], onDelete: SetNull)
   createdAt       DateTime   @default(now()) @map("created_at")
+  @@index([orderId])
+  @@index([rowId])
   @@map("sales_order_fulfillments")
 }
 
@@ -380,6 +396,9 @@ model BOMRow {
   unitCost   Decimal? @map("unit_cost") @db.Decimal(18, 4)
   notes      String?
   createdAt  DateTime @default(now()) @map("created_at")
+  @@index([bomId])
+  @@index([materialId])
+  @@index([variantId])
   @@map("bom_rows")
 }
 
@@ -417,6 +436,10 @@ model ManufacturingOrder {
   productions   MOProduction[]
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
+  @@index([status, createdAt])
+  @@index([productId])
+  @@index([variantId])
+  @@index([locationId])
   @@map("manufacturing_orders")
 }
 
@@ -429,6 +452,9 @@ model MORecipeRow {
   qtyPlanned  Decimal            @map("qty_planned") @db.Decimal(18, 4)
   qtyConsumed Decimal            @default(0) @map("qty_consumed") @db.Decimal(18, 4)
   createdAt   DateTime           @default(now()) @map("created_at")
+  @@index([moId])
+  @@index([variantId])
+  @@index([materialId])
   @@map("mo_recipe_rows")
 }
 
@@ -444,6 +470,7 @@ model MOOperationRow {
   status        String              @default("pending")
   actualMinutes Int?                @map("actual_minutes")
   createdAt     DateTime            @default(now()) @map("created_at")
+  @@index([moId])
   @@map("mo_operation_rows")
 }
 

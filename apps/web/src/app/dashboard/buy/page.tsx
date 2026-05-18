@@ -38,9 +38,6 @@ function formatPoListDate(iso: string | Date | null | undefined): string {
 const statuses = [
   { label: "Open", value: "open" },
   { label: "Draft", value: "draft" },
-  { label: "Confirmed", value: "confirmed" },
-  { label: "Vendor confirmed", value: "vendor_confirmed" },
-  { label: "Vendor rejected", value: "vendor_rejected" },
   { label: "Done", value: "done" },
 ];
 
@@ -175,7 +172,7 @@ export default function PurchaseOrdersPage() {
 
   return (
     <>
-      <ListToolbar statusFilter={status} onStatusChange={setStatus} statuses={statuses} actionLabel="Purchase order" onAction={() => setOpen(true)}>
+      <ListToolbar statusFilter={status} onStatusChange={setStatus} statuses={statuses} secondaryActionLabel="Draft order" onSecondaryAction={() => { setSupplierId(""); setOpen(true); }} actionLabel="Purchase order" onAction={() => setOpen(true)}>
         <ExportToolbar resource="purchase-orders" filters={{ status }} />
       </ListToolbar>
       <div className="px-5 py-3">

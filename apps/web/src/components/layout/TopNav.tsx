@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, ShoppingCart, Wrench, Package, Boxes, Grid3X3, Calendar, BarChart3, Plus, Bell, HelpCircle, Puzzle, LogOut, Settings } from "lucide-react";
+import { Home, ShoppingCart, Wrench, Package, Boxes, Grid3X3, Calendar, BarChart3, Plus, Bell, HelpCircle, Puzzle, LogOut, Settings, Users } from "lucide-react";
 import { logout } from "@/lib/auth";
 import clsx from "clsx";
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
@@ -16,7 +16,6 @@ const navItems = [
   { href: "/dashboard/plan", label: "Plan", icon: Calendar },
   { href: "/dashboard/insights", label: "Insights", icon: BarChart3 },
   { href: "/dashboard/items", label: "Items", icon: Grid3X3 },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 const createItems = [
@@ -178,6 +177,18 @@ export function TopNav() {
         </div>
 
         <Link
+          href="/dashboard/account/team"
+          className={clsx(
+            "p-1.5 rounded-md transition-colors",
+            pathname.startsWith("/dashboard/account/team")
+              ? "text-white bg-white/10"
+              : "text-gray-400 hover:text-white hover:bg-white/10",
+          )}
+        >
+          <Users size={16} />
+        </Link>
+
+        <Link
           href="/dashboard/integrations"
           className={clsx(
             "p-1.5 rounded-md transition-colors",
@@ -191,7 +202,6 @@ export function TopNav() {
 
         <button className="p-1.5 text-gray-400 hover:text-white rounded-md hover:bg-white/10 transition-colors relative">
           <Bell size={16} />
-          <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full" />
         </button>
 
         <button className="p-1.5 text-gray-400 hover:text-white rounded-md hover:bg-white/10 transition-colors">

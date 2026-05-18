@@ -107,12 +107,12 @@ app.post(`${v1}/webhooks/inbound`, express.raw({ type: '*/*', limit: '1mb' }), v
   res.status(200).json({ received: true });
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(metricsHttpMiddleware);
 
 const apiLimiter = rateLimit({
   windowMs: 60_000,
-  max: 100,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
   skip: req => {

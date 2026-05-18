@@ -74,6 +74,17 @@ export default function ReturnsPage() {
     onError: () => addToast("Error deleting return", "error"),
   });
 
+  const totalsByCurrency = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of data || []) {
+      const so = (orders || []).find((o: any) => o.id === r.orderId);
+      const cur = (so?.currency || "USD").toUpperCase();
+      const total = (r.rows || []).reduce((s: number, row: any) => s + Number(row.qty) * Number(row.unitPrice || 0), 0);
+      m.set(cur, (m.get(cur) || 0) + total);
+    }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [data, orders]);
+
   const columns: Column[] = [
     { key: "createdAt", header: "Created on", sortable: true, render: (r: any) => new Date(r.createdAt).toISOString().slice(0, 10) },
     { key: "number", header: "Return #", sortable: true, render: (r: any) => (
@@ -87,12 +98,18 @@ export default function ReturnsPage() {
     }},
     { key: "orderId", header: "Original SO", render: (r: any) => {
       const so = (orders || []).find((o: any) => o.id === r.orderId);
-      return so?.soNumber || "—";
+      return so ? (
+        <a href={`/dashboard/sell/${so.id}`} className="text-brand-600 hover:underline" onClick={e => e.stopPropagation()}>
+          {so.soNumber}
+        </a>
+      ) : "—";
     }},
-    { key: "status", header: "Status", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={r.status} /> },
-    { key: "total", header: "Total", render: (r: any) => {
+    { key: "status", header: "Status", isStatus: true, filterable: true, render: (r: any) => <StatusCell status={r.status} /> },
+    { key: "total", header: "Total amount", sortable: true, render: (r: any) => {
+      const so = (orders || []).find((o: any) => o.id === r.orderId);
+      const currency = so?.currency || "USD";
       const total = (r.rows || []).reduce((s: number, row: any) => s + Number(row.qty) * Number(row.unitPrice || 0), 0);
-      return <span className="font-medium">${total.toFixed(2)}</span>;
+      return <span className="font-medium">{total.toFixed(2)} {currency}</span>;
     }},
     { key: "actions", header: "", filterable: false, render: (r: any) => (
       <ActionMenu actions={[
@@ -106,6 +123,18 @@ export default function ReturnsPage() {
     <>
       <ListToolbar statusFilter={status} onStatusChange={setStatus} statuses={statuses} actionLabel="Return" onAction={() => setOpen(true)} />
       <div className="px-4 py-3 space-y-4">
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <span className="text-xs text-gray-500">
+            {data?.length || 0} returns
+          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-medium text-gray-700">
+              {totalsByCurrency.length <= 1
+                ? `Total: ${(totalsByCurrency[0]?.[1] ?? 0).toFixed(2)} ${totalsByCurrency[0]?.[0] ?? "USD"}`
+                : `Totals (by currency): ${totalsByCurrency.map(([c, v]) => `${v.toFixed(2)} ${c}`).join(" · ")}`}
+            </span>
+          </div>
+        </div>
         <DataTable columns={columns} data={data || []} isLoading={isLoading} emptyMessage="No returns found" showRank totalLabel="returns" />
         {expanded && (
           <ChildTable

@@ -1,10 +1,15 @@
 import { SubTabs } from "@/components/layout/SubTabs";
 
 const tabs = [
-  { label: "Overview", href: "/dashboard/insights", matchPrefix: true, excludePrefixes: ["/dashboard/insights/sales"] },
-  { label: "By product", href: "/dashboard/insights/sales/products" },
-  { label: "By customer", href: "/dashboard/insights/sales/customers" },
-  { label: "By order", href: "/dashboard/insights/sales/orders" },
+  {
+    label: "Sales Overview",
+    href: "/dashboard/insights/sales",
+    matchPrefix: true,
+    excludePrefixes: ["/dashboard/insights/sales/products", "/dashboard/insights/sales/customers", "/dashboard/insights/sales/orders"],
+  },
+  { label: "Products", href: "/dashboard/insights/sales/products" },
+  { label: "Customers", href: "/dashboard/insights/sales/customers" },
+  { label: "Orders", href: "/dashboard/insights/sales/orders" },
 ];
 
 export default function SalesInsightsLayout({ children }: { children: React.ReactNode }) {

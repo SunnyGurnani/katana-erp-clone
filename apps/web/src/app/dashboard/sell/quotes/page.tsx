@@ -56,13 +56,27 @@ export default function QuotesPage() {
     onError: () => addToast("Error deleting quote", "error"),
   });
 
+  const totalsByCurrency = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of data || []) {
+      const cur = (r.currency || "USD").toUpperCase();
+      const total = (r.rows || []).reduce((s: number, row: any) => s + Number(row.qty) * Number(row.unitPrice || 0), 0);
+      m.set(cur, (m.get(cur) || 0) + total);
+    }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [data]);
+
   const columns: Column[] = [
-    { key: "number", header: "Quote #", sortable: true, render: (r: any) => <span className="font-mono text-sm text-brand-600 font-medium">{r.number}</span> },
+    { key: "number", header: "Quote #", sortable: true, render: (r: any) => (
+      <a href={`/dashboard/sell/quotes/${r.id}`} className="font-mono text-sm text-brand-600 font-medium hover:underline" onClick={e => e.stopPropagation()}>
+        {r.number}
+      </a>
+    )},
     { key: "customer", header: "Customer", render: (r: any) => {
       const cust = (customers || []).find((c: any) => c.id === r.customerId);
       return cust?.name || "—";
     }},
-    { key: "status", header: "Status", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={r.status} /> },
+    { key: "status", header: "Status", isStatus: true, filterable: true, render: (r: any) => <StatusCell status={r.status} /> },
     { key: "validUntil", header: "Valid until", sortable: true, render: (r: any) => r.validUntil ? new Date(r.validUntil).toISOString().slice(0, 10) : "—" },
     { key: "total", header: "Amount", render: (r: any) => {
       const total = (r.rows || []).reduce((s: number, row: any) => s + Number(row.qty) * Number(row.unitPrice || 0), 0);
@@ -82,7 +96,19 @@ export default function QuotesPage() {
       <ListToolbar statusFilter={status} onStatusChange={setStatus} statuses={statuses} actionLabel="Quote" onAction={() => setOpen(true)}>
         <ExportToolbar resource="quotes" filters={status ? { status } : undefined} />
       </ListToolbar>
-      <div className="px-4 py-3">
+      <div className="px-4 py-3 space-y-4">
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <span className="text-xs text-gray-500">
+            {data?.length || 0} quotes
+          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-medium text-gray-700">
+              {totalsByCurrency.length <= 1
+                ? `Total: ${(totalsByCurrency[0]?.[1] ?? 0).toFixed(2)} ${totalsByCurrency[0]?.[0] ?? "USD"}`
+                : `Totals (by currency): ${totalsByCurrency.map(([c, v]) => `${v.toFixed(2)} ${c}`).join(" · ")}`}
+            </span>
+          </div>
+        </div>
         <DataTable columns={columns} data={data || []} isLoading={isLoading} emptyMessage="No quotes found" showRank totalLabel="quotes" />
       </div>
       <Modal open={open} onClose={() => setOpen(false)} title="New Quote">

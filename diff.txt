@@ -1,0 +1,190 @@
+﻿commit 8d69d71d1ff2590f41a3fa0ad080f4148b1964b4
+Merge: 7004824 2706cd5
+Author: Sunny Gurnani <gurnani.sunny@gmail.com>
+Date:   Tue Mar 31 19:31:31 2026 -0700
+
+    Merge branch 'dev' of https://github.com/SunnyGurnani/katana-erp-clone into dev
+
+commit 7004824789b2eaad7eca451816710adb49afe7f6
+Author: Sunny Gurnani <gurnani.sunny@gmail.com>
+Date:   Tue Mar 31 19:31:17 2026 -0700
+
+    Fixed Sales Order workflow
+
+diff --git a/apps/api/src/routes/salesOrders.ts b/apps/api/src/routes/salesOrders.ts
+index 1e16f0c..bc17d36 100644
+--- a/apps/api/src/routes/salesOrders.ts
++++ b/apps/api/src/routes/salesOrders.ts
+@@ -288,6 +288,12 @@ router.get('/', async (req, res) => {
+         { status: { equals: 'draft', mode: 'insensitive' } },
+       ],
+     };
++  } else if (req.query.status === 'done') {
++    // Done = shipped or manually closed
++    where.OR = [
++      { status: { equals: 'fulfilled', mode: 'insensitive' } },
++      { status: { equals: 'cancelled', mode: 'insensitive' } },
++    ];
+   } else if (req.query.status) {
+     where.status = { equals: String(req.query.status).trim(), mode: 'insensitive' };
+   }
+@@ -897,14 +903,8 @@ router.post('/:id/fulfill', async (req, res) => {
+   );
+   const anyFulfilled = allRows.some((r: any) => Number(r.qtyFulfilled) > 0);
+   const newStatus = allFulfilled ? 'fulfilled' : anyFulfilled ? 'partial' : so.status;
+-<<<<<<< HEAD
+-  const updated = await prisma.salesOrder.update({ where: { id: so.id }, data: { status: newStatus }, include });
+-  const enriched = await appendPipelineStatuses([updated]);
+-  res.json(normalizeSo(enriched[0]));
+-=======
+   const updated = await prisma.salesOrder.update({ where: { id: so.id }, data: { status: newStatus }, include: includeDetail });
+   res.json(await respondSalesOrder(updated));
+->>>>>>> ade227f9e862b333b370e8805a2922004a1de846
+ });
+ 
+ // GET /sales_orders/:id/returnable_items ΓÇö fulfilled rows not yet fully returned
+diff --git a/apps/web/src/app/dashboard/sell/[id]/page.tsx b/apps/web/src/app/dashboard/sell/[id]/page.tsx
+index 0df7c3d..66d2abc 100644
+--- a/apps/web/src/app/dashboard/sell/[id]/page.tsx
++++ b/apps/web/src/app/dashboard/sell/[id]/page.tsx
+@@ -219,19 +219,24 @@ export default function SODetailPage() {
+   if (!so) return <div className="p-6 text-gray-500">SO not found.</div>;
+ 
+   const st = String(so.status || "").toLowerCase();
++  const displayStatus =
++    st === "draft" ? "Draft" : st === "fulfilled" || st === "cancelled" ? "Done" : "Confirmed";
+   const hasLines = (so.rows?.length ?? 0) > 0;
+   const canFulfill = hasLines && ["confirmed", "partial", "sent"].includes(st);
+   const hasOutboundFulfillment = (so.rows || []).some((r: any) => Number(r.fulfilledQty || 0) > 0);
+   const canRevertFulfillment =
+     hasOutboundFulfillment && (st === "fulfilled" || st === "partial");
++  const canConfirmFromDraft = st === "draft";
++  const canManuallyClose =
++    st === "draft" || st === "confirmed" || st === "partial" || st === "sent";
+ 
+-  const statusEditOptions = hasOutboundFulfillment
+-    ? ["partial", "fulfilled", "cancelled"]
+-    : ["draft", "confirmed", "partial", "fulfilled", "cancelled"];
++  const statusEditOptions = ["draft", "open", "done"];
+ 
+   function openEditModal() {
++    const cat =
++      st === "draft" ? "draft" : st === "fulfilled" || st === "cancelled" ? "done" : "open";
+     setEditForm({
+-      status: so.status || "",
++      status: cat,
+       dueAt: so.dueAt ? formatLocalDateYmd(so.dueAt) : "",
+       notes: so.notes || "",
+       customerId: so.customer?.id || "",
+@@ -421,7 +426,7 @@ export default function SODetailPage() {
+           <h1 className="text-2xl font-bold text-gray-900">SO {so.soNumber}</h1>
+           <p className="text-sm text-gray-500">{so.customer?.name || "No customer"}</p>
+         </div>
+-        <StatusBadge status={so.status} />
++        <StatusBadge status={displayStatus} />
+         <button className="btn btn-ghost text-sm" onClick={downloadPdf}><FileDown size={14} />PDF</button>
+         <button className="btn btn-ghost text-sm" onClick={openEditModal}><Save size={14} />Edit</button>
+         <button className="btn btn-ghost text-sm" onClick={() => duplicateSO.mutate()}><Copy size={14} />Duplicate</button>
+@@ -438,6 +443,18 @@ export default function SODetailPage() {
+         >
+           <Trash2 size={14} />Delete
+         </button>
++        {canConfirmFromDraft && (
++          <button
++            type="button"
++            className="btn btn-ghost text-sm"
++            disabled={updateSO.isPending}
++            onClick={() => {
++              updateSO.mutate({ status: "confirmed" });
++            }}
++          >
++            Confirm
++          </button>
++        )}
+         {canFulfill && (
+           <button type="button" className="btn btn-primary" onClick={openFulfillModal}>
+             <Truck size={15} />Fulfill
+@@ -455,6 +472,24 @@ export default function SODetailPage() {
+             Revert fulfillment
+           </button>
+         )}
++        {canManuallyClose && (
++          <button
++            type="button"
++            className="btn btn-ghost text-sm text-amber-800 border border-amber-200"
++            disabled={updateSO.isPending}
++            onClick={() => {
++              if (
++                window.confirm(
++                  "Close this sales order? This will move it to Done and prevent further fulfillment.",
++                )
++              ) {
++                updateSO.mutate({ status: "cancelled" });
++              }
++            }}
++          >
++            Close
++          </button>
++        )}
+       </div>
+ 
+       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+@@ -824,7 +859,7 @@ export default function SODetailPage() {
+             <select className="input" value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}>
+               {statusEditOptions.map((s) => (
+                 <option key={s} value={s}>
+-                  {s === "confirmed" ? "Confirmed (appears on Open list)" : s}
++                  {s === "open" ? "Confirmed (active pipeline)" : s === "done" ? "Done (shipped or closed)" : "Draft"}
+                 </option>
+               ))}
+             </select>
+@@ -846,7 +881,12 @@ export default function SODetailPage() {
+                 customerId: editForm.customerId ? editForm.customerId : null,
+                 currency: editForm.currency || undefined,
+                 locationId: editForm.locationId || null,
+-                status: editForm.status || undefined,
++                status:
++                  editForm.status === "open"
++                    ? "confirmed"
++                    : editForm.status === "done"
++                      ? "fulfilled"
++                      : editForm.status || undefined,
+                 dueAt: editForm.dueAt || null,
+                 notes: editForm.notes,
+               })
+diff --git a/apps/web/src/app/dashboard/sell/page.tsx b/apps/web/src/app/dashboard/sell/page.tsx
+index 5c8cbf4..0c647e2 100644
+--- a/apps/web/src/app/dashboard/sell/page.tsx
++++ b/apps/web/src/app/dashboard/sell/page.tsx
+@@ -37,16 +37,14 @@ function formatSoListDate(iso: string | Date | null | undefined): string {
+ }
+ 
+ const statuses = [
+-  { label: "Open", value: "open" },
+   { label: "Draft", value: "draft" },
+-  { label: "Partial", value: "partial" },
+-  { label: "Fulfilled", value: "fulfilled" },
+-  { label: "Cancelled", value: "cancelled" },
++  { label: "Confirmed", value: "open" },
++  { label: "Done", value: "done" },
+ ];
+ 
+ function getDeliveryStatus(so: any): string {
+   if (so.status === "fulfilled") return "done";
+-  if (so.status === "cancelled") return "cancelled";
++  if (so.status === "cancelled") return "done";
+   return "not_shipped";
+ }
+ 
+diff --git a/apps/web/src/lib/api.ts b/apps/web/src/lib/api.ts
+index a9af472..1bf9135 100644
+--- a/apps/web/src/lib/api.ts
++++ b/apps/web/src/lib/api.ts
+@@ -1,6 +1,6 @@
+ import axios from 'axios';
+ 
+-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
++const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+ 
+ export const api = axios.create({
+   baseURL: `${API_URL}/api/v1`,

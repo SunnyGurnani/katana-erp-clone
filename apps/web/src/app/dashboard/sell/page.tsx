@@ -37,8 +37,7 @@ function formatSoListDate(iso: string | Date | null | undefined): string {
 }
 
 const statuses = [
-  { label: "Draft", value: "draft" },
-  { label: "Confirmed", value: "open" },
+  { label: "Open", value: "open" },
   { label: "Done", value: "done" },
 ];
 
@@ -62,6 +61,13 @@ function getSalesItemsStatus(so: any): string {
   return "in_stock";
 }
 
+function getIngredientsStatus(so: any): string {
+  if (so.status === "fulfilled") return "done";
+  if (!so.rows || so.rows.length === 0) return "not_applicable";
+  if (so.status === "partial") return "partial";
+  return "in_stock";
+}
+
 export const dynamic = "force-dynamic";
 
 function SalesOrdersPage() {
@@ -71,6 +77,7 @@ function SalesOrdersPage() {
   const { addToast } = useToast();
   const [status, setStatus] = useState("open");
   const [locationId, setLocationId] = useState("");
+  const [soPage, setSoPage] = useState(1);
   const [open, setOpen] = useState(false);
   const [customerId, setCustomerId] = useState("");
   const [dueAt, setDueAt] = useState("");
@@ -102,19 +109,21 @@ function SalesOrdersPage() {
     }
   }, [router]);
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["sales-orders", status, locationId],
+  const SO_PAGE_SIZE = 100;
+
+  const { data: soResult, isLoading, isError, error } = useQuery<{ data: any[]; total?: number } | any[]>({
+    queryKey: ["sales-orders", status, locationId, soPage],
     queryFn: async () => {
       const r = await api.get("/sales-orders", {
-        params: { status, ...(locationId ? { locationId } : {}) },
+        params: { status, page: soPage, pageSize: SO_PAGE_SIZE, ...(locationId ? { locationId } : {}) },
       });
-      const body = r.data;
-      if (Array.isArray(body?.data)) return body.data;
-      if (Array.isArray(body)) return body;
-      return [];
+      return r.data;
     },
     retry: false,
   });
+
+  const data: any[] = Array.isArray((soResult as any)?.data) ? (soResult as any).data : Array.isArray(soResult) ? (soResult as any[]) : [];
+  const soTotal: number = (soResult as any)?.total ?? data.length;
   const { data: customers } = useQuery({ queryKey: ["customers"], queryFn: () => api.get("/customers").then(r => r.data.data) });
   const { data: locations } = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data.data) });
   const custOpts = useMemo(() => customerOptions(customers), [customers]);
@@ -127,11 +136,10 @@ function SalesOrdersPage() {
     mutationFn: () => api.post("/sales-orders", { customerId, dueAt: dueAt || undefined, notes: notes || undefined, rows: [] }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sales-orders"] });
-      // New orders are `draft`; the Open tab hides drafts — switch so the row is visible.
-      setStatus("draft");
+      setStatus("open");
       setLocationId("");
-      syncSellUrl("draft", "");
-      addToast("Sales order created (Draft). Add lines on the order page.", "success");
+      syncSellUrl("open", "");
+      addToast("Sales order created. Add lines on the order page.", "success");
       setOpen(false);
       setCustomerId("");
       setDueAt("");
@@ -150,10 +158,10 @@ function SalesOrdersPage() {
     mutationFn: (id: string) => api.post(`/sales-orders/${id}/duplicate`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sales-orders"] });
-      setStatus("draft");
+      setStatus("open");
       setLocationId("");
-      syncSellUrl("draft", "");
-      addToast("Duplicated (Draft)", "success");
+      syncSellUrl("open", "");
+      addToast("Duplicated", "success");
     },
     onError: () => addToast("Error duplicating SO", "error"),
   });
@@ -194,6 +202,7 @@ function SalesOrdersPage() {
       return <span className={overdue ? "text-red-600 font-medium" : ""}>{ymd}</span>;
     }},
     { key: "salesItems", header: "Sales items", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getSalesItemsStatus(r)} /> },
+    { key: "ingredients", header: "Ingredients", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getIngredientsStatus(r)} /> },
     { key: "production", header: "Production", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getProductionStatus(r)} /> },
     { key: "delivery", header: "Delivery", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={getDeliveryStatus(r)} /> },
     { key: "actions", header: "", filterable: false, render: (r: any) => (
@@ -217,6 +226,7 @@ function SalesOrdersPage() {
         statusFilter={status}
         onStatusChange={(v) => {
           setStatus(v);
+          setSoPage(1);
           syncSellUrl(v, locationId);
         }}
         statuses={statuses}
@@ -226,6 +236,7 @@ function SalesOrdersPage() {
         locationFilter={locationId}
         onLocationChange={(v) => {
           setLocationId(v);
+          setSoPage(1);
           syncSellUrl(status, v);
         }}
       >
@@ -238,13 +249,24 @@ function SalesOrdersPage() {
             {(error as any)?.response?.data?.error || (error as Error)?.message || "Check the API and try again."}
           </div>
         )}
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-gray-500">{(data || []).length} orders</span>
-          <span className="text-xs font-medium text-gray-700">
-            {totalsByCurrency.length <= 1
-              ? `Total: ${(totalsByCurrency[0]?.[1] ?? 0).toFixed(2)} ${totalsByCurrency[0]?.[0] ?? "USD"}`
-              : `Totals (by currency): ${totalsByCurrency.map(([c, v]) => `${v.toFixed(2)} ${c}`).join(" · ")}`}
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <span className="text-xs text-gray-500">
+            {soTotal} orders{soTotal > SO_PAGE_SIZE ? ` · page ${soPage} of ${Math.ceil(soTotal / SO_PAGE_SIZE)}` : ""}
           </span>
+          <div className="flex items-center gap-3">
+            {soTotal > SO_PAGE_SIZE && (
+              <div className="flex items-center gap-1">
+                <button type="button" className="icon-btn p-1 disabled:opacity-30" disabled={soPage === 1} onClick={() => setSoPage(p => Math.max(1, p - 1))} aria-label="Previous page">‹</button>
+                <span className="text-xs text-gray-600">{soPage} / {Math.ceil(soTotal / SO_PAGE_SIZE)}</span>
+                <button type="button" className="icon-btn p-1 disabled:opacity-30" disabled={soPage >= Math.ceil(soTotal / SO_PAGE_SIZE)} onClick={() => setSoPage(p => p + 1)} aria-label="Next page">›</button>
+              </div>
+            )}
+            <span className="text-xs font-medium text-gray-700">
+              {totalsByCurrency.length <= 1
+                ? `Total: ${(totalsByCurrency[0]?.[1] ?? 0).toFixed(2)} ${totalsByCurrency[0]?.[0] ?? "USD"}`
+                : `Totals (by currency): ${totalsByCurrency.map(([c, v]) => `${v.toFixed(2)} ${c}`).join(" · ")}`}
+            </span>
+          </div>
         </div>
         <DataTable
           columns={columns}

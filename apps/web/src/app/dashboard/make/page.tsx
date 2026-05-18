@@ -16,12 +16,8 @@ import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { bomOptions } from "@/lib/catalogOptions";
 
 const statuses = [
-  { label: "All", value: "" },
-  { label: "Draft", value: "draft" },
-  { label: "Released", value: "released" },
-  { label: "In progress", value: "in_progress" },
+  { label: "Open", value: "" },
   { label: "Done", value: "done" },
-  { label: "Cancelled", value: "cancelled" },
 ];
 
 export default function ManufacturingPage() {
@@ -69,6 +65,7 @@ export default function ManufacturingPage() {
       </Link>
     )},
     { key: "product", header: "Product", render: (r: any) => r.bom?.variant?.product?.name || r.bom?.name || "—" },
+    { key: "customer", header: "Customer", render: (r: any) => r.salesOrder?.customer?.name || r.customer?.name || "—" },
     { key: "qty", header: "Qty", sortable: true },
     { key: "status", header: "Status", isStatus: true, filterable: false, render: (r: any) => <StatusCell status={r.status} /> },
     { key: "scheduledAt", header: "Scheduled", sortable: true, render: (r: any) => r.scheduledAt ? new Date(r.scheduledAt).toISOString().slice(0, 10) : "—" },

@@ -1,6 +1,6 @@
 "use client";
-import { useState, useMemo } from "react";
-import { ChevronUp, ChevronDown, ArrowUpDown } from "lucide-react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { ChevronUp, ChevronDown, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 export interface Column<T = any> {
   key: string;
@@ -22,7 +22,10 @@ interface Props<T = any> {
   showRank?: boolean;
   showFilters?: boolean;
   totalLabel?: string;
+  pageSize?: number;
 }
+
+const DEFAULT_PAGE_SIZE = 100;
 
 function SkeletonTableRows({ cols, rows = 6 }: { cols: number; rows?: number }) {
   return (
@@ -40,12 +43,30 @@ function SkeletonTableRows({ cols, rows = 6 }: { cols: number; rows?: number }) 
   );
 }
 
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setDebounced(value), delay);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [value, delay]);
+  return debounced;
+}
+
 export function DataTable<T extends Record<string, any>>({
-  columns, data, isLoading, onRowClick, emptyMessage = "No data found", rowKey, showRank = false, showFilters = true, totalLabel,
+  columns, data, isLoading, onRowClick, emptyMessage = "No data found",
+  rowKey, showRank = false, showFilters = true, totalLabel, pageSize = DEFAULT_PAGE_SIZE,
 }: Props<T>) {
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [filterInputs, setFilterInputs] = useState<Record<string, string>>({});
+  const [page, setPage] = useState(1);
+
+  const debouncedFilters = useDebounce(filterInputs, 250);
+
+  // Reset to page 1 when filters/sort changes
+  useEffect(() => { setPage(1); }, [debouncedFilters, sortCol, sortDir]);
 
   function handleSort(key: string) {
     if (sortCol === key) {
@@ -58,7 +79,7 @@ export function DataTable<T extends Record<string, any>>({
 
   const filtered = useMemo(() => {
     let result = data;
-    for (const [key, val] of Object.entries(filters)) {
+    for (const [key, val] of Object.entries(debouncedFilters)) {
       if (!val) continue;
       const lower = val.toLowerCase();
       result = result.filter(row => {
@@ -67,7 +88,7 @@ export function DataTable<T extends Record<string, any>>({
       });
     }
     return result;
-  }, [data, filters]);
+  }, [data, debouncedFilters]);
 
   const sorted = useMemo(() => {
     if (!sortCol) return filtered;
@@ -81,6 +102,12 @@ export function DataTable<T extends Record<string, any>>({
     });
   }, [filtered, sortCol, sortDir]);
 
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageStart = (safePage - 1) * pageSize;
+  const pageEnd = Math.min(pageStart + pageSize, sorted.length);
+  const paginated = sorted.slice(pageStart, pageEnd);
+
   const allCols = showRank
     ? [{ key: "__rank", header: "#", className: "w-10 text-center" } as Column<T>, ...columns]
     : columns;
@@ -88,14 +115,16 @@ export function DataTable<T extends Record<string, any>>({
   return (
     <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
       {totalLabel && (
-        <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-100">
-          {sorted.length} {totalLabel}
+        <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-100 flex items-center justify-between gap-2">
+          <span>{sorted.length} {totalLabel}{sorted.length !== data.length ? ` (filtered from ${data.length})` : ""}</span>
+          {totalPages > 1 && (
+            <span className="text-gray-400">Page {safePage} of {totalPages}</span>
+          )}
         </div>
       )}
       <div className="overflow-x-auto">
         <table className="table">
           <thead>
-            {/* Header row */}
             <tr>
               {allCols.map(col => (
                 <th
@@ -114,7 +143,6 @@ export function DataTable<T extends Record<string, any>>({
                 </th>
               ))}
             </tr>
-            {/* Filter row */}
             {showFilters && (
               <tr className="border-b border-gray-200">
                 {allCols.map(col => (
@@ -128,8 +156,8 @@ export function DataTable<T extends Record<string, any>>({
                         type="text"
                         placeholder="Filter"
                         className="w-full text-[11px] px-2 py-1 border border-gray-200 rounded font-normal text-gray-600 placeholder:text-gray-300 focus:outline-none focus:border-brand-500"
-                        value={filters[col.key] || ""}
-                        onChange={e => setFilters(f => ({ ...f, [col.key]: e.target.value }))}
+                        value={filterInputs[col.key] || ""}
+                        onChange={e => setFilterInputs(f => ({ ...f, [col.key]: e.target.value }))}
                       />
                     ) : null}
                   </th>
@@ -147,19 +175,19 @@ export function DataTable<T extends Record<string, any>>({
                 </td>
               </tr>
             ) : (
-              sorted.map((row, i) => (
+              paginated.map((row, i) => (
                 <tr
-                  key={rowKey ? rowKey(row) : row.id || i}
+                  key={rowKey ? rowKey(row) : row.id || (pageStart + i)}
                   className={onRowClick ? "cursor-pointer" : ""}
                   onClick={() => onRowClick?.(row)}
                 >
                   {allCols.map(col => {
                     if (col.key === "__rank") {
-                      return <td key={col.key} className="text-center text-gray-400 text-xs w-10">{i + 1}</td>;
+                      return <td key={col.key} className="text-center text-gray-400 text-xs w-10">{pageStart + i + 1}</td>;
                     }
                     return (
                       <td key={col.key} className={col.isStatus ? "!p-0" : (col.className || "")}>
-                        {col.render ? col.render(row, i) : row[col.key] ?? "—"}
+                        {col.render ? col.render(row, pageStart + i) : row[col.key] ?? "—"}
                       </td>
                     );
                   })}
@@ -169,6 +197,56 @@ export function DataTable<T extends Record<string, any>>({
           </tbody>
         </table>
       </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 bg-gray-50/50">
+          <span className="text-xs text-gray-500">
+            {pageStart + 1}–{pageEnd} of {sorted.length}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className="icon-btn p-1 disabled:opacity-30"
+              disabled={safePage === 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              aria-label="Previous page"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+              let pg: number;
+              if (totalPages <= 7) {
+                pg = i + 1;
+              } else if (safePage <= 4) {
+                pg = i < 6 ? i + 1 : totalPages;
+              } else if (safePage >= totalPages - 3) {
+                pg = i === 0 ? 1 : totalPages - 6 + i;
+              } else {
+                const offsets = [1, safePage - 2, safePage - 1, safePage, safePage + 1, safePage + 2, totalPages];
+                pg = offsets[i];
+              }
+              return (
+                <button
+                  key={pg}
+                  type="button"
+                  className={`min-w-[28px] h-7 rounded text-xs font-medium px-1.5 ${pg === safePage ? "bg-brand-600 text-white" : "hover:bg-gray-100 text-gray-600"}`}
+                  onClick={() => setPage(pg)}
+                >
+                  {pg}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              className="icon-btn p-1 disabled:opacity-30"
+              disabled={safePage === totalPages}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              aria-label="Next page"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

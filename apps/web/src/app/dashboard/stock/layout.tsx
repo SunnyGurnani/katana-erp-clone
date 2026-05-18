@@ -2,11 +2,7 @@ import { SubTabs } from "@/components/layout/SubTabs";
 
 const tabs = [
   { label: "Inventory", href: "/dashboard/stock" },
-  { label: "Incoming", href: "/dashboard/stock/incoming" },
-  { label: "Outgoing", href: "/dashboard/stock/outgoing" },
-  { label: "Batches", href: "/dashboard/stock/batches" },
   { label: "Stock adjustments", href: "/dashboard/stock/adjustments" },
-  { label: "Stock transfers", href: "/dashboard/stock/transfers" },
   { label: "Stocktakes", href: "/dashboard/stock/stocktakes" },
 ];
 

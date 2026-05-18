@@ -107,13 +107,14 @@ router.get('/levels', async (req, res) => {
     (await prisma.location.findFirst({ where: { isDefault: true } })) ??
     (await prisma.location.findFirst({ orderBy: { createdAt: 'asc' } }));
 
-  /** Same “open” SO set as list filter: exclude draft, fulfilled, cancelled */
+  /** Same “open” SO set as list filter: exclude draft, fulfilled, cancelled.
+   *  Scoped to the page's variantIds to avoid loading the entire SO row table. */
   const soRows = await prisma.salesOrderRow.findMany({
     where: {
+      variantId: { in: pageVariantIds },
       order: {
         status: { notIn: ['cancelled', 'fulfilled', 'draft'] },
       },
-      variantId: { not: null },
     },
     select: {
       variantId: true,

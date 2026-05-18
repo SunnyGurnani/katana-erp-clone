@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { ListToolbar } from "@/components/layout/ListToolbar";
@@ -94,15 +95,43 @@ export default function ProductsPage() {
     setOpen(true);
   }
 
+  const searchParams = useSearchParams();
+  const archive = searchParams.get("archive") === "true";
+  const filtered = (data || []).filter((r: any) => {
+    const active = (r.status || "active") === "active";
+    return archive ? !active : active;
+  });
+
   const columns: Column[] = [
     { key: "name", header: "Name", sortable: true, render: (r: any) => (
-      <button className="font-medium text-brand-600 hover:underline" onClick={e => { e.stopPropagation(); setExpanded(expanded === r.id ? null : r.id); setBomId(null); }}>{r.name}</button>
+      <button className="font-medium text-brand-600 hover:underline text-left" onClick={e => { e.stopPropagation(); setExpanded(expanded === r.id ? null : r.id); setBomId(null); }}>{r.name}</button>
     )},
+    { key: "sku", header: "Variant code / SKU", render: (r: any) => <span className="font-mono text-xs text-gray-700">{r.variants?.map((v: any) => v.sku).filter(Boolean).join(", ") || "—"}</span> },
     { key: "category", header: "Category", render: (r: any) => r.category || "—" },
-    { key: "sku", header: "SKU(s)", render: (r: any) => <span className="font-mono text-xs">{r.variants?.map((v: any) => v.sku).join(", ") || "—"}</span> },
-    { key: "status", header: "Status", isStatus: true, filterable: false, render: (r: any) => {
-      const s = r.status || "active";
-      return <StatusCell status={s === "active" ? "in_stock" : "not_available"} label={s === "active" ? "Active" : "Inactive"} />;
+    { key: "salePrice", header: "Default sales price", render: (r: any) => {
+      const price = Number(r.variants?.[0]?.salePrice || 0);
+      return price > 0 ? <span>{price.toFixed(2)}</span> : <span className="text-gray-400">0</span>;
+    }},
+    { key: "cost", header: "Cost", render: (r: any) => {
+      const cost = Number(r.variants?.[0]?.unitCost || 0);
+      return cost > 0 ? <span>{cost.toFixed(2)}</span> : <span className="text-gray-400">0</span>;
+    }},
+    { key: "profit", header: "Profit", render: (r: any) => {
+      const price = Number(r.variants?.[0]?.salePrice || 0);
+      const cost = Number(r.variants?.[0]?.unitCost || 0);
+      const profit = price - cost;
+      return profit !== 0 ? <span>{profit.toFixed(2)}</span> : <span className="text-gray-400">0</span>;
+    }},
+    { key: "margin", header: "Margin", render: (r: any) => {
+      const price = Number(r.variants?.[0]?.salePrice || 0);
+      const cost = Number(r.variants?.[0]?.unitCost || 0);
+      if (!price) return <span className="text-gray-400">—</span>;
+      return <span>{(((price - cost) / price) * 100).toFixed(1)} %</span>;
+    }},
+    { key: "productionTime", header: "Prod. time", render: (r: any) => {
+      const t = r.productionTime ?? r.leadTime ?? r.variants?.[0]?.productionTime;
+      if (!t) return <span className="text-gray-400">—</span>;
+      return <span>{t} min</span>;
     }},
     { key: "actions", header: "", filterable: false, render: (r: any) => (
       <ActionMenu actions={[
@@ -121,7 +150,7 @@ export default function ProductsPage() {
         <ExportToolbar resource="products" />
       </ListToolbar>
       <div className="px-4 py-3 space-y-4">
-        <DataTable columns={columns} data={data || []} isLoading={isLoading} emptyMessage="No products found" showRank totalLabel="products" />
+        <DataTable columns={columns} data={filtered} isLoading={isLoading} emptyMessage="No products found" showRank totalLabel="products" />
 
         {expanded && (
           <>

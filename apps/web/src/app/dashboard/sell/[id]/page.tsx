@@ -7,7 +7,7 @@ import { SkeletonRows } from "@/components/ui/Skeleton";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { ArrowLeft, Plus, Truck, Trash2, Copy, Save, FileDown, X, Package } from "lucide-react";
+import { ArrowLeft, Plus, Truck, Trash2, Copy, Save, FileDown, X, Package, ChevronLeft, ChevronRight, RotateCcw, Settings } from "lucide-react";
 import Link from "next/link";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { productVariantOptions, locationOptions, customerOptions } from "@/lib/catalogOptions";
@@ -282,6 +282,57 @@ export default function SODetailPage() {
     mutationFn: (rowId: string) => api.delete(`/sales-order-rows/${rowId}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["so", orderId] }); addToast("Row removed", "success"); },
     onError: () => addToast("Error removing row", "error"),
+  });
+
+  // ── Shipping fees (real API) ──
+  const [sfDesc, setSfDesc] = useState("");
+  const [sfAmount, setSfAmount] = useState("");
+  const [sfEditingId, setSfEditingId] = useState("");
+  const [sfEditDesc, setSfEditDesc] = useState("");
+  const [sfEditAmount, setSfEditAmount] = useState("");
+
+  const addShippingFee = useMutation({
+    mutationFn: () => api.post(`/sales-orders/${orderId}/shipping-fees`, {
+      description: sfDesc || "Shipping",
+      amount: Number(sfAmount || 0),
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["so", orderId] }); addToast("Shipping fee added", "success"); setSfDesc(""); setSfAmount(""); },
+    onError: () => addToast("Error adding shipping fee", "error"),
+  });
+
+  const updateShippingFee = useMutation({
+    mutationFn: (feeId: string) => api.patch(`/shipping-fees/${feeId}`, {
+      description: sfEditDesc || "Shipping",
+      amount: Number(sfEditAmount || 0),
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["so", orderId] }); addToast("Shipping fee updated", "success"); setSfEditingId(""); },
+    onError: () => addToast("Error updating shipping fee", "error"),
+  });
+
+  const deleteShippingFee = useMutation({
+    mutationFn: (feeId: string) => api.delete(`/shipping-fees/${feeId}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["so", orderId] }); addToast("Shipping fee removed", "success"); },
+    onError: () => addToast("Error removing shipping fee", "error"),
+  });
+
+  // ── Sales Return (real API) ──
+  const createReturn = useMutation({
+    mutationFn: () => api.post("/sales-returns", {
+      orderId: orderId,
+      customerId: so?.customer?.id || undefined,
+      status: "draft",
+      notes: `Return for ${so?.soNumber || orderId}`,
+    }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["sales-returns"] });
+      addToast("Sales return created", "success");
+      const returnId = res.data?.id;
+      if (returnId) router.push(`/dashboard/sell?status=open`);
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.error || "Error creating return";
+      addToast(typeof msg === "string" ? msg : "Error creating return", "error");
+    },
   });
 
   const updateRow = useMutation({
@@ -793,6 +844,7 @@ export default function SODetailPage() {
               <h1 className="text-lg font-bold text-gray-900">{so.soNumber} {so.customer?.name || ""}</h1>
             </div>
             <div className="flex items-center gap-2">
+              <button type="button" className="btn btn-ghost text-sm" disabled={createReturn.isPending} onClick={() => { if (window.confirm("Create a sales return for this order?")) createReturn.mutate(); }}>{createReturn.isPending ? "Creating..." : "+ Return"}</button>
               {canConfirmFromDraft && (
                 <button className="btn btn-ghost text-sm" disabled={updateSO.isPending} onClick={() => updateSO.mutate({ status: "confirmed" })}>Confirm</button>
               )}
@@ -869,192 +921,308 @@ export default function SODetailPage() {
       </div>
 
       {/* Items section — Katana style */}
-      <div className="px-6 py-4">
+      <div className="px-6 pt-4 pb-2">
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <h2 className="text-base font-bold text-gray-900">Items not shipped</h2>
-            <span className="text-sm text-gray-600">📍 {so.location?.name || "Main location"}</span>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-gray-900">Items not shipped</h2>
+            <span className="inline-flex items-center gap-1 text-xs text-gray-700 bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5 font-medium">
+              📍 {so.location?.name || "Main location"}
+            </span>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-400">Tracking info</span>
-            {["draft", "confirmed"].includes(so.status) && (
-              <button className="text-sm text-blue-600 hover:text-blue-800 font-medium" onClick={() => setRowOpen(true)}>+ Add row</button>
-            )}
-          </div>
+          <span className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">Tracking info ▾</span>
         </div>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th>Location</th>
-              <th>In stock</th>
-              <th>Qty</th>
-              <th>Sale Price</th>
-              <th>Picked</th>
-              <th>Shipped</th>
-              <th>Line Total</th>
-              <th className="text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(so.rows || []).map((r: any) => (
-              <tr key={r.id}>
-                {(() => {
-                  const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
-                  const rem = Number(r.qty) - Number(r.fulfilledQty || 0);
-                  const picked = Number(r.pickedQty ?? 0);
-                  const remPick = rowRemPick(r);
-                  const currentVariantId =
-                    editingRowId === r.id && st === "draft"
-                      ? editingRowForm.variantId
-                      : r.variantId || "";
-                  return (
-                    <>
-                      <td>
-                        {editingRowId === r.id && st === "draft" ? (
-                          <SearchableSelect
-                            value={currentVariantId}
-                            onChange={(nextId) => {
-                              setEditingRowForm((f) => {
-                                const next = { ...f, variantId: nextId };
-                                const vv = nextId ? variantById.get(nextId) : undefined;
-                                if (vv) {
-                                  const p =
-                                    vv.salesPrice != null && vv.salesPrice !== ""
-                                      ? String(vv.salesPrice)
-                                      : vv.product?.salesPrice != null &&
-                                          vv.product?.salesPrice !== ""
-                                        ? String(vv.product.salesPrice)
-                                        : "";
-                                  next.salePrice = p;
-                                }
-                                return next;
-                              });
-                            }}
-                            options={variantOpts}
-                            placeholder="Search products…"
-                            emptyOptionLabel="— Select —"
-                            aria-label="Product variant"
-                          />
-                        ) : (
-                          <div className="flex flex-col">
-                            <span>{v?.product?.name || r.description || r.variantId || "—"}</span>
-                            {v?.sku && (
-                              <span className="text-[11px] text-gray-500 font-mono">
-                                {v.sku}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="text-sm text-gray-700 max-w-[160px]">
-                        {editingRowId === r.id && st === "draft" ? (
-                          <SearchableSelect
-                            value={editingRowForm.locationId}
-                            onChange={(v) => setEditingRowForm((f) => ({ ...f, locationId: v }))}
-                            options={lineLocationOptions}
-                            placeholder="Search locations…"
-                            emptyOptionLabel={so.locationId ? "— Use order default —" : "— Select —"}
-                            aria-label="Line ship-from location"
-                          />
-                        ) : (
-                          lineLocationLabel(r)
-                        )}
-                      </td>
-                      <td className="text-sm text-gray-600 whitespace-nowrap">{r.variantId ? stockLineSummary(r) : "—"}</td>
-                      <td>
-                        {editingRowId === r.id && st === "draft" ? (
-                          <input
-                            className="input w-20"
-                            type="number"
-                            value={editingRowForm.qty}
-                            onChange={(e) =>
-                              setEditingRowForm((f) => ({ ...f, qty: e.target.value }))
-                            }
-                          />
-                        ) : (
-                          formatQty(r.qty, v?.product?.unitOfMeasure)
-                        )}
-                      </td>
-                      <td>
-                        {editingRowId === r.id && st === "draft" ? (
-                          <input
-                            className="input w-24"
-                            type="number"
-                            step="0.01"
-                            value={editingRowForm.salePrice}
-                            onChange={(e) =>
-                              setEditingRowForm((f) => ({ ...f, salePrice: e.target.value }))
-                            }
-                          />
-                        ) : (
-                          <>
-                            {Number(r.salePrice || 0).toFixed(2)} {so.currency || "USD"}
-                          </>
-                        )}
-                      </td>
-                      <td className="text-sm tabular-nums">{formatQty(picked, v?.product?.unitOfMeasure)}</td>
-                      <td className="text-sm tabular-nums">{formatQty(r.fulfilledQty || 0, v?.product?.unitOfMeasure)}</td>
-                      <td>{(Number(r.qty) * Number(r.salePrice || 0)).toFixed(2)} {so.currency || "USD"}</td>
-                      <td className="text-right whitespace-nowrap">
+
+        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50/50">
+                <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 w-8">#</th>
+                <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 min-w-[180px]">Item</th>
+                <th className="px-3 py-2.5 text-right text-xs font-medium text-gray-500 w-28">Quantity</th>
+                <th className="px-3 py-2.5 text-right text-xs font-medium text-gray-500 w-36">Price per unit</th>
+                <th className="px-3 py-2.5 text-right text-xs font-medium text-gray-500 w-28">Discount</th>
+                <th className="px-3 py-2.5 text-right text-xs font-medium text-gray-500 w-36">Total price</th>
+                <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 w-36">Tax %</th>
+                <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 w-36">Location</th>
+                <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 w-[120px]">Sales items</th>
+                <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 w-[120px]">Ingredients</th>
+                <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 w-[120px]">Production</th>
+                <th className="px-2 py-2.5 w-10" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {(so.rows || []).map((r: any, rowIdx: number) => {
+                const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
+                const rem = Number(r.qty) - Number(r.fulfilledQty || 0);
+                const picked = Number(r.pickedQty ?? 0);
+                const remPick = rowRemPick(r);
+                const qty_n = Number(r.qty || 0);
+                const price_n = Number(r.salePrice || 0);
+                const lineTotal = qty_n * price_n;
+                const isEditing = editingRowId === r.id && st === "draft";
+                const currentVariantId = isEditing ? editingRowForm.variantId : r.variantId || "";
+
+                // Sales items status — Katana uses full-cell solid color backgrounds
+                const fulfilledQty = Number(r.fulfilledQty || 0);
+                let salesItemsLabel = "Not available";
+                let salesItemsCellClass = "status-not-available";
+                const stock = r.stockAtLineLocation;
+                if (fulfilledQty >= qty_n && qty_n > 0) {
+                  salesItemsLabel = "Shipped"; salesItemsCellClass = "status-done";
+                } else if (picked >= (qty_n - fulfilledQty) && qty_n > 0) {
+                  salesItemsLabel = "Picked"; salesItemsCellClass = "status-picked";
+                } else if (stock && Number(stock.onHand) >= qty_n) {
+                  salesItemsLabel = "In stock"; salesItemsCellClass = "status-instock";
+                } else if (stock && (Number(stock.onHand) + (Number(stock.expected ?? 0))) >= qty_n) {
+                  salesItemsLabel = "Expected"; salesItemsCellClass = "status-expected";
+                } else if (!r.variantId) {
+                  salesItemsLabel = "—"; salesItemsCellClass = "status-not-applicable";
+                }
+
+                // Ingredients status — Katana full-cell style
+                const ingredientsLabel = picked > 0 ? "Picked" : (rem > 0 ? "Not available" : "Done");
+                const ingredientsCellClass = picked > 0 ? "status-picked" : (rem > 0 ? "status-not-applicable" : "status-done");
+
+                // Production status — Katana full-cell style
+                const productionLabel = fulfilledQty >= qty_n && qty_n > 0 ? "Done" : "Not started";
+                const productionCellClass = fulfilledQty >= qty_n && qty_n > 0 ? "status-done" : "status-not-started";
+
+                return (
+                  <tr key={r.id} className="hover:bg-gray-50/50 group">
+                    <td className="px-3 py-2.5 text-xs text-gray-400 tabular-nums">{rowIdx + 1}</td>
+                    <td className="px-3 py-2.5">
+                      {isEditing ? (
+                        <SearchableSelect
+                          value={currentVariantId}
+                          onChange={(nextId) => {
+                            setEditingRowForm((f) => {
+                              const next = { ...f, variantId: nextId };
+                              const vv = nextId ? variantById.get(nextId) : undefined;
+                              if (vv) {
+                                const p = vv.salesPrice != null && vv.salesPrice !== "" ? String(vv.salesPrice)
+                                  : vv.product?.salesPrice != null && vv.product?.salesPrice !== "" ? String(vv.product.salesPrice) : "";
+                                next.salePrice = p;
+                              }
+                              return next;
+                            });
+                          }}
+                          options={variantOpts}
+                          placeholder="Search products…"
+                          emptyOptionLabel="— Select —"
+                          aria-label="Product variant"
+                        />
+                      ) : (
+                        <div>
+                          <span className="font-medium text-gray-900">{v?.product?.name || r.description || "—"}</span>
+                          {v?.sku && <div className="text-[11px] text-gray-400 font-mono mt-0.5">{v.sku}</div>}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      {isEditing ? (
+                        <input className="input w-20 text-right" type="number" value={editingRowForm.qty}
+                          onChange={(e) => setEditingRowForm((f) => ({ ...f, qty: e.target.value }))} />
+                      ) : (
+                        <span className="tabular-nums">{formatQty(r.qty, v?.product?.unitOfMeasure)}</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      {isEditing ? (
+                        <input className="input w-28 text-right" type="number" step="0.01" value={editingRowForm.salePrice}
+                          onChange={(e) => setEditingRowForm((f) => ({ ...f, salePrice: e.target.value }))} />
+                      ) : (
+                        <span className="tabular-nums">{Number(r.salePrice || 0).toFixed(2)} {so.currency || "USD"}</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-gray-400">0 %</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-medium">{lineTotal.toFixed(2)} {so.currency || "USD"}</td>
+                    <td className="px-3 py-2.5 text-sm text-gray-600">{r.taxRate != null ? `${Number(r.taxRate).toFixed(1)} %` : "—"}</td>
+                    <td className="px-3 py-2.5 text-sm text-gray-600">
+                      {isEditing ? (
+                        <SearchableSelect
+                          value={editingRowForm.locationId}
+                          onChange={(val) => setEditingRowForm((f) => ({ ...f, locationId: val }))}
+                          options={lineLocationOptions}
+                          placeholder="Search locations…"
+                          emptyOptionLabel={so.locationId ? "— Order default —" : "— Select —"}
+                          aria-label="Line ship-from location"
+                        />
+                      ) : (
+                        <span>{lineLocationLabel(r)}</span>
+                      )}
+                    </td>
+                    {/* Sales items — Katana full-cell colored background */}
+                    <td className={salesItemsCellClass}>
+                      <div className="flex items-center justify-center gap-1">
+                        <span>{salesItemsLabel}</span>
                         {canFulfill && r.variantId && remPick > 0 && (
-                          <button
-                            type="button"
-                            className="btn btn-ghost text-xs mr-1"
-                            onClick={() => openLinePickModal(r)}
-                          >
-                            <Package size={13} className="inline mr-0.5" />Pick
+                          <button type="button" title="Pick" onClick={(e) => { e.stopPropagation(); openLinePickModal(r); }}
+                            className="rounded p-0.5 opacity-70 hover:opacity-100">
+                            <Package size={12} />
                           </button>
                         )}
                         {canFulfill && r.variantId && picked > 0 && (
-                          <button
-                            type="button"
-                            className="btn btn-ghost text-xs mr-1"
-                            onClick={() => {
-                              setLineReleaseError("");
-                              setLineReleaseRowId(r.id);
-                              setLineReleaseQty(String(picked));
-                              setLineReleaseBatchId("");
-                              setLineReleaseOpen(true);
-                            }}
-                          >
-                            Unpick
+                          <button type="button" title="Unpick"
+                            onClick={(e) => { e.stopPropagation(); setLineReleaseError(""); setLineReleaseRowId(r.id); setLineReleaseQty(String(picked)); setLineReleaseBatchId(""); setLineReleaseOpen(true); }}
+                            className="rounded p-0.5 opacity-70 hover:opacity-100">
+                            <X size={11} />
                           </button>
                         )}
+                      </div>
+                    </td>
+                    {/* Ingredients — Katana full-cell colored background */}
+                    <td className={ingredientsCellClass}>
+                      {ingredientsLabel}
+                    </td>
+                    {/* Production — Katana full-cell colored background */}
+                    <td className={productionCellClass}>
+                      <div className="flex items-center justify-center gap-1">
+                        <span>{productionLabel}</span>
                         {canFulfill && r.variantId && rem > 0 && (
-                          <button
-                            type="button"
-                            className="btn btn-ghost text-xs mr-1"
-                            onClick={() => openLineFulfillModal(r)}
-                          >
-                            <Truck size={13} className="inline mr-0.5" />Ship
+                          <button type="button" title="Ship" onClick={(e) => { e.stopPropagation(); openLineFulfillModal(r); }}
+                            className="rounded p-0.5 opacity-70 hover:opacity-100">
+                            <Truck size={12} />
                           </button>
                         )}
+                      </div>
+                    </td>
+                    {/* Row gear icon — Katana style */}
+                    <td className="px-2 py-2 text-center">
+                      <div className="flex items-center justify-center gap-0.5">
+                        {st === "draft" && isEditing ? (
+                          <button type="button" title="Save" className="icon-btn p-1 text-brand-600 hover:text-brand-800" onClick={saveInlineEditRow}>
+                            <Save size={14} />
+                          </button>
+                        ) : st === "draft" ? (
+                          <button type="button" title="Edit" className="icon-btn p-1 text-gray-400 hover:text-gray-600" onClick={() => startInlineEditRow(r)}>
+                            <Settings size={14} />
+                          </button>
+                        ) : (
+                          <span className="text-gray-300"><Settings size={14} /></span>
+                        )}
                         {st === "draft" && (
-                          <button
-                            type="button"
-                            className="btn btn-ghost text-xs mr-1"
-                            onClick={() =>
-                              editingRowId === r.id
-                                ? saveInlineEditRow()
-                                : startInlineEditRow(r)
-                            }
-                          >
-                            {editingRowId === r.id ? "Save" : "Edit"}
+                          <button type="button" title="Remove" className="icon-btn p-1 text-gray-300 hover:text-red-500"
+                            onClick={(e) => { e.stopPropagation(); if (window.confirm("Remove this row?")) deleteRow.mutate(r.id); }}>
+                            <X size={13} />
                           </button>
                         )}
-                        {st === "draft" && (
-                          <button type="button" className="icon-btn text-red-400 hover:text-red-600" onClick={(e) => { e.stopPropagation(); if (window.confirm("Remove this row?")) deleteRow.mutate(r.id); }}><X size={14} /></button>
-                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!so.rows?.length && (
+                <tr><td colSpan={12} className="text-center text-gray-400 py-10 text-sm">No line items yet</td></tr>
+              )}
+            </tbody>
+          </table>
+
+          {/* Bottom row: + Add row + totals — Katana style */}
+          <div className="border-t border-gray-100">
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-50/30">
+              <div>
+                {["draft", "confirmed"].includes(so.status) && (
+                  <button className="text-xs text-brand-600 hover:text-brand-800 font-medium" onClick={() => setRowOpen(true)}>
+                    + Add row
+                  </button>
+                )}
+              </div>
+              {(so.rows?.length ?? 0) > 0 && (
+                <div className="text-sm text-gray-600 text-right">
+                  {(() => {
+                    const subtotal = (so.rows || []).reduce((s: number, r: any) => s + Number(r.qty || 0) * Number(r.salePrice || 0), 0);
+                    const tax = (so.rows || []).reduce((s: number, r: any) => {
+                      const rate = Number(r.taxRate || 0) / 100;
+                      return s + Number(r.qty || 0) * Number(r.salePrice || 0) * rate;
+                    }, 0);
+                    const total = subtotal + tax;
+                    return (
+                      <span className="text-gray-900 font-semibold">Total items not shipped (with tax): <span className="tabular-nums ml-4">{total.toFixed(2)} {so.currency || "USD"}</span></span>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Shipping fee section — fully functional */}
+      <div className="px-6 pt-4 pb-2">
+        <h2 className="text-sm font-semibold text-gray-900 mb-3">Shipping fee</h2>
+        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50/50">
+                <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500">Description</th>
+                <th className="px-3 py-2.5 text-right text-xs font-medium text-gray-500 w-40">Cost</th>
+                <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 w-36">Tax</th>
+                <th className="px-2 py-2.5 w-10" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {(so.shippingFees || []).map((sf: any) => (
+                <tr key={sf.id} className="hover:bg-gray-50/50 group">
+                  {sfEditingId === sf.id ? (
+                    <>
+                      <td className="px-3 py-2">
+                        <input className="input w-full" value={sfEditDesc} onChange={e => setSfEditDesc(e.target.value)} placeholder="Shipping" />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input className="input w-28 text-right" type="number" step="0.01" value={sfEditAmount} onChange={e => setSfEditAmount(e.target.value)} />
+                      </td>
+                      <td className="px-3 py-2 text-gray-400">—</td>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-0.5">
+                          <button type="button" title="Save" className="icon-btn p-1 text-brand-600" onClick={() => updateShippingFee.mutate(sf.id)}><Save size={13} /></button>
+                          <button type="button" title="Cancel" className="icon-btn p-1 text-gray-400" onClick={() => setSfEditingId("")}><X size={13} /></button>
+                        </div>
                       </td>
                     </>
-                  );
-                })()}
-              </tr>
-            ))}
-            {!so.rows?.length && <tr><td colSpan={11} className="text-center text-gray-400 py-8">No line items yet</td></tr>}
-          </tbody>
-        </table>
+                  ) : (
+                    <>
+                      <td className="px-3 py-2.5 text-gray-700">{sf.description || "Shipping"}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{Number(sf.amount || 0).toFixed(2)} {so.currency || "USD"}</td>
+                      <td className="px-3 py-2.5 text-gray-400">—</td>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button type="button" title="Edit" className="icon-btn p-1 text-gray-400 hover:text-gray-600" onClick={() => { setSfEditingId(sf.id); setSfEditDesc(sf.description || ""); setSfEditAmount(String(sf.amount || 0)); }}><Settings size={13} /></button>
+                          <button type="button" title="Remove" className="icon-btn p-1 text-gray-300 hover:text-red-500" onClick={() => { if (window.confirm("Remove this shipping fee?")) deleteShippingFee.mutate(sf.id); }}><X size={13} /></button>
+                        </div>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))}
+              {/* Inline add row */}
+              {["draft", "confirmed"].includes(so.status) && (
+                <tr className="border-t border-gray-100">
+                  <td className="px-3 py-2">
+                    <input className="input w-full" placeholder="Description (e.g. Shipping)" value={sfDesc} onChange={e => setSfDesc(e.target.value)} />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <input className="input w-28 text-right" type="number" step="0.01" placeholder="0.00" value={sfAmount} onChange={e => setSfAmount(e.target.value)} />
+                  </td>
+                  <td className="px-3 py-2 text-gray-400">—</td>
+                  <td className="px-2 py-2">
+                    <button type="button" className="text-xs text-brand-600 hover:text-brand-800 font-medium disabled:opacity-50" disabled={addShippingFee.isPending || !sfAmount} onClick={() => addShippingFee.mutate()}>
+                      {addShippingFee.isPending ? "..." : "+ Add"}
+                    </button>
+                  </td>
+                </tr>
+              )}
+              {!(so.shippingFees || []).length && !["draft", "confirmed"].includes(so.status) && (
+                <tr><td colSpan={4} className="text-center text-gray-400 py-4 text-sm">No shipping fees</td></tr>
+              )}
+            </tbody>
+          </table>
+          <div className="flex items-center justify-end px-3 py-2 border-t border-gray-100 bg-gray-50/30">
+            {(() => {
+              const sfTotal = (so.shippingFees || []).reduce((s: number, f: any) => s + Number(f.amount || 0), 0);
+              return <span className="text-sm text-gray-900 font-semibold">Total shipping fee (with tax): <span className="tabular-nums ml-4">{sfTotal.toFixed(2)} {so.currency || "USD"}</span></span>;
+            })()}
+          </div>
+        </div>
       </div>
 
       {Array.isArray(so.fulfillments) && so.fulfillments.filter((f: any) => !f.isReturn).length > 0 && (

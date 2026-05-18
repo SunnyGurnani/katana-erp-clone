@@ -3,7 +3,7 @@ import { SubTabs } from "@/components/layout/SubTabs";
 const tabs = [
   {
     label: "Sales",
-    href: "/dashboard/insights",
+    href: "/dashboard/insights/sales",
     matchPrefix: true,
     excludePrefixes: ["/dashboard/insights/manufacturing", "/dashboard/insights/purchasing"],
   },

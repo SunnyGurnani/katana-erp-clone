@@ -7,7 +7,7 @@ import { DataTable, Column } from "@/components/ui/DataTable";
 import { StatusCell } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
-import { AlertTriangle, ChevronDown, ChevronRight, ChevronUp, ArrowUpDown, HelpCircle } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, ChevronUp, ArrowUpDown, HelpCircle, ChevronLeft } from "lucide-react";
 import { formatLocalDateYmd } from "@/lib/formatDate";
 import { formatQty } from "@/lib/formatQty";
 import clsx from "clsx";
@@ -136,12 +136,12 @@ function buildExpandedLevels(
 }
 
 const COL_HELP = {
-  onHand: "Physical quantity on site (on hand).",
+  onHand: "Physical quantity currently in stock.",
   allocated: "Reserved stock across picks/allocations (SO, MO, TO) that is not yet completed.",
   committed: "Open demand from Sales Orders + Manufacturing Orders + Transfer Orders.",
   expected: "Incoming quantity from open Purchase Orders (not yet received).",
-  calculated: "Calculated stock: on hand + expected − committed.",
-  avail: "Available to promise: on hand − committed − allocated.",
+  calculated: "Calculated stock: in stock + expected − committed.",
+  avail: "Potential available to promise: in stock − committed − allocated.",
 } as const;
 
 function HelpHint({ text }: { text: string }) {
@@ -171,6 +171,8 @@ function matchesItemFilter(row: InvVariantRow, filter: ItemFilter): boolean {
   return Boolean(row.variant?.material);
 }
 
+const STOCK_PAGE_SIZE = 100;
+
 export default function InventoryPage() {
   const [tab, setTab] = useState<"levels" | "movements">("levels");
   const [itemFilter, setItemFilter] = useState<ItemFilter>("all");
@@ -182,6 +184,8 @@ export default function InventoryPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailVariant, setDetailVariant] = useState<InvVariantRow | null>(null);
   const [detailMetric, setDetailMetric] = useState<"allocated" | "committed" | "expected">("committed");
+  const [stockPage, setStockPage] = useState(1);
+  const [movPage, setMovPage] = useState(1);
 
   const { data: locations } = useQuery({
     queryKey: ["locations", "stock-filter"],
@@ -189,24 +193,27 @@ export default function InventoryPage() {
     enabled: tab === "levels",
   });
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["inventory-levels", 250, locationFilter || "all"],
+  const { data: stockResult, isLoading } = useQuery<{ data: InvVariantRow[]; total?: number; meta?: { total: number } }>({
+    queryKey: ["inventory-levels", stockPage, locationFilter || "all", itemFilter],
     queryFn: () =>
       api
         .get("/inventory/levels", {
           params: {
-            page: 1,
-            pageSize: 250,
+            page: stockPage,
+            pageSize: STOCK_PAGE_SIZE,
             ...(locationFilter ? { locationId: locationFilter } : {}),
           },
         })
-        .then((r) => r.data.data as InvVariantRow[]),
+        .then((r) => r.data),
     enabled: tab === "levels",
   });
 
-  const { data: movements, isLoading: movLoading } = useQuery({
-    queryKey: ["inventory-movements"],
-    queryFn: () => api.get("/inventory-movements").then((r) => r.data.data || r.data),
+  const data: InvVariantRow[] = stockResult?.data ?? [];
+  const stockTotal: number = stockResult?.meta?.total ?? stockResult?.total ?? data.length;
+
+  const { data: movements, isLoading: movLoading } = useQuery<any[]>({
+    queryKey: ["inventory-movements", movPage],
+    queryFn: () => api.get("/inventory-movements", { params: { page: movPage, pageSize: 100 } }).then((r) => r.data.data || r.data),
     enabled: tab === "movements",
   });
 
@@ -291,9 +298,9 @@ export default function InventoryPage() {
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Stock</h1>
           <p className="text-xs text-gray-500 mt-0.5 max-w-3xl">
-            <strong>On hand</strong> is physical stock. <strong>Allocated</strong> is stock picked/reserved (SO, MO, TO).{" "}
+            <strong>In stock</strong> is physical stock. <strong>Allocated</strong> is stock picked/reserved (SO, MO, TO).{" "}
             <strong>Committed</strong> is open demand on sales/manufacturing/transfer orders.{" "}
-            <strong>Expected</strong> is incoming on open purchase orders. <strong>Avail</strong> = on hand − committed − allocated.
+            <strong>Expected</strong> is incoming on open purchase orders. <strong>Potential</strong> = in stock − committed − allocated.
           </p>
         </div>
         {tab === "levels" && (
@@ -367,8 +374,15 @@ export default function InventoryPage() {
 
       {tab === "levels" ? (
         <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
-          <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-100">
-            {sortedRows.length} variants · Click a row to expand location detail
+          <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-100 flex items-center justify-between gap-2">
+            <span>{stockTotal} variants · Click a row to expand location detail</span>
+            {stockTotal > STOCK_PAGE_SIZE && (
+              <div className="flex items-center gap-1">
+                <button type="button" className="icon-btn p-0.5 disabled:opacity-30" disabled={stockPage === 1} onClick={() => setStockPage(p => Math.max(1, p - 1))} aria-label="Previous page"><ChevronLeft size={14} /></button>
+                <span className="text-gray-600 font-medium">Page {stockPage} / {Math.ceil(stockTotal / STOCK_PAGE_SIZE)}</span>
+                <button type="button" className="icon-btn p-0.5 disabled:opacity-30" disabled={stockPage >= Math.ceil(stockTotal / STOCK_PAGE_SIZE)} onClick={() => setStockPage(p => p + 1)} aria-label="Next page"><ChevronRight size={14} /></button>
+              </div>
+            )}
           </div>
           <div className="overflow-x-auto">
             <table className="table">
@@ -391,7 +405,7 @@ export default function InventoryPage() {
                   <th className="cursor-pointer select-none hover:text-gray-700 text-right whitespace-nowrap" onClick={() => handleSort("totalOnHand")}>
                     <span className="inline-flex items-center justify-end gap-1 w-full">
                       <span className="inline-flex items-center gap-0.5">
-                        On hand
+                        In stock
                         <HelpHint text={COL_HELP.onHand} />
                       </span>
                       <SortIcon colKey="totalOnHand" />
@@ -433,7 +447,7 @@ export default function InventoryPage() {
                   <th className="cursor-pointer select-none hover:text-gray-700 text-right whitespace-nowrap" onClick={() => handleSort("totalAvailable")}>
                     <span className="inline-flex items-center justify-end gap-1 w-full">
                       <span className="inline-flex items-center gap-0.5">
-                        Avail
+                        Potential
                         <HelpHint text={COL_HELP.avail} />
                       </span>
                       <SortIcon colKey="totalAvailable" />
@@ -582,7 +596,7 @@ export default function InventoryPage() {
                                     >
                                       <p className="font-medium text-gray-900">{lv.location?.name || "—"}</p>
                                       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-gray-700 tabular-nums">
-                                        <dt className="text-gray-500">On hand</dt>
+                                        <dt className="text-gray-500">In stock</dt>
                                         <dd className="text-right font-medium">{formatQty(oh, rowUom(row))}</dd>
                                         <dt className="text-gray-500">Allocated</dt>
                                         <dd className="text-right">{formatQty(allocated, rowUom(row))}</dd>
@@ -590,7 +604,7 @@ export default function InventoryPage() {
                                         <dd className="text-right text-amber-900/90">{formatQty(committed, rowUom(row))}</dd>
                                         <dt className="text-gray-500">Expected</dt>
                                         <dd className="text-right text-sky-900/90">{formatQty(expected, rowUom(row))}</dd>
-                                        <dt className="text-gray-500">Avail</dt>
+                                        <dt className="text-gray-500">Potential</dt>
                                         <dd className={`text-right font-medium ${av < 0 ? "text-red-600" : ""}`}>
                                           {formatQty(av, rowUom(row))}
                                         </dd>

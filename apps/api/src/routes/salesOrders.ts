@@ -36,10 +36,15 @@ const rowInclude = {
   location: { select: { id: true, name: true } },
 } as const;
 
+// List endpoint uses a lighter include — no fulfillment records needed for the table view
+const rowIncludeList = {
+  location: { select: { id: true, name: true } },
+} as const;
+
 const includeList = {
   customer: { select: { id: true, name: true } },
   location: { select: { id: true, name: true } },
-  rows: { include: rowInclude },
+  rows: { include: rowIncludeList },
 };
 
 async function appendPipelineStatuses(sos: any[]) {
@@ -162,6 +167,7 @@ const includeDetail = {
   customer: { select: { id: true, name: true } },
   location: { select: { id: true, name: true } },
   rows: { include: rowInclude },
+  shippingFees: true,
   fulfillments: {
     orderBy: { createdAt: 'desc' as const },
     include: {
@@ -430,7 +436,7 @@ router.post('/', async (req, res) => {
   const number = data.number || (await nextSalesOrderNumber());
   const so = await prisma.salesOrder.create({
     data: {
-      number, customerId: data.customerId, currency: data.currency,
+      number, customerId: data.customerId, currency: data.currency, status: 'confirmed',
       requiredDate: data.dueAt ? parseDueDate(data.dueAt) ?? undefined : undefined,
       notes: data.notes ?? undefined, locationId: data.locationId ?? undefined,
       rows: {
