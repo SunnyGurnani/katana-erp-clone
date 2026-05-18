@@ -30,6 +30,19 @@ If you have Docker installed, you can spin up the entire application (Frontend, 
 
 **Prerequisites:** Node 20, pnpm 9, PostgreSQL 15
 
+### Windows one-click (no Docker)
+
+Double-click **`run-without-docker.bat`** in the repo root. It will:
+
+- Check Node.js, pnpm, and PostgreSQL (Windows or WSL)
+- Create `apps/api/.env` and `apps/web/.env.local` if missing
+- Run `pnpm install`, Prisma migrate, and seed
+- Start API (`:8000`) and web (`:3000`) with `pnpm dev`
+
+To stop: **`stop-without-docker.bat`** or close the dev terminal.
+
+### Manual steps
+
 1. Copy and configure the environment variables:
    - **Mac/Linux:** `cp .env.example .env`
    - **Windows:** `copy .env.example .env`
