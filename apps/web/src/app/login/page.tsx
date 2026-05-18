@@ -37,23 +37,48 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="card w-full max-w-sm p-8">
-        <h1 className="text-2xl font-bold text-brand-700 mb-1">ForgeERP</h1>
-        <p className="text-sm text-gray-500 mb-6">Sign in to your account</p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="label">Email</label>
-            <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required />
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-100 via-white to-blue-50 px-4">
+      <div className="w-full max-w-[400px]">
+        <div className="card p-8 shadow-lg border-gray-200/90">
+          <div className="text-center mb-8">
+            <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-navy-800 text-white text-lg font-bold mb-4">
+              F
+            </div>
+            <h1 className="text-2xl font-bold text-navy-900 tracking-tight">ForgeERP</h1>
+            <p className="text-sm text-gray-500 mt-1">Sign in to your account</p>
           </div>
-          <div>
-            <label className="label">Password</label>
-            <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
-          </div>
-          <button className="btn btn-primary w-full" disabled={loading}>
-            {loading ? "Signing in…" : "Sign In"}
-          </button>
-        </form>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="label" htmlFor="email">Email</label>
+              <input
+                id="email"
+                className="input"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="password">Password</label>
+              <input
+                id="password"
+                className="input"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+            <button type="submit" className="btn btn-primary w-full mt-2" disabled={loading}>
+              {loading ? "Signing in…" : "Sign In"}
+            </button>
+          </form>
+        </div>
+        <p className="text-center text-xs text-gray-400 mt-6">Manufacturing ERP</p>
       </div>
     </div>
   );
