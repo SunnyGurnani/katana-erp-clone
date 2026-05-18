@@ -171,6 +171,12 @@ router.patch('/:id', async (req, res) => {
   res.json(m);
 });
 
+router.put('/:id', async (req, res) => {
+  const data = schema.partial().parse(req.body);
+  const m = await prisma.material.update({ where: { id: req.params.id }, data });
+  res.json(m);
+});
+
 /**
  * @openapi
  * /materials/{id}:

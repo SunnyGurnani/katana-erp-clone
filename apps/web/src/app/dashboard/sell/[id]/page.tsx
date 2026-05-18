@@ -12,6 +12,7 @@ import Link from "next/link";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { productVariantOptions, locationOptions, customerOptions } from "@/lib/catalogOptions";
 import { formatLocalDateDisplay, formatLocalDateYmd } from "@/lib/formatDate";
+import { formatQty } from "@/lib/formatQty";
 
 function orderIdFromParams(id: string | string[] | undefined): string {
   if (id == null) return "";
@@ -327,7 +328,13 @@ export default function SODetailPage() {
       </div>
     );
   }
-  if (isLoading) return <div className="p-6"><table className="table"><tbody><SkeletonRows rows={6} /></tbody></table></div>;
+  if (isLoading) return (
+    <div className="p-8 space-y-6 page-transition">
+      <div className="flex justify-between"><div className="h-8 w-1/3 bg-gray-200 rounded animate-pulse" /><div className="h-8 w-24 bg-gray-200 rounded animate-pulse" /></div>
+      <div className="grid grid-cols-4 gap-4 mt-8"><div className="h-10 bg-gray-100 rounded animate-pulse" /><div className="h-10 bg-gray-100 rounded animate-pulse" /><div className="h-10 bg-gray-100 rounded animate-pulse" /></div>
+      <div className="h-64 w-full bg-gray-100 rounded animate-pulse mt-8" />
+    </div>
+  );
   if (isError) {
     const ax = error as { response?: { status?: number; data?: { error?: string } }; message?: string };
     const status = ax?.response?.status;
@@ -775,107 +782,105 @@ export default function SODetailPage() {
   }
 
   return (
-    <div className="px-4 py-3 space-y-4">
-      <div className="flex items-center gap-3">
-        <Link href={sellListHref} className="icon-btn"><ArrowLeft size={16} /></Link>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold text-gray-900">SO {so.soNumber}</h1>
-          <p className="text-sm text-gray-500">{so.customer?.name || "No customer"}</p>
+    <div className="space-y-0">
+      {/* Katana-style SO detail header */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="px-6 py-4">
+          {/* Top row: breadcrumb, title, status, actions */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-[11px] text-gray-400 font-medium">Sales order</p>
+              <h1 className="text-lg font-bold text-gray-900">{so.soNumber} {so.customer?.name || ""}</h1>
+            </div>
+            <div className="flex items-center gap-2">
+              {canConfirmFromDraft && (
+                <button className="btn btn-ghost text-sm" disabled={updateSO.isPending} onClick={() => updateSO.mutate({ status: "confirmed" })}>Confirm</button>
+              )}
+              {canFulfill && (
+                <button type="button" className="btn btn-ghost text-sm" onClick={openPickModal}><Package size={14} />Pick</button>
+              )}
+              {canRevertFulfillment && (
+                <button type="button" className="btn btn-ghost text-sm text-amber-700" disabled={revertFulfillment.isPending}
+                  onClick={() => { if (window.confirm("Revert shipment?")) revertFulfillment.mutate(); }}>Revert</button>
+              )}
+              {canManuallyClose && (
+                <button type="button" className="btn btn-ghost text-sm" disabled={updateSO.isPending}
+                  onClick={() => { if (window.confirm("Close this sales order?")) updateSO.mutate({ status: "cancelled" }); }}>Close</button>
+              )}
+              {canFulfill && (
+                <button type="button" className="btn btn-primary text-sm" onClick={openFulfillModal}><Truck size={14} />Ship</button>
+              )}
+              <StatusBadge status={displayStatus} />
+              <span className="text-sm text-yellow-600 font-medium ml-2">{updateSO.isPending ? "Saving..." : "All changes saved"}</span>
+              <button className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" onClick={downloadPdf}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M6 14h12"/><path d="M10 18h4"/></svg>
+              </button>
+              <button className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" onClick={openEditModal}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+              </button>
+              <Link href={sellListHref} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </Link>
+            </div>
+          </div>
+
+          {/* Katana-style field grid with underline inputs */}
+          <div className="grid grid-cols-4 gap-x-8 gap-y-4">
+            <div className="col-span-1">
+              <label className="klabel">Customer</label>
+              <p className="text-sm font-medium border-b border-gray-300 pb-2">{so.customer?.name || "—"}</p>
+            </div>
+            <div>
+              <label className="klabel">Customer reference #</label>
+              <p className="text-sm text-gray-500 border-b border-gray-300 pb-2">{so.notes ? so.notes.slice(0, 30) : "Reference number"}</p>
+            </div>
+            <div>
+              <label className="klabel text-red-500">Delivery deadline</label>
+              <p className={`text-sm border-b border-gray-300 pb-2 ${so.dueAt && new Date(so.dueAt) < new Date() ? "text-red-600 font-medium" : ""}`}>
+                {so.dueAt ? formatLocalDateDisplay(so.dueAt) : "—"}
+              </p>
+            </div>
+            <div>
+              <label className="klabel">Created date</label>
+              <p className="text-sm border-b border-gray-300 pb-2">{so.createdAt ? formatLocalDateDisplay(so.createdAt) : "—"}</p>
+            </div>
+            <div>
+              <label className="klabel">Sales order #</label>
+              <p className="text-sm font-medium border-b border-gray-300 pb-2">{so.soNumber}</p>
+            </div>
+            <div>
+              <label className="klabel">Order currency</label>
+              <p className="text-sm border-b border-gray-300 pb-2">{so.currency || "USD"} (Base)</p>
+            </div>
+            <div className="col-span-2">
+              <label className="klabel">Ship from</label>
+              <p className="text-sm border-b border-gray-300 pb-2">{so.location?.name || "Main location"}</p>
+            </div>
+            <div>
+              <label className="klabel">Bill to</label>
+              <p className="text-sm text-gray-400 border-b border-gray-300 pb-2">📍 Enter address...</p>
+            </div>
+            <div>
+              <label className="klabel">Ship to</label>
+              <p className="text-sm text-blue-600 border-b border-gray-300 pb-2">📍 Same as billing address</p>
+            </div>
+          </div>
         </div>
-        <StatusBadge status={displayStatus} />
-        <button className="btn btn-ghost text-sm" onClick={downloadPdf}><FileDown size={14} />PDF</button>
-        <button className="btn btn-ghost text-sm" onClick={openEditModal}><Save size={14} />Edit</button>
-        <button className="btn btn-ghost text-sm" onClick={() => duplicateSO.mutate()}><Copy size={14} />Duplicate</button>
-        <button
-          type="button"
-          className="btn btn-ghost text-sm text-red-600"
-          onClick={() => {
-            if (hasOutboundFulfillment) {
-              addToast("Revert fulfillment before deleting this order.", "error");
-              return;
-            }
-            if (hasPickedLines) {
-              addToast("Release pick or ship picked lines before deleting this order.", "error");
-              return;
-            }
-            if (window.confirm("Delete this sales order? This cannot be undone.")) deleteSO.mutate();
-          }}
-        >
-          <Trash2 size={14} />Delete
-        </button>
-        {canConfirmFromDraft && (
-          <button
-            type="button"
-            className="btn btn-ghost text-sm"
-            disabled={updateSO.isPending}
-            onClick={() => {
-              updateSO.mutate({ status: "confirmed" });
-            }}
-          >
-            Confirm
-          </button>
-        )}
-        {canFulfill && (
-          <button type="button" className="btn btn-ghost" onClick={openPickModal}>
-            <Package size={15} />Pick
-          </button>
-        )}
-        {canFulfill && (
-          <button type="button" className="btn btn-primary" onClick={openFulfillModal}>
-            <Truck size={15} />Ship
-          </button>
-        )}
-        {canRevertFulfillment && (
-          <button
-            type="button"
-            className="btn btn-ghost text-sm text-amber-800 border border-amber-200"
-            disabled={revertFulfillment.isPending}
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Revert shipment? On-hand stock will be restored; picked (allocated) stock is restored for shipments that were shipped from pick.",
-                )
-              )
-                revertFulfillment.mutate();
-            }}
-          >
-            Revert fulfillment
-          </button>
-        )}
-        {canManuallyClose && (
-          <button
-            type="button"
-            className="btn btn-ghost text-sm text-amber-800 border border-amber-200"
-            disabled={updateSO.isPending}
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Close this sales order? This will move it to Done and prevent further fulfillment.",
-                )
-              ) {
-                updateSO.mutate({ status: "cancelled" });
-              }
-            }}
-          >
-            Close
-          </button>
-        )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-        <div className="card p-4"><p className="text-gray-500 text-xs mb-1">Due</p><p className="font-medium">{so.dueAt ? formatLocalDateDisplay(so.dueAt) : "—"}</p></div>
-        <div className="card p-4"><p className="text-gray-500 text-xs mb-1">Default ship location</p><p className="font-medium">{so.location?.name || "—"}</p></div>
-        <div className="card p-4"><p className="text-gray-500 text-xs mb-1">Total</p><p className="font-semibold">${Number(so.totalPrice || 0).toFixed(2)}</p></div>
-        <div className="card p-4"><p className="text-gray-500 text-xs mb-1">Lines</p><p className="font-medium">{so.rows?.length || 0}</p></div>
-        <div className="card p-4"><p className="text-gray-500 text-xs mb-1">Notes</p><p className="truncate">{so.notes || "—"}</p></div>
-      </div>
-
-      <div className="card">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
-          <h2 className="font-semibold text-gray-800">Line Items</h2>
-          {["draft", "confirmed"].includes(so.status) && (
-            <button className="btn btn-ghost text-sm" onClick={() => setRowOpen(true)}><Plus size={14} />Add Row</button>
-          )}
+      {/* Items section — Katana style */}
+      <div className="px-6 py-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <h2 className="text-base font-bold text-gray-900">Items not shipped</h2>
+            <span className="text-sm text-gray-600">📍 {so.location?.name || "Main location"}</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-400">Tracking info</span>
+            {["draft", "confirmed"].includes(so.status) && (
+              <button className="text-sm text-blue-600 hover:text-blue-800 font-medium" onClick={() => setRowOpen(true)}>+ Add row</button>
+            )}
+          </div>
         </div>
         <table className="table">
           <thead>
@@ -968,7 +973,7 @@ export default function SODetailPage() {
                             }
                           />
                         ) : (
-                          r.qty
+                          formatQty(r.qty, v?.product?.unitOfMeasure)
                         )}
                       </td>
                       <td>
@@ -988,8 +993,8 @@ export default function SODetailPage() {
                           </>
                         )}
                       </td>
-                      <td className="text-sm tabular-nums">{picked}</td>
-                      <td className="text-sm tabular-nums">{r.fulfilledQty || 0}</td>
+                      <td className="text-sm tabular-nums">{formatQty(picked, v?.product?.unitOfMeasure)}</td>
+                      <td className="text-sm tabular-nums">{formatQty(r.fulfilledQty || 0, v?.product?.unitOfMeasure)}</td>
                       <td>{(Number(r.qty) * Number(r.salePrice || 0)).toFixed(2)} {so.currency || "USD"}</td>
                       <td className="text-right whitespace-nowrap">
                         {canFulfill && r.variantId && remPick > 0 && (

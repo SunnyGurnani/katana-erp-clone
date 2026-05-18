@@ -14,9 +14,14 @@ import {
   revokeToken,
 } from '../integrations/quickbooks/client';
 
+import {
+  syncQuickBooksBill,
+  syncQuickBooksContacts,
+  syncQuickBooksInvoice,
+} from '../integrations/quickbooks/syncService';
+
 const router = Router();
 router.use(authenticate);
-router.use(requireOperatorForMutations);
 
 const quickBooksSettingsSchema = z.object({
   accountMappings: z.record(z.string()).optional(),
@@ -50,6 +55,91 @@ async function getOrCreateQuickBooksIntegration() {
   });
 }
 
+// GET /accounting/quickbooks/status (read-only)
+router.get('/quickbooks/status', async (_req, res) => {
+  if (!process.env.QUICKBOOKS_CLIENT_ID) {
+    return res.json({
+      provider: 'quickbooks',
+      connected: false,
+      status: 'disconnected',
+      configured: false,
+      realmId: null,
+      tokenExpiry: null,
+      tokenExpiresInSeconds: null,
+      lastSyncAt: null,
+      refreshed: false,
+    });
+  }
+  requireQuickBooksEnv();
+  const integration = await prisma.accountingIntegration.findUnique({
+    where: { provider: 'quickbooks' },
+  });
+
+  if (!integration) {
+    return res.json({
+      provider: 'quickbooks',
+      connected: false,
+      status: 'disconnected',
+      configured: true,
+      realmId: null,
+      tokenExpiry: null,
+      tokenExpiresInSeconds: null,
+      lastSyncAt: null,
+      refreshed: false,
+    });
+  }
+
+  let refreshed = false;
+  let hydrated = integration;
+  if (integration.status === 'connected' && integration.accessToken && integration.refreshToken) {
+    try {
+      const refreshedResult = await ensureQuickBooksAccessToken(integration);
+      refreshed = refreshedResult.refreshed;
+      hydrated = refreshedResult.integration;
+    } catch (error) {
+      logger.warn({ err: error }, 'QuickBooks token health check failed');
+    }
+  }
+
+  const expiryMs = hydrated.tokenExpiry ? hydrated.tokenExpiry.getTime() - Date.now() : null;
+  return res.json({
+    provider: 'quickbooks',
+    connected: hydrated.status === 'connected',
+    status: hydrated.status,
+    configured: true,
+    integrationId: hydrated.id,
+    realmId: hydrated.realmId,
+    tokenExpiry: hydrated.tokenExpiry,
+    tokenExpiresInSeconds: expiryMs === null ? null : Math.max(0, Math.floor(expiryMs / 1000)),
+    lastSyncAt: hydrated.lastSyncAt,
+    refreshed,
+    settings: hydrated.settings ? JSON.parse(hydrated.settings) : {},
+  });
+});
+
+// GET /accounting/integrations (read-only)
+router.get('/integrations', async (_req, res) => {
+  const items = await prisma.accountingIntegration.findMany({
+    include: { syncLogs: { orderBy: { createdAt: 'desc' }, take: 1 } },
+  });
+  res.json(items);
+});
+
+router.get('/quickbooks/sync-logs', async (req, res) => {
+  const { page, pageSize, skip, take } = getPagination(req);
+  const integration = await prisma.accountingIntegration.findUnique({ where: { provider: 'quickbooks' } });
+  if (!integration) return res.json(paginated([], 0, page, pageSize));
+
+  const where = { integrationId: integration.id };
+  const [items, total] = await Promise.all([
+    prisma.accountingSyncLog.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.accountingSyncLog.count({ where }),
+  ]);
+  res.json(paginated(items, total, page, pageSize));
+});
+
+router.use(requireOperatorForMutations);
+
 // POST /accounting/quickbooks/connect
 router.post('/quickbooks/connect', async (req, res) => {
   requireQuickBooksEnv();
@@ -65,24 +155,21 @@ router.post('/quickbooks/connect', async (req, res) => {
   });
 });
 
-// GET /accounting/quickbooks/callback
-router.get('/quickbooks/callback', async (req, res) => {
+// POST /accounting/quickbooks/complete — SPA OAuth callback (code from Intuit redirect)
+router.post('/quickbooks/complete', async (req, res) => {
   requireQuickBooksEnv();
-  const query = z.object({
-    code: z.string().optional(),
-    state: z.string().optional(),
+  const { code, realmId } = z.object({
+    code: z.string().min(1),
     realmId: z.string().optional(),
-  }).parse(req.query);
-
-  if (!query.code) return res.status(400).json({ error: 'Missing authorization code' });
+  }).parse(req.body);
 
   const integration = await getOrCreateQuickBooksIntegration();
-  const tokens = await exchangeCodeForTokens(query.code);
+  const tokens = await exchangeCodeForTokens(code);
   const updated = await prisma.accountingIntegration.update({
     where: { id: integration.id },
     data: {
       status: 'connected',
-      realmId: query.realmId ?? integration.realmId ?? null,
+      realmId: realmId ?? integration.realmId ?? null,
       accessToken: encryptSecret(tokens.access_token),
       refreshToken: tokens.refresh_token ? encryptSecret(tokens.refresh_token) : null,
       tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
@@ -93,7 +180,6 @@ router.get('/quickbooks/callback', async (req, res) => {
   res.json({
     provider: 'quickbooks',
     connected: true,
-    state: query.state ?? null,
     realmId: updated.realmId,
     tokenExpiry: updated.tokenExpiry,
   });
@@ -130,52 +216,6 @@ router.post('/quickbooks/disconnect', async (_req, res) => {
   });
 });
 
-// GET /accounting/quickbooks/status
-router.get('/quickbooks/status', async (_req, res) => {
-  requireQuickBooksEnv();
-  const integration = await prisma.accountingIntegration.findUnique({
-    where: { provider: 'quickbooks' },
-  });
-
-  if (!integration) {
-    return res.json({
-      provider: 'quickbooks',
-      connected: false,
-      status: 'disconnected',
-      realmId: null,
-      tokenExpiry: null,
-      tokenExpiresInSeconds: null,
-      lastSyncAt: null,
-      refreshed: false,
-    });
-  }
-
-  let refreshed = false;
-  let hydrated = integration;
-  if (integration.status === 'connected' && integration.accessToken && integration.refreshToken) {
-    try {
-      const refreshedResult = await ensureQuickBooksAccessToken(integration);
-      refreshed = refreshedResult.refreshed;
-      hydrated = refreshedResult.integration;
-    } catch (error) {
-      logger.warn({ err: error }, 'QuickBooks token health check failed');
-    }
-  }
-
-  const expiryMs = hydrated.tokenExpiry ? hydrated.tokenExpiry.getTime() - Date.now() : null;
-  return res.json({
-    provider: 'quickbooks',
-    connected: hydrated.status === 'connected',
-    status: hydrated.status,
-    integrationId: hydrated.id,
-    realmId: hydrated.realmId,
-    tokenExpiry: hydrated.tokenExpiry,
-    tokenExpiresInSeconds: expiryMs === null ? null : Math.max(0, Math.floor(expiryMs / 1000)),
-    lastSyncAt: hydrated.lastSyncAt,
-    refreshed,
-  });
-});
-
 // POST /accounting/quickbooks/settings
 router.post('/quickbooks/settings', async (req, res) => {
   requireQuickBooksEnv();
@@ -192,14 +232,6 @@ router.post('/quickbooks/settings', async (req, res) => {
     provider: 'quickbooks',
     settings: updated.settings ? JSON.parse(updated.settings) : {},
   });
-});
-
-// GET /accounting/integrations
-router.get('/integrations', async (_req, res) => {
-  const items = await prisma.accountingIntegration.findMany({
-    include: { syncLogs: { orderBy: { createdAt: 'desc' }, take: 1 } },
-  });
-  res.json(items);
 });
 
 // POST /accounting/:provider/connect
@@ -271,90 +303,105 @@ async function logSync(integrationId: string, direction: string, entityType: str
   });
 }
 
-// POST /accounting/:provider/sync/invoices — push fulfilled SOs as invoices
-router.post('/:provider/sync/invoices', async (req, res) => {
-  assertProvider(req.params.provider);
-  const integration = await getIntegration(req.params.provider);
-  const { soIds } = z.object({ soIds: z.array(z.string().uuid()).optional() }).parse(req.body);
+// POST /accounting/quickbooks/sync/invoices
+router.post('/quickbooks/sync/invoices', async (req, res) => {
+  requireQuickBooksEnv();
+  const integration = await getIntegration('quickbooks');
+  const { soIds } = z.object({ soIds: z.array(z.string().uuid()).optional() }).parse(req.body ?? {});
 
-  const where: any = { status: 'fulfilled' };
+  const where: any = { status: { in: ['fulfilled', 'done', 'open'] } };
   if (soIds?.length) where.id = { in: soIds };
 
-  const orders = await prisma.salesOrder.findMany({
-    where,
-    include: { customer: true, rows: true },
-  });
+  const orders = await prisma.salesOrder.findMany({ where, select: { id: true, number: true } });
   const results: any[] = [];
 
   for (const order of orders) {
     try {
-      const payload = buildInvoicePayload(req.params.provider as Provider, order);
-      const log = await logSync(integration.id, 'push', 'invoice', order.id, 'success', undefined, `ext_${order.id.slice(0, 8)}`, JSON.stringify(payload));
-      results.push({ orderId: order.id, number: order.number, status: 'success', logId: log.id });
+      const syncResult = await syncQuickBooksInvoice(integration, order.id);
+      const log = await logSync(
+        integration.id,
+        'push',
+        'invoice',
+        order.id,
+        'success',
+        undefined,
+        syncResult.externalId,
+      );
+      results.push({ orderId: order.id, number: order.number, status: 'success', externalId: syncResult.externalId, logId: log.id });
     } catch (err: any) {
       const log = await logSync(integration.id, 'push', 'invoice', order.id, 'error', err.message);
       results.push({ orderId: order.id, status: 'error', error: err.message, logId: log.id });
     }
   }
 
-  await prisma.accountingIntegration.update({ where: { provider: req.params.provider }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
-  res.json({ synced: results.length, results });
+  await prisma.accountingIntegration.update({
+    where: { provider: 'quickbooks' },
+    data: { lastSyncAt: new Date(), updatedAt: new Date() },
+  });
+  res.json({ synced: results.filter((r) => r.status === 'success').length, results });
 });
 
-// POST /accounting/:provider/sync/bills — push POs as bills
-router.post('/:provider/sync/bills', async (req, res) => {
-  assertProvider(req.params.provider);
-  const integration = await getIntegration(req.params.provider);
-  const { poIds } = z.object({ poIds: z.array(z.string().uuid()).optional() }).parse(req.body);
+// POST /accounting/quickbooks/sync/bills
+router.post('/quickbooks/sync/bills', async (req, res) => {
+  requireQuickBooksEnv();
+  const integration = await getIntegration('quickbooks');
+  const { poIds } = z.object({ poIds: z.array(z.string().uuid()).optional() }).parse(req.body ?? {});
 
   const where: any = {};
   if (poIds?.length) where.id = { in: poIds };
 
-  const orders = await prisma.purchaseOrder.findMany({
-    where,
-    include: { supplier: true, rows: true },
-  });
+  const orders = await prisma.purchaseOrder.findMany({ where, select: { id: true, number: true } });
   const results: any[] = [];
 
   for (const order of orders) {
     try {
-      const payload = buildBillPayload(req.params.provider as Provider, order);
-      const log = await logSync(integration.id, 'push', 'bill', order.id, 'success', undefined, `ext_${order.id.slice(0, 8)}`, JSON.stringify(payload));
-      results.push({ orderId: order.id, number: order.number, status: 'success', logId: log.id });
+      const syncResult = await syncQuickBooksBill(integration, order.id);
+      const log = await logSync(
+        integration.id,
+        'push',
+        'bill',
+        order.id,
+        'success',
+        undefined,
+        syncResult.externalId,
+      );
+      results.push({ orderId: order.id, number: order.number, status: 'success', externalId: syncResult.externalId, logId: log.id });
     } catch (err: any) {
       const log = await logSync(integration.id, 'push', 'bill', order.id, 'error', err.message);
       results.push({ orderId: order.id, status: 'error', error: err.message, logId: log.id });
     }
   }
 
-  await prisma.accountingIntegration.update({ where: { provider: req.params.provider }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
-  res.json({ synced: results.length, results });
+  await prisma.accountingIntegration.update({
+    where: { provider: 'quickbooks' },
+    data: { lastSyncAt: new Date(), updatedAt: new Date() },
+  });
+  res.json({ synced: results.filter((r) => r.status === 'success').length, results });
 });
 
-// POST /accounting/:provider/sync/contacts
-router.post('/:provider/sync/contacts', async (req, res) => {
-  assertProvider(req.params.provider);
-  const integration = await getIntegration(req.params.provider);
+// POST /accounting/quickbooks/sync/contacts
+router.post('/quickbooks/sync/contacts', async (_req, res) => {
+  requireQuickBooksEnv();
+  const integration = await getIntegration('quickbooks');
+  const results = await syncQuickBooksContacts(integration);
 
-  const [customers, suppliers] = await Promise.all([
-    prisma.customer.findMany(),
-    prisma.supplier.findMany(),
-  ]);
-
-  const results: any[] = [];
-  for (const c of customers) {
-    const payload = { type: 'customer', name: c.name, email: c.email, phone: c.phone };
-    const log = await logSync(integration.id, 'push', 'contact', c.id, 'success', undefined, `cust_${c.id.slice(0, 8)}`, JSON.stringify(payload));
-    results.push({ id: c.id, type: 'customer', status: 'success', logId: log.id });
-  }
-  for (const s of suppliers) {
-    const payload = { type: 'supplier', name: s.name, email: s.email, phone: s.phone };
-    const log = await logSync(integration.id, 'push', 'contact', s.id, 'success', undefined, `supp_${s.id.slice(0, 8)}`, JSON.stringify(payload));
-    results.push({ id: s.id, type: 'supplier', status: 'success', logId: log.id });
+  for (const r of results) {
+    await logSync(
+      integration.id,
+      'push',
+      'contact',
+      r.id,
+      r.status === 'success' ? 'success' : 'error',
+      r.status === 'error' ? r.error : undefined,
+      r.externalId,
+    );
   }
 
-  await prisma.accountingIntegration.update({ where: { provider: req.params.provider }, data: { lastSyncAt: new Date(), updatedAt: new Date() } });
-  res.json({ synced: results.length, results });
+  await prisma.accountingIntegration.update({
+    where: { provider: 'quickbooks' },
+    data: { lastSyncAt: new Date(), updatedAt: new Date() },
+  });
+  res.json({ synced: results.filter((r) => r.status === 'success').length, results });
 });
 
 // GET /accounting/:provider/sync-logs

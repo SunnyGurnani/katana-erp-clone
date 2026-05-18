@@ -614,6 +614,27 @@ router.post('/:id/receive', async (req, res) => {
             purchaseOrderRowId: row.id,
           });
         }
+        
+        // --- ENTERPRISE MATH: Moving Average Cost (MAC) Recalculation ---
+        const currentVariant = await tx.variant.findUnique({ where: { id: row.variantId }, select: { purchasePrice: true } });
+        const currentStock = await tx.inventoryLevel.aggregate({
+          where: { variantId: row.variantId },
+          _sum: { onHand: true }
+        });
+        const totalOnHand = Math.max(0, Number(currentStock._sum.onHand || 0)); // Don't use negative stock for weighted avg
+        const oldPrice = Number(currentVariant?.purchasePrice || 0);
+        const newQty = Number(recv.receivedQty);
+        const unitCost = Number(row.unitPrice || oldPrice);
+        
+        const newAvgCost = totalOnHand + newQty > 0 
+          ? ((oldPrice * totalOnHand) + (unitCost * newQty)) / (totalOnHand + newQty)
+          : unitCost;
+          
+        await tx.variant.update({
+          where: { id: row.variantId },
+          data: { purchasePrice: newAvgCost }
+        });
+        // ----------------------------------------------------------------
       }
       await tx.purchaseOrderRow.update({ where: { id: row.id }, data: { qtyReceived: { increment: recv.receivedQty } } });
     }

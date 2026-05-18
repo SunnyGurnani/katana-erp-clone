@@ -9,6 +9,8 @@ import { Modal } from "@/components/ui/Modal";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { AlertTriangle, ChevronDown, ChevronRight, ChevronUp, ArrowUpDown, HelpCircle } from "lucide-react";
 import { formatLocalDateYmd } from "@/lib/formatDate";
+import { formatQty } from "@/lib/formatQty";
+import clsx from "clsx";
 
 type InvLevelRow = {
   locationId: string;
@@ -138,6 +140,7 @@ const COL_HELP = {
   allocated: "Reserved stock across picks/allocations (SO, MO, TO) that is not yet completed.",
   committed: "Open demand from Sales Orders + Manufacturing Orders + Transfer Orders.",
   expected: "Incoming quantity from open Purchase Orders (not yet received).",
+  calculated: "Calculated stock: on hand + expected − committed.",
   avail: "Available to promise: on hand − committed − allocated.",
 } as const;
 
@@ -156,8 +159,21 @@ function HelpHint({ text }: { text: string }) {
   );
 }
 
+type ItemFilter = "all" | "products" | "materials";
+
+function rowUom(row: InvVariantRow): string {
+  return row.variant?.product?.unitOfMeasure || row.variant?.material?.unitOfMeasure || "pcs";
+}
+
+function matchesItemFilter(row: InvVariantRow, filter: ItemFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "products") return Boolean(row.variant?.product);
+  return Boolean(row.variant?.material);
+}
+
 export default function InventoryPage() {
   const [tab, setTab] = useState<"levels" | "movements">("levels");
+  const [itemFilter, setItemFilter] = useState<ItemFilter>("all");
   const [locationFilter, setLocationFilter] = useState("");
   const [showEmptyWarehouses, setShowEmptyWarehouses] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -218,7 +234,7 @@ export default function InventoryPage() {
   };
 
   const sortedRows = useMemo(() => {
-    const list = [...(data || [])];
+    const list = [...(data || [])].filter((row) => matchesItemFilter(row, itemFilter));
     if (!sortCol) return list;
     return list.sort((a, b) => {
       let av: any;
@@ -240,7 +256,7 @@ export default function InventoryPage() {
       const cmp = String(av).localeCompare(String(bv));
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [data, sortCol, sortDir]);
+  }, [data, sortCol, sortDir, itemFilter]);
 
   const locationOptions = useMemo(
     () => (locations || []).map((l: any) => ({ id: l.id, name: l.name })),
@@ -256,7 +272,7 @@ export default function InventoryPage() {
     { key: "reference", header: "Reference", render: (r: any) => r.reference || "—" },
   ];
 
-  const invColCount = 11;
+  const invColCount = 12;
 
   const SortIcon = ({ colKey }: { colKey: string }) =>
     sortCol === colKey ? (
@@ -291,7 +307,7 @@ export default function InventoryPage() {
                 aria-label="Filter by location"
               >
                 <option value="">All locations</option>
-                {locationOptions.map((l) => (
+                {locationOptions.map((l: { id: string; name: string }) => (
                   <option key={l.id} value={l.id}>
                     {l.name}
                   </option>
@@ -311,8 +327,25 @@ export default function InventoryPage() {
         )}
       </div>
 
-      <div className="flex items-center justify-between">
-        <div className="flex gap-1">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex gap-1 flex-wrap items-center">
+          {tab === "levels" && (
+            <div className="flex gap-1 mr-2 border-r border-gray-200 pr-2">
+              {(["all", "products", "materials"] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  className={clsx(
+                    "px-3 py-1.5 rounded-md text-xs font-medium capitalize",
+                    itemFilter === f ? "bg-brand-600 text-white" : "text-gray-500 hover:bg-gray-100",
+                  )}
+                  onClick={() => setItemFilter(f)}
+                >
+                  {f === "all" ? "All" : f}
+                </button>
+              ))}
+            </div>
+          )}
           <button
             className={`px-3 py-1.5 rounded-md text-xs font-medium ${tab === "levels" ? "bg-navy-800 text-white" : "text-gray-500 hover:bg-gray-100"}`}
             onClick={() => setTab("levels")}
@@ -391,6 +424,12 @@ export default function InventoryPage() {
                       <SortIcon colKey="totalExpected" />
                     </span>
                   </th>
+                  <th className="text-right whitespace-nowrap">
+                    <span className="inline-flex items-center justify-end gap-0.5 w-full">
+                      Calculated
+                      <HelpHint text={COL_HELP.calculated} />
+                    </span>
+                  </th>
                   <th className="cursor-pointer select-none hover:text-gray-700 text-right whitespace-nowrap" onClick={() => handleSort("totalAvailable")}>
                     <span className="inline-flex items-center justify-end gap-1 w-full">
                       <span className="inline-flex items-center gap-0.5">
@@ -428,6 +467,8 @@ export default function InventoryPage() {
                     const totalAllocated = num(row.totalAllocated ?? row.levels?.reduce((s, l) => s + levelAllocated(l), 0));
                     const totalCommitted = num(row.totalCommitted ?? row.levels?.reduce((s, l) => s + levelCommitted(l), 0));
                     const totalExpected = num(row.totalExpected ?? row.levels?.reduce((s, l) => s + levelExpected(l), 0));
+                    const onHand = num(row.totalOnHand);
+                    const calculated = onHand + totalExpected - totalCommitted;
                     const avail = Number(row.totalAvailable ?? 0);
                     const low = row.variant?.reorderPoint && avail <= Number(row.variant.reorderPoint);
                     const expandedLevels = buildExpandedLevels(row, locationOptions, showEmptyWarehouses, locationFilter);
@@ -455,7 +496,7 @@ export default function InventoryPage() {
                           <td className="text-center text-gray-400 text-xs w-10">{i + 1}</td>
                           <td className="font-mono text-sm">{row.variant?.sku || "—"}</td>
                           <td className="font-medium">{row.variant?.product?.name || row.variant?.material?.name || "—"}</td>
-                          <td className="tabular-nums font-semibold text-right">{Number(row.totalOnHand ?? 0).toLocaleString()}</td>
+                          <td className="tabular-nums font-semibold text-right">{formatQty(row.totalOnHand, rowUom(row))}</td>
                           <td className="tabular-nums text-right text-gray-800">
                             <button
                               type="button"
@@ -468,7 +509,7 @@ export default function InventoryPage() {
                               }}
                               title="View orders behind allocated quantity"
                             >
-                              {totalAllocated.toLocaleString()}
+                              {formatQty(totalAllocated, rowUom(row))}
                             </button>
                           </td>
                           <td className="tabular-nums text-right text-amber-900/90">
@@ -483,7 +524,7 @@ export default function InventoryPage() {
                               }}
                               title="View orders behind committed demand"
                             >
-                              {totalCommitted.toLocaleString()}
+                              {formatQty(totalCommitted, rowUom(row))}
                             </button>
                           </td>
                           <td className="tabular-nums text-right text-sky-900/90">
@@ -498,11 +539,14 @@ export default function InventoryPage() {
                               }}
                               title="View purchase orders behind expected quantity"
                             >
-                              {totalExpected.toLocaleString()}
+                              {formatQty(totalExpected, rowUom(row))}
                             </button>
                           </td>
+                          <td className={`tabular-nums text-right font-medium ${calculated < 0 ? "text-red-600" : "text-gray-800"}`}>
+                            {formatQty(calculated, rowUom(row))}
+                          </td>
                           <td className={`tabular-nums font-semibold text-right ${avail < 0 ? "text-red-600" : ""}`}>
-                            {avail.toLocaleString()}
+                            {formatQty(avail, rowUom(row))}
                           </td>
                           <td className="!p-0">
                             {avail <= 0 ? (
@@ -539,16 +583,16 @@ export default function InventoryPage() {
                                       <p className="font-medium text-gray-900">{lv.location?.name || "—"}</p>
                                       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-gray-700 tabular-nums">
                                         <dt className="text-gray-500">On hand</dt>
-                                        <dd className="text-right font-medium">{oh.toLocaleString()}</dd>
+                                        <dd className="text-right font-medium">{formatQty(oh, rowUom(row))}</dd>
                                         <dt className="text-gray-500">Allocated</dt>
-                                        <dd className="text-right">{allocated.toLocaleString()}</dd>
+                                        <dd className="text-right">{formatQty(allocated, rowUom(row))}</dd>
                                         <dt className="text-gray-500">Committed</dt>
-                                        <dd className="text-right text-amber-900/90">{committed.toLocaleString()}</dd>
+                                        <dd className="text-right text-amber-900/90">{formatQty(committed, rowUom(row))}</dd>
                                         <dt className="text-gray-500">Expected</dt>
-                                        <dd className="text-right text-sky-900/90">{expected.toLocaleString()}</dd>
+                                        <dd className="text-right text-sky-900/90">{formatQty(expected, rowUom(row))}</dd>
                                         <dt className="text-gray-500">Avail</dt>
                                         <dd className={`text-right font-medium ${av < 0 ? "text-red-600" : ""}`}>
-                                          {av.toLocaleString()}
+                                          {formatQty(av, rowUom(row))}
                                         </dd>
                                       </dl>
                                       {num(lv.committedSalesOrder) + num(lv.committedManufacturingOrder) + num(lv.committedTransferOrder) > 0 && (

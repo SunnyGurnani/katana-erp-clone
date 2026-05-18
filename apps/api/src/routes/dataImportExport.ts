@@ -9,8 +9,32 @@ import { Parser as Json2CsvParser } from 'json2csv';
 import * as XLSX from 'xlsx';
 import { normalizePoStatus } from '../lib/purchaseOrderStatus';
 
+const IMPORT_TEMPLATES: Record<string, Record<string, string>[]> = {
+  products: [
+    { name: 'Example Product', sku: 'PROD-001', description: '', category: 'Finished goods', unitOfMeasure: 'pcs', salesPrice: '10.00', purchasePrice: '5.00', isManufactured: 'true' },
+  ],
+  materials: [
+    { name: 'Example Material', sku: 'MAT-001', description: '', category: 'Raw material', unitOfMeasure: 'kg', purchasePrice: '2.50' },
+  ],
+  customers: [
+    { name: 'Example Customer', code: 'CUST-001', email: 'buyer@example.com', phone: '', currency: 'USD', paymentTerms: 'Net 30' },
+  ],
+};
+
 const router = Router();
 router.use(authenticate);
+
+router.get('/templates/:entity', async (req, res) => {
+  const entity = req.params.entity as string;
+  const rows = IMPORT_TEMPLATES[entity];
+  if (!rows) return res.status(404).json({ error: 'Unknown template' });
+  const parser = new Json2CsvParser();
+  const csv = parser.parse(rows);
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="${entity}-import-template.csv"`);
+  res.send(csv);
+});
+
 router.use(requireOperatorForMutations);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -141,7 +165,7 @@ router.post('/export', async (req: AuthRequest, res: Response) => {
 
 router.post('/import', upload.single('file'), async (req: AuthRequest, res: Response) => {
   const { entity } = z.object({
-    entity: z.enum(['products', 'materials', 'sales-orders', 'purchase-orders', 'inventory', 'boms']),
+    entity: z.enum(['products', 'materials', 'customers', 'sales-orders', 'purchase-orders', 'inventory', 'boms']),
   }).parse(req.body);
 
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -190,6 +214,25 @@ router.post('/import', upload.single('file'), async (req: AuthRequest, res: Resp
               category: row.category || undefined,
               purchasePrice: row.purchasePrice ? Number(row.purchasePrice) : undefined,
               unitOfMeasure: row.unitOfMeasure || 'pcs',
+            },
+          });
+          created++;
+        } catch (e: any) {
+          errors.push(`Row ${created + errors.length + 1}: ${e.message}`);
+        }
+      }
+      break;
+    case 'customers':
+      for (const row of records) {
+        try {
+          await prisma.customer.create({
+            data: {
+              name: row.name,
+              code: row.code || undefined,
+              email: row.email || undefined,
+              phone: row.phone || undefined,
+              currency: row.currency || 'USD',
+              paymentTerms: row.paymentTerms || undefined,
             },
           });
           created++;

@@ -14,7 +14,21 @@ const schema = z.object({
   timezone: z.string().default('UTC'),
   address: z.string().nullish(),
   logoUrl: z.string().nullish(),
+  workingHoursStart: z.string().nullish(),
+  workingHoursEnd: z.string().nullish(),
+  workingDays: z.string().nullish(),
+  defaultLocationId: z.string().nullish(),
 });
+
+async function upsertFactory(data: any) {
+  let factory = await prisma.factory.findFirst();
+  if (!factory) {
+    factory = await prisma.factory.create({ data: { name: 'My Factory', ...data } });
+  } else {
+    factory = await prisma.factory.update({ where: { id: factory.id }, data });
+  }
+  return factory;
+}
 
 router.get('/', async (_req, res) => {
   let factory = await prisma.factory.findFirst();
@@ -26,13 +40,12 @@ router.get('/', async (_req, res) => {
 
 router.patch('/', async (req, res) => {
   const data = schema.partial().parse(req.body);
-  let factory = await prisma.factory.findFirst();
-  if (!factory) {
-    factory = await prisma.factory.create({ data: { name: 'My Factory', ...data } });
-  } else {
-    factory = await prisma.factory.update({ where: { id: factory.id }, data });
-  }
-  res.json(factory);
+  res.json(await upsertFactory(data));
+});
+
+router.put('/', async (req, res) => {
+  const data = schema.partial().parse(req.body);
+  res.json(await upsertFactory(data));
 });
 
 export default router;

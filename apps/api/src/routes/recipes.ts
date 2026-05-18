@@ -26,7 +26,16 @@ router.get('/', async (req, res) => {
   const where: any = {};
   if (req.query.productId) where.productId = req.query.productId;
   const [items, total] = await Promise.all([
-    prisma.bOM.findMany({ where, skip, take, orderBy: { createdAt: 'desc' }, include: { rows: true, operations: true } }),
+    prisma.bOM.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        rows: { include: { material: { select: { id: true, name: true, purchasePrice: true, unitOfMeasure: true } } } },
+        operations: true,
+      },
+    }),
     prisma.bOM.count({ where }),
   ]);
   res.json(paginated(items, total, page, pageSize));
@@ -35,7 +44,10 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const item = await prisma.bOM.findUnique({
     where: { id: req.params.id },
-    include: { rows: true, operations: { orderBy: { rank: 'asc' } } },
+    include: {
+      rows: { include: { material: { select: { id: true, name: true, purchasePrice: true, unitOfMeasure: true } } } },
+      operations: { orderBy: { rank: 'asc' } },
+    },
   });
   if (!item) return res.status(404).json({ error: 'Not found' });
   res.json(item);

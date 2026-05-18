@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
-import { DollarSign, ShoppingCart, TrendingUp } from "lucide-react";
+import { DollarSign, ShoppingCart, TrendingUp, Percent } from "lucide-react";
+import { InsightsBarChart } from "@/components/insights/InsightsBarChart";
 
 export default function SalesInsightsPage() {
   const [from, setFrom] = useState("");
@@ -34,32 +35,35 @@ export default function SalesInsightsPage() {
 
       {isLoading ? <table className="table"><tbody><SkeletonRows rows={3} /></tbody></table> : data && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="card p-4 flex items-center gap-3">
               <div className="rounded-lg p-2.5 bg-[#2E7D32]"><DollarSign size={18} className="text-white" /></div>
               <div>
-                <p className="text-xs text-gray-500">Total Revenue</p>
-                {data.revenueByCurrency?.length > 1 ? (
-                  <div className="text-sm font-bold space-y-0.5 mt-0.5">
-                    {data.revenueByCurrency.map((x: any) => (
-                      <p key={x.currency}>{Number(x.revenue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {x.currency}</p>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xl font-bold">{Number(data.totalRevenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {(data.revenueByCurrency?.[0]?.currency || "USD")}</p>
-                )}
-                {data.revenueByCurrency?.length > 1 && (
-                  <p className="text-[11px] text-gray-400 mt-1">Sums are per currency (not converted).</p>
-                )}
+                <p className="text-xs text-gray-500">Revenue</p>
+                <p className="text-xl font-bold">${Number(data.totalRevenue || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+              </div>
+            </div>
+            <div className="card p-4 flex items-center gap-3">
+              <div className="rounded-lg p-2.5 bg-amber-600"><TrendingUp size={18} className="text-white" /></div>
+              <div>
+                <p className="text-xs text-gray-500">COGS</p>
+                <p className="text-xl font-bold">${Number(data.totalCogs || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
               </div>
             </div>
             <div className="card p-4 flex items-center gap-3">
               <div className="rounded-lg p-2.5 bg-[#1565C0]"><ShoppingCart size={18} className="text-white" /></div>
-              <div><p className="text-xs text-gray-500">Order Count</p><p className="text-xl font-bold">{data.orderCount}</p></div>
+              <div>
+                <p className="text-xs text-gray-500">Profit</p>
+                <p className="text-xl font-bold">${Number(data.totalProfit || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                <p className="text-[11px] text-gray-400">{data.orderCount} orders</p>
+              </div>
             </div>
             <div className="card p-4 flex items-center gap-3">
-              <div className="rounded-lg p-2.5 bg-[#7B1FA2]"><TrendingUp size={18} className="text-white" /></div>
-              <div><p className="text-xs text-gray-500">Avg Order Value</p><p className="text-xl font-bold">${Number(data.avgOrderValue || 0).toFixed(2)}</p></div>
+              <div className="rounded-lg p-2.5 bg-[#7B1FA2]"><Percent size={18} className="text-white" /></div>
+              <div>
+                <p className="text-xs text-gray-500">Profit margin</p>
+                <p className="text-xl font-bold">{Number(data.profitMargin || 0).toFixed(1)}%</p>
+              </div>
             </div>
           </div>
 
@@ -78,16 +82,12 @@ export default function SalesInsightsPage() {
           )}
 
           {data.revenueByMonth?.length > 0 && (
-            <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200"><h2 className="font-semibold text-sm text-gray-800">Revenue by Month</h2></div>
-              <table className="table">
-                <thead><tr><th>Month</th><th>Revenue</th></tr></thead>
-                <tbody>
-                  {data.revenueByMonth.map((m: any) => (
-                    <tr key={m.month}><td>{m.month}</td><td className="font-semibold">${Number(m.revenue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="card p-4">
+              <h2 className="font-semibold text-sm text-gray-800 mb-3">Revenue by Month</h2>
+              <InsightsBarChart
+                data={data.revenueByMonth.map((m: any) => ({ label: m.month, value: Number(m.revenue) }))}
+                valuePrefix="$"
+              />
             </div>
           )}
         </>
@@ -101,8 +101,8 @@ export default function SalesInsightsPage() {
             <tbody>
               {byProduct.map((p: any) => (
                 <tr key={p.variantId}>
-                  <td className="font-medium">{p.productName || p.variantName || "—"}</td>
-                  <td className="font-mono text-xs">{p.variantSku || "—"}</td>
+                  <td className="font-medium">{p.productName || p.variantName || "-"}</td>
+                  <td className="font-mono text-xs">{p.variantSku || "-"}</td>
                   <td>{p.totalQty}</td>
                   <td className="font-semibold">${Number(p.totalRevenue).toFixed(2)}</td>
                 </tr>

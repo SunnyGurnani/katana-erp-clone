@@ -13,6 +13,13 @@ export function errorHandler(err: any, _req: Request, res: Response, _next: Next
   if (err?.code === 'P2025') {
     return res.status(404).json({ error: 'Not found' });
   }
+  // Prisma cannot reach database (Postgres not running / wrong DATABASE_URL)
+  const msg = typeof err?.message === 'string' ? err.message : '';
+  if (err?.code === 'P1001' || err?.errorCode === 'P1001' || msg.includes("Can't reach database server")) {
+    return res.status(503).json({
+      error: 'Database unavailable. Start PostgreSQL and ensure DATABASE_URL in .env matches your server.',
+    });
+  }
   const status = err.statusCode || err.status || 500;
   const message = err.message || 'Internal server error';
   if (status === 500) console.error('[ERROR]', err);

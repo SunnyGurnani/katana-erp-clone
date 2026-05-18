@@ -765,6 +765,7 @@ router.get('/operation-rows', async (req, res) => {
  *               name: { type: string }
  *               status: { type: string, default: pending }
  *               actualMinutes: { type: number }
+ *               operatorId: { type: string, format: uuid, nullable: true }
  *     responses:
  *       '201':
  *         description: Created operation row
@@ -779,6 +780,7 @@ router.post('/operation-rows', async (req, res) => {
     name: z.string(),
     status: z.string().default('pending'),
     actualMinutes: z.coerce.number().optional(),
+    operatorId: z.string().uuid().nullish(),
   }).parse(req.body);
   const item = await prisma.mOOperationRow.create({ data });
   res.status(201).json(item);
@@ -830,6 +832,7 @@ router.get('/operation-rows/:id', async (req, res) => {
  *               name: { type: string }
  *               status: { type: string }
  *               actualMinutes: { type: number }
+ *               operatorId: { type: string, format: uuid, nullable: true }
  *     responses:
  *       '200':
  *         description: Updated operation row
@@ -838,7 +841,7 @@ router.get('/operation-rows/:id', async (req, res) => {
  *             schema: { type: object }
  */
 router.patch('/operation-rows/:id', async (req, res) => {
-  const data = z.object({ name: z.string().optional(), status: z.string().optional(), actualMinutes: z.coerce.number().optional() }).parse(req.body);
+  const data = z.object({ name: z.string().optional(), status: z.string().optional(), actualMinutes: z.coerce.number().optional(), operatorId: z.string().uuid().nullish() }).parse(req.body);
   const item = await prisma.mOOperationRow.update({ where: { id: req.params.id }, data });
   res.json(item);
 });

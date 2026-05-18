@@ -47,6 +47,12 @@ router.patch('/:id', async (req, res) => {
   res.json(item);
 });
 
+router.put('/:id', async (req, res) => {
+  const data = schema.partial().parse(req.body);
+  const item = await prisma.service.update({ where: { id: req.params.id }, data });
+  res.json(item);
+});
+
 router.delete('/:id', async (req, res) => {
   await prisma.service.delete({ where: { id: req.params.id } });
   res.status(204).send();

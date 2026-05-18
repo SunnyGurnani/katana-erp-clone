@@ -215,6 +215,21 @@ async function main() {
     ]});
   }
 
+  const defaultUnits = ['pcs', 'kg', 'g', 'lbs', 'oz', 'L', 'ml', 'm', 'ft', 'cm', 'mm', 'box', 'pack'];
+  for (let i = 0; i < defaultUnits.length; i++) {
+    await prisma.measurementUnit.upsert({
+      where: { name: defaultUnits[i] },
+      update: { sortOrder: i },
+      create: { name: defaultUnits[i], sortOrder: i },
+    });
+  }
+
+  await prisma.appSetting.upsert({
+    where: { key: 'inventory_closing_date' },
+    update: {},
+    create: { key: 'inventory_closing_date', value: '2024-03-31' },
+  });
+
   console.log('✓ Seed complete');
   console.log('  admin@forgeerp.com / Admin1234!');
   console.log('  operator@forgeerp.com / Operator1234!');

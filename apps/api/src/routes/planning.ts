@@ -222,4 +222,220 @@ router.get('/replenishment', async (req, res) => {
   res.json(suggestions);
 });
 
+function weekStartMonday(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  const day = x.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  x.setDate(x.getDate() + diff);
+  return x;
+}
+
+function weekIndexForDate(date: Date | null | undefined, anchor: Date, weeks: number): number | null {
+  if (!date) return null;
+  const idx = Math.floor((weekStartMonday(date).getTime() - anchor.getTime()) / (7 * 86400000));
+  if (idx < 0 || idx >= weeks) return null;
+  return idx;
+}
+
+function deltaKey(variantId: string, locId: string) {
+  return `${variantId}|${locId}`;
+}
+
+// GET /weekly — projected stock per variant from open SO/PO/MO by week
+router.get('/weekly', async (req, res) => {
+  const weeks = Math.min(26, Math.max(4, Number(req.query.weeks) || 12));
+  const locationId = req.query.locationId as string | undefined;
+  const includeDemandForecast = req.query.includeDemandForecast === 'true';
+
+  const defaultLoc =
+    (await prisma.location.findFirst({ where: { isDefault: true } })) ??
+    (await prisma.location.findFirst({ orderBy: { createdAt: 'asc' } }));
+  const locId = locationId || defaultLoc?.id;
+
+  const anchor = weekStartMonday(new Date());
+  const weekLabels: string[] = [];
+  for (let w = 0; w < weeks; w++) {
+    const d = new Date(anchor);
+    d.setDate(d.getDate() + w * 7);
+    const onejan = new Date(d.getFullYear(), 0, 1);
+    const weekNum = Math.ceil(((d.getTime() - onejan.getTime()) / 86400000 + onejan.getDay() + 1) / 7);
+    weekLabels.push(`W${weekNum}`);
+  }
+
+  const incoming: Record<string, number[]> = {};
+  const outgoing: Record<string, number[]> = {};
+
+  function addDelta(map: Record<string, number[]>, variantId: string, location: string | null | undefined, week: number, qty: number) {
+    const lid = location || defaultLoc?.id;
+    if (!lid || week < 0 || week >= weeks) return;
+    const key = deltaKey(variantId, lid);
+    if (!map[key]) map[key] = Array(weeks).fill(0);
+    map[key][week] += qty;
+  }
+
+  const [poRows, soRows, mos] = await Promise.all([
+    prisma.purchaseOrderRow.findMany({
+      where: {
+        variantId: { not: null },
+        order: {
+          status: { notIn: [...PO_STATUS_EXCLUDE_FROM_EXPECTED] },
+          ...(locId ? { locationId: locId } : {}),
+        },
+      },
+      select: {
+        variantId: true,
+        qtyOrdered: true,
+        qtyReceived: true,
+        order: { select: { locationId: true, expectedDate: true, orderDate: true, createdAt: true } },
+      },
+    }),
+    prisma.salesOrderRow.findMany({
+      where: {
+        variantId: { not: null },
+        order: { status: { notIn: ['cancelled', 'fulfilled'] } },
+      },
+      select: {
+        variantId: true,
+        locationId: true,
+        qtyOrdered: true,
+        qtyFulfilled: true,
+        order: { select: { locationId: true, requiredDate: true, orderDate: true, createdAt: true } },
+      },
+    }),
+    prisma.manufacturingOrder.findMany({
+      where: { status: { notIn: ['done', 'cancelled'] } },
+      select: {
+        variantId: true,
+        locationId: true,
+        qtyPlanned: true,
+        qtyProduced: true,
+        plannedStart: true,
+        plannedEnd: true,
+        createdAt: true,
+        recipeRows: { select: { variantId: true, materialId: true, qtyPlanned: true, qtyConsumed: true } },
+      },
+    }),
+  ]);
+
+  for (const r of poRows) {
+    if (!r.variantId) continue;
+    const remaining = Number(r.qtyOrdered) - Number(r.qtyReceived);
+    if (remaining <= 0) continue;
+    const date = r.order.expectedDate || r.order.orderDate || r.order.createdAt;
+    const w = weekIndexForDate(date, anchor, weeks);
+    if (w === null) continue;
+    addDelta(incoming, r.variantId, r.order.locationId, w, remaining);
+  }
+
+  for (const r of soRows) {
+    if (!r.variantId) continue;
+    const remaining = Number(r.qtyOrdered) - Number(r.qtyFulfilled);
+    if (remaining <= 0) continue;
+    const date = r.order.requiredDate || r.order.orderDate || r.order.createdAt;
+    const w = weekIndexForDate(date, anchor, weeks);
+    if (w === null) continue;
+    addDelta(outgoing, r.variantId, r.locationId || r.order.locationId, w, remaining);
+  }
+
+  if (includeDemandForecast) {
+    const forecasts = await prisma.demandForecast.findMany({
+      select: { variantId: true, locationId: true, qty: true, forecastAt: true },
+    });
+    for (const f of forecasts) {
+      const w = weekIndexForDate(f.forecastAt, anchor, weeks);
+      if (w === null) continue;
+      addDelta(outgoing, f.variantId, f.locationId, w, Number(f.qty));
+    }
+  }
+
+  for (const mo of mos) {
+    const moLoc = mo.locationId || defaultLoc?.id;
+    const moRemaining = Number(mo.qtyPlanned) - Number(mo.qtyProduced);
+    if (moRemaining > 0 && mo.variantId) {
+      const prodDate = mo.plannedEnd || mo.plannedStart || mo.createdAt;
+      const w = weekIndexForDate(prodDate, anchor, weeks);
+      if (w !== null) addDelta(incoming, mo.variantId, moLoc, w, moRemaining);
+    }
+    const recipeScale = Number(mo.qtyPlanned) > 0 ? moRemaining / Number(mo.qtyPlanned) : 0;
+    if (recipeScale <= 0) continue;
+    const consumeDate = mo.plannedStart || mo.plannedEnd || mo.createdAt;
+    const w = weekIndexForDate(consumeDate, anchor, weeks);
+    if (w === null) continue;
+    for (const rr of mo.recipeRows) {
+      if (!rr.variantId) continue;
+      const need = (Number(rr.qtyPlanned) - Number(rr.qtyConsumed)) * recipeScale;
+      if (need > 0) addDelta(outgoing, rr.variantId, moLoc, w, need);
+    }
+  }
+
+  const levels = await prisma.inventoryLevel.findMany({
+    where: locId ? { locationId: locId } : {},
+    include: {
+      variant: {
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          product: { select: { name: true, unitOfMeasure: true } },
+        },
+      },
+    },
+    take: 200,
+  });
+
+  const levelKeys = new Set(levels.map((l) => deltaKey(l.variantId, l.locationId)));
+  const extraKeys = [...new Set([...Object.keys(incoming), ...Object.keys(outgoing)])].filter((k) => !levelKeys.has(k));
+
+  const extraVariantIds = [...new Set(extraKeys.map((k) => k.split('|')[0]))];
+  const extraVariants = extraVariantIds.length
+    ? await prisma.variant.findMany({
+        where: { id: { in: extraVariantIds } },
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          product: { select: { name: true, unitOfMeasure: true } },
+        },
+      })
+    : [];
+  const variantMap = new Map(extraVariants.map((v) => [v.id, v]));
+
+  function buildRow(variantId: string, locationIdForRow: string, onHand: number, variant: any) {
+    const key = deltaKey(variantId, locationIdForRow);
+    const inc = incoming[key] || Array(weeks).fill(0);
+    const out = outgoing[key] || Array(weeks).fill(0);
+    const uom = variant?.product?.unitOfMeasure || 'pcs';
+    const label = variant?.sku
+      ? `[${variant.sku}] ${variant.product?.name || variant.name}${variant.name !== 'Default' ? ` / ${variant.name}` : ''}`
+      : variant?.product?.name || variant?.name || variantId;
+    const weekly: number[] = [];
+    let stock = onHand;
+    for (let w = 0; w < weeks; w++) {
+      stock += inc[w] - out[w];
+      weekly.push(Math.round(stock * 100) / 100);
+    }
+    return {
+      variantId,
+      locationId: locationIdForRow,
+      label,
+      unitOfMeasure: uom,
+      existingStock: onHand,
+      weeks: weekly,
+    };
+  }
+
+  const rows = levels.map((l) => buildRow(l.variantId, l.locationId, Number(l.onHand), l.variant));
+
+  for (const key of extraKeys) {
+    const [variantId, locationIdForRow] = key.split('|');
+    if (locId && locationIdForRow !== locId) continue;
+    const v = variantMap.get(variantId);
+    if (!v) continue;
+    rows.push(buildRow(variantId, locationIdForRow, 0, v));
+  }
+
+  res.json({ weekLabels, rows });
+});
+
 export default router;

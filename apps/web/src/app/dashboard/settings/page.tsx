@@ -75,10 +75,13 @@ export default function SettingsPage() {
   });
 
   return (
-    <div className="px-4 py-3 space-y-4">
-      <div><h1 className="text-2xl font-bold text-gray-900">Settings</h1><p className="text-sm text-gray-500">API keys & integrations</p></div>
+    <div className="px-8 py-6 space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">API Keys & Webhooks</h1>
+        <p className="text-sm text-gray-500 mt-1">Manage your API keys and webhook integrations for external services.</p>
+      </div>
 
-      <div className="flex gap-1 border-b border-gray-200">
+      <div className="flex gap-1 border-b border-gray-200 -mb-px">
         {(["api-keys", "webhooks"] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === t ? "border-brand-600 text-brand-700" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
             {t === "api-keys" ? "API Keys" : "Webhooks"}

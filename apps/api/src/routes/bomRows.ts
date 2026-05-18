@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth';
 import { requireOperatorForMutations } from '../middleware/roles';
 import { getPagination, paginated } from '../middleware/paginate';
 import { z } from 'zod';
+import { resolveBomRowUnitCost } from '../lib/bomCost';
 
 const router = Router();
 router.use(authenticate);
@@ -20,7 +21,10 @@ const rowSchema = z.object({
 
 router.post('/', async (req, res) => {
   const data = rowSchema.parse(req.body);
-  const item = await prisma.bOMRow.create({ data });
+  const unitCost = await resolveBomRowUnitCost(data.materialId, data.unitCost);
+  const item = await prisma.bOMRow.create({
+    data: { ...data, unitCost: unitCost ?? data.unitCost ?? undefined },
+  });
   res.status(201).json(item);
 });
 
@@ -53,7 +57,17 @@ router.patch('/:id', async (req, res) => {
     unitCost: z.coerce.number().nullish(),
     notes: z.string().nullish(),
   }).parse(req.body);
-  const item = await prisma.bOMRow.update({ where: { id: req.params.id }, data });
+  const existing = await prisma.bOMRow.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  const materialId = data.materialId ?? existing.materialId;
+  const unitCost = await resolveBomRowUnitCost(
+    materialId,
+    data.unitCost !== undefined ? data.unitCost : existing.unitCost ? Number(existing.unitCost) : undefined,
+  );
+  const item = await prisma.bOMRow.update({
+    where: { id: req.params.id },
+    data: { ...data, unitCost: unitCost ?? data.unitCost ?? undefined },
+  });
   res.json(item);
 });
 

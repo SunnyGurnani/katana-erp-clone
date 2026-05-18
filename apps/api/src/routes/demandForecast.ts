@@ -7,7 +7,6 @@ import { z } from 'zod';
 
 const router = Router();
 router.use(authenticate);
-router.use(requireOperatorForMutations);
 
 const schema = z.object({
   variantId: z.string().uuid(),
@@ -28,6 +27,8 @@ router.get('/', async (req, res) => {
   ]);
   res.json(paginated(items, total, page, pageSize));
 });
+
+router.use(requireOperatorForMutations);
 
 router.post('/', async (req, res) => {
   const data = schema.parse(req.body);

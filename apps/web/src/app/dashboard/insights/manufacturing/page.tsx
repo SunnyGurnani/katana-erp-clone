@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { Wrench, CheckCircle, Clock, DollarSign } from "lucide-react";
+import { InsightsBarChart } from "@/components/insights/InsightsBarChart";
 
 export default function ManufacturingInsightsPage() {
   const [from, setFrom] = useState("");
@@ -58,16 +59,12 @@ export default function ManufacturingInsightsPage() {
           )}
 
           {data.productionByMonth?.length > 0 && (
-            <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200"><h2 className="font-semibold text-sm text-gray-800">Production by Month</h2></div>
-              <table className="table">
-                <thead><tr><th>Month</th><th>MOs</th></tr></thead>
-                <tbody>
-                  {data.productionByMonth.map((m: any) => (
-                    <tr key={m.month}><td>{m.month}</td><td className="font-semibold">{m.count}</td></tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="card p-4">
+              <h2 className="font-semibold text-sm text-gray-800 mb-3">Production by Month</h2>
+              <InsightsBarChart
+                data={data.productionByMonth.map((m: any) => ({ label: m.month, value: Number(m.count) }))}
+                color="#7B1FA2"
+              />
             </div>
           )}
         </>

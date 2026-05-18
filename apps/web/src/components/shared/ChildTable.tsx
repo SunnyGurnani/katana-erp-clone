@@ -6,6 +6,7 @@ import { Modal } from "@/components/ui/Modal";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/SearchableSelect";
 import { useToast } from "@/components/ui/Toast";
 import { Plus, Pencil, Trash2 } from "lucide-react";
+import { SkeletonRows } from "@/components/ui/Skeleton";
 
 export interface FieldDef {
   key: string;
@@ -111,7 +112,7 @@ export function ChildTable({ title, parentId, parentKey, endpoint, columns, form
         </thead>
         <tbody>
           {isLoading ? (
-            <tr><td colSpan={columns.length + 1} className="text-center text-gray-400 py-6">Loading...</td></tr>
+            <SkeletonRows rows={2} cols={columns.length + (canEdit || canDelete ? 1 : 0)} />
           ) : rows.length === 0 ? (
             <tr><td colSpan={columns.length + 1} className="text-center text-gray-400 py-8">No rows yet</td></tr>
           ) : rows.map((row: any) => (

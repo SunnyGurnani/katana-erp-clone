@@ -11,6 +11,8 @@ import { authenticate } from '../middleware/auth';
 import { requireOperatorForMutations } from '../middleware/roles';
 import { getPagination, paginated } from '../middleware/paginate';
 import { z } from 'zod';
+import { resolveBomRowUnitCost } from '../lib/bomCost';
+import { buildVariantNames, generateVariantsSchema } from '../lib/variantGenerate';
 
 const router = Router();
 router.use(authenticate);
@@ -33,10 +35,34 @@ const schema = z.object({
   status: z.string().default('active'),
   isManufactured: z.boolean().optional(),
   trackLotsAndExpiry: z.boolean().optional(),
+  trackLots: z.boolean().optional(),
+  trackExpiry: z.boolean().optional(),
   salesPrice: z.coerce.number().optional(),
   purchasePrice: z.coerce.number().optional(),
+  unitOfMeasure: z.string().min(1).optional(),
+  hasVariants: z.boolean().optional(),
+  variantOptions: z.array(z.object({
+    name: z.string().min(1),
+    values: z.array(z.string().min(1)).min(1),
+  })).optional(),
   variants: z.array(variantSchema).optional(),
 });
+
+function resolveTrackLots(data: any) {
+  const { trackLots, trackExpiry, ...rest } = data;
+  if (trackLots !== undefined || trackExpiry !== undefined) {
+    rest.trackLotsAndExpiry = !!(trackLots || trackExpiry);
+  }
+  return rest;
+}
+
+function withTrackFields(product: any) {
+  return {
+    ...product,
+    trackLots: !!product.trackLotsAndExpiry,
+    trackExpiry: !!product.trackLotsAndExpiry,
+  };
+}
 
 const include = { variants: true };
 
@@ -84,7 +110,7 @@ router.get('/', async (req, res) => {
     prisma.product.findMany({ where, skip, take, orderBy: { name: 'asc' }, include }),
     prisma.product.count({ where }),
   ]);
-  res.json(paginated(items, total, page, pageSize));
+  res.json(paginated(items.map(withTrackFields), total, page, pageSize));
 });
 
 /**
@@ -128,7 +154,8 @@ router.get('/', async (req, res) => {
  *             schema: { type: object }
  */
 router.post('/', async (req, res) => {
-  const { variants, ...data } = schema.parse(req.body);
+  const { variants, ...rawData } = schema.parse(req.body);
+  const data = resolveTrackLots(rawData);
   const variantData = variants?.map(v => ({
     name: v.name,
     sku: v.sku,
@@ -145,11 +172,12 @@ router.post('/', async (req, res) => {
       trackLotsAndExpiry: data.trackLotsAndExpiry ?? undefined,
       salesPrice: data.salesPrice,
       purchasePrice: data.purchasePrice,
+      unitOfMeasure: data.unitOfMeasure?.trim() || 'pcs',
       variants: variantData?.length ? { create: variantData } : undefined,
     },
     include,
   });
-  res.status(201).json(product);
+  res.status(201).json(withTrackFields(product));
 });
 
 // ── Standalone BOM Rows (must be before /:id) ─────────────────────────────────
@@ -235,7 +263,10 @@ router.post('/bom-rows', async (req, res) => {
     unitCost: z.coerce.number().optional(),
     notes: z.string().optional(),
   }).parse(req.body);
-  const item = await prisma.bOMRow.create({ data });
+  const unitCost = await resolveBomRowUnitCost(data.materialId, data.unitCost);
+  const item = await prisma.bOMRow.create({
+    data: { ...data, unitCost: unitCost ?? data.unitCost ?? undefined },
+  });
   res.status(201).json(item);
 });
 
@@ -346,7 +377,17 @@ router.get('/bom-rows/:id', async (req, res) => {
  */
 router.patch('/bom-rows/:id', async (req, res) => {
   const data = z.object({ materialId: z.string().uuid().optional(), variantId: z.string().uuid().optional(), qty: z.coerce.number().positive().optional(), unitCost: z.coerce.number().optional(), notes: z.string().optional() }).parse(req.body);
-  const item = await prisma.bOMRow.update({ where: { id: req.params.id }, data });
+  const existing = await prisma.bOMRow.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  const materialId = data.materialId ?? existing.materialId;
+  const unitCost = await resolveBomRowUnitCost(
+    materialId,
+    data.unitCost !== undefined ? data.unitCost : existing.unitCost ? Number(existing.unitCost) : undefined,
+  );
+  const item = await prisma.bOMRow.update({
+    where: { id: req.params.id },
+    data: { ...data, unitCost: unitCost ?? data.unitCost ?? undefined },
+  });
   res.json(item);
 });
 
@@ -461,6 +502,46 @@ router.get('/operation-rows', async (req, res) => {
   res.json(paginated(items, total, page, pageSize));
 });
 
+// ── Generate variants from option dimensions (Katana-style) ───────────────────
+router.post('/:id/variants/generate', async (req, res) => {
+  const productId = req.params.id;
+  const product = await prisma.product.findUnique({ where: { id: productId }, include: { variants: true } });
+  if (!product) return res.status(404).json({ error: 'Product not found' });
+
+  const { options, replaceExisting } = generateVariantsSchema.parse(req.body);
+  const names = buildVariantNames(options);
+  if (names.length === 0) return res.status(400).json({ error: 'At least one option value is required' });
+
+  const result = await prisma.$transaction(async (tx) => {
+    if (replaceExisting && product.variants.length > 0) {
+      await tx.variant.deleteMany({ where: { productId } });
+    }
+    const existingNames = new Set(
+      replaceExisting ? [] : product.variants.map((v) => v.name.toLowerCase()),
+    );
+    const toCreate = names.filter((n) => !existingNames.has(n.toLowerCase()));
+    if (toCreate.length > 0) {
+      await tx.variant.createMany({
+        data: toCreate.map((name) => ({
+          productId,
+          name,
+          sku: name.replace(/\s+/g, '-').toLowerCase().slice(0, 64) || undefined,
+        })),
+      });
+    }
+    return tx.product.update({
+      where: { id: productId },
+      data: {
+        hasVariants: true,
+        variantOptions: options as object,
+      },
+      include,
+    });
+  });
+
+  res.json(withTrackFields(result));
+});
+
 // ── Product CRUD by ID ────────────────────────────────────────────────────────
 /**
  * @openapi
@@ -485,7 +566,7 @@ router.get('/operation-rows', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const p = await prisma.product.findUnique({ where: { id: req.params.id }, include });
   if (!p) return res.status(404).json({ error: 'Not found' });
-  res.json(p);
+  res.json(withTrackFields(p));
 });
 
 /**
@@ -547,7 +628,8 @@ router.get('/:id', async (req, res) => {
  *             schema: { type: object }
  */
 router.put('/:id', async (req, res) => {
-  const { variants, ...data } = schema.partial().parse(req.body);
+  const { variants, ...rawData } = schema.partial().parse(req.body);
+  const data = resolveTrackLots(rawData);
   const p = await prisma.product.update({
     where: { id: req.params.id },
     data: {
@@ -559,14 +641,18 @@ router.put('/:id', async (req, res) => {
       trackLotsAndExpiry: data.trackLotsAndExpiry,
       salesPrice: data.salesPrice,
       purchasePrice: data.purchasePrice,
+      unitOfMeasure: data.unitOfMeasure,
+      hasVariants: data.hasVariants,
+      variantOptions: data.variantOptions as object | undefined,
     },
     include,
   });
-  res.json(p);
+  res.json(withTrackFields(p));
 });
 
 router.patch('/:id', async (req, res) => {
-  const { variants, ...data } = schema.partial().parse(req.body);
+  const { variants, ...rawData } = schema.partial().parse(req.body);
+  const data = resolveTrackLots(rawData);
   const p = await prisma.product.update({
     where: { id: req.params.id },
     data: {
@@ -578,10 +664,13 @@ router.patch('/:id', async (req, res) => {
       trackLotsAndExpiry: data.trackLotsAndExpiry,
       salesPrice: data.salesPrice,
       purchasePrice: data.purchasePrice,
+      unitOfMeasure: data.unitOfMeasure,
+      hasVariants: data.hasVariants,
+      variantOptions: data.variantOptions as object | undefined,
     },
     include,
   });
-  res.json(p);
+  res.json(withTrackFields(p));
 });
 
 /**

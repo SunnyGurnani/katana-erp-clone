@@ -3,15 +3,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
-interface Tab { label: string; href: string; }
+interface Tab { label: string; href: string; matchPrefix?: boolean; excludePrefixes?: string[]; }
 
 export function SubTabs({ tabs }: { tabs: Tab[] }) {
   const pathname = usePathname();
   return (
     <div className="border-b border-gray-200 bg-white px-5">
       <div className="flex -mb-px gap-1">
-        {tabs.map(tab => {
-          const active = pathname === tab.href;
+        {tabs.map((tab) => {
+          const excluded = tab.excludePrefixes?.some((p) => pathname.startsWith(p));
+          const active = tab.matchPrefix
+            ? !excluded && (pathname === tab.href || pathname.startsWith(`${tab.href}/`))
+            : pathname === tab.href;
           return (
             <Link
               key={tab.href}

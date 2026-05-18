@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { DollarSign, Package, TrendingDown } from "lucide-react";
+import { InsightsBarChart } from "@/components/insights/InsightsBarChart";
 
 export default function PurchasingInsightsPage() {
   const [from, setFrom] = useState("");
@@ -53,16 +54,13 @@ export default function PurchasingInsightsPage() {
           )}
 
           {data.spendByMonth?.length > 0 && (
-            <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200"><h2 className="font-semibold text-sm text-gray-800">Spend by Month</h2></div>
-              <table className="table">
-                <thead><tr><th>Month</th><th>Spend</th></tr></thead>
-                <tbody>
-                  {data.spendByMonth.map((m: any) => (
-                    <tr key={m.month}><td>{m.month}</td><td className="font-semibold">${Number(m.spend).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="card p-4">
+              <h2 className="font-semibold text-sm text-gray-800 mb-3">Spend by Month</h2>
+              <InsightsBarChart
+                data={data.spendByMonth.map((m: any) => ({ label: m.month, value: Number(m.spend) }))}
+                valuePrefix="$"
+                color="#1565C0"
+              />
             </div>
           )}
         </>

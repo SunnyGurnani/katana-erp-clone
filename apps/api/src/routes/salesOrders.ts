@@ -79,6 +79,22 @@ async function appendPipelineStatuses(sos: any[]) {
     expectedMap[key] = (expectedMap[key] || 0) + (Number(r.qtyOrdered) - Number(r.qtyReceived));
   });
 
+  const rowIds = sos.flatMap(so => so.rows?.map((r: any) => r.id) || []);
+  const mos = rowIds.length ? await prisma.manufacturingOrder.findMany({
+    where: { notes: { contains: 'make-to-order' } },
+    select: { status: true, notes: true }
+  }) : [];
+  
+  const moMap: Record<string, string[]> = {};
+  mos.forEach(mo => {
+    const match = mo.notes?.match(/\[make-to-order: soRowId=([^\]]+)\]/);
+    if (match && match[1]) {
+      const soRowId = match[1];
+      if (!moMap[soRowId]) moMap[soRowId] = [];
+      moMap[soRowId].push(mo.status);
+    }
+  });
+
   return sos.map(so => {
     let sumOrdered = 0;
     let sumFulfilled = 0;
@@ -119,7 +135,26 @@ async function appendPipelineStatuses(sos: any[]) {
     if (anyNotAvailable) salesItemsStatus = 'not_available';
     else if (allAvailable) salesItemsStatus = 'available';
 
-    return { ...so, deliveryStatus, salesItemsStatus };
+    let hasMO = false;
+    let allDone = true;
+    let anyInProgress = false;
+    so.rows?.forEach((r: any) => {
+      const statuses = moMap[r.id] || [];
+      if (statuses.length > 0) hasMO = true;
+      statuses.forEach(s => {
+        if (s !== 'done') allDone = false;
+        if (s === 'in_progress' || s === 'done') anyInProgress = true;
+      });
+    });
+
+    let productionStatus = 'not_applicable';
+    if (hasMO) {
+      if (allDone) productionStatus = 'done';
+      else if (anyInProgress) productionStatus = 'in_progress';
+      else productionStatus = 'not_started';
+    }
+
+    return { ...so, deliveryStatus, salesItemsStatus, productionStatus };
   });
 }
 
@@ -410,6 +445,43 @@ router.post('/', async (req, res) => {
     },
     include: includeList,
   });
+  // --- ENTERPRISE MATH: Smart Auto-Booking Engine ---
+  // Attempt to automatically allocate available free stock to the new sales order rows
+  try {
+    for (const row of so.rows) {
+      if (!row.variantId) continue;
+      const targetLocationId = row.locationId || so.locationId;
+      if (!targetLocationId) continue;
+
+      const qtyNeeded = Number(row.qtyOrdered);
+      const inventory = await prisma.inventoryLevel.findUnique({
+        where: { variantId_locationId: { variantId: row.variantId, locationId: targetLocationId } }
+      });
+      
+      if (inventory) {
+        const freeStock = Number(inventory.onHand) - Number(inventory.allocated);
+        if (freeStock > 0) {
+          // Allocate what we can (up to what's needed)
+          const qtyToAllocate = Math.min(qtyNeeded, freeStock);
+          await prisma.$transaction(async (tx) => {
+            await allocatePickAtLevel(tx as any, row.variantId!, targetLocationId, qtyToAllocate, {
+              referenceType: 'sales_order',
+              referenceId: so.id,
+              note: `Auto-booked on creation`
+            });
+            await tx.salesOrderRow.update({
+              where: { id: row.id },
+              data: { qtyPicked: { increment: qtyToAllocate } }
+            });
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Auto-booking engine failed:", err);
+  }
+  // --------------------------------------------------
+
   res.status(201).json(await respondSalesOrder(so));
 });
 
@@ -645,7 +717,6 @@ router.post('/:id/revert-fulfillment', async (req, res) => {
   });
 
   const updated = await prisma.salesOrder.findUnique({ where: { id: orderId }, include: includeDetail });
-  res.json(await respondSalesOrder(updated!));
 });
 
 const pickRowSchema = z.object({
@@ -863,6 +934,35 @@ router.post('/:id/release-pick', async (req, res) => {
 
   const updated = await prisma.salesOrder.findUnique({ where: { id: so.id }, include: includeDetail });
   res.json(await respondSalesOrder(updated!));
+});
+
+router.post('/:id/duplicate', async (req, res) => {
+  const source = await prisma.salesOrder.findUnique({ where: { id: req.params.id }, include: includeDetail });
+  if (!source) return res.status(404).json({ error: 'Not found' });
+  const newNumber = await nextSalesOrderNumber();
+  const duplicated = await prisma.salesOrder.create({
+    data: {
+      number: newNumber,
+      status: 'draft',
+      customerId: source.customerId ?? undefined,
+      locationId: source.locationId ?? undefined,
+      currency: source.currency,
+      requiredDate: source.requiredDate ?? undefined,
+      notes: source.notes ?? undefined,
+      rows: {
+        create: (source.rows || []).map((r: any) => ({
+          variantId: r.variantId ?? undefined,
+          description: r.description ?? undefined,
+          qtyOrdered: r.qtyOrdered,
+          qtyFulfilled: 0,
+          unitPrice: r.unitPrice ?? undefined,
+          locationId: r.locationId ?? undefined,
+        })),
+      },
+    },
+    include: includeDetail,
+  });
+  res.status(201).json(await respondSalesOrder(duplicated));
 });
 
 router.delete('/:id', async (req, res) => {

@@ -11,8 +11,9 @@ import { ActionMenu } from "@/components/shared/ActionMenu";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { Pencil, Trash2, Eye } from "lucide-react";
 import Link from "next/link";
+import { UnitOfMeasureField } from "@/components/shared/UnitOfMeasureField";
 
-const blank = { name: "", sku: "", description: "", category: "", salesPrice: "", purchasePrice: "", trackLotsAndExpiry: false };
+const blank = { name: "", sku: "", description: "", category: "", unitOfMeasure: "pcs", salesPrice: "", purchasePrice: "", trackLotsAndExpiry: false };
 
 export default function ProductsPage() {
   const qc = useQueryClient();
@@ -56,6 +57,7 @@ export default function ProductsPage() {
       sku: p.variants?.[0]?.sku || "",
       description: p.description || "",
       category: p.category || "",
+      unitOfMeasure: p.unitOfMeasure || "pcs",
       salesPrice: p.salesPrice?.toString() || "",
       purchasePrice: p.purchasePrice?.toString() || "",
       trackLotsAndExpiry: !!p.trackLotsAndExpiry,
@@ -161,6 +163,13 @@ export default function ProductsPage() {
           <div><label className="label">Name *</label><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
           <div><label className="label">SKU</label><input className="input" value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} /></div>
           <div><label className="label">Category</label><input className="input" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} /></div>
+          <UnitOfMeasureField
+            label="Unit of measure"
+            labelClassName="label"
+            inputClassName="input"
+            value={form.unitOfMeasure}
+            onChange={(unitOfMeasure) => setForm((f) => ({ ...f, unitOfMeasure }))}
+          />
           <div><label className="label">Description</label><input className="input" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
           <div><label className="label">Sales Price</label><input className="input" type="number" step="0.01" value={form.salesPrice} onChange={e => setForm(f => ({ ...f, salesPrice: e.target.value }))} /></div>
           <div><label className="label">Purchase Price</label><input className="input" type="number" step="0.01" value={form.purchasePrice} onChange={e => setForm(f => ({ ...f, purchasePrice: e.target.value }))} /></div>

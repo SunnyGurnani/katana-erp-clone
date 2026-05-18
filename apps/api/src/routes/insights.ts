@@ -42,7 +42,33 @@ router.get('/sales/summary', async (req, res) => {
     }),
   ]);
 
+  const rowsWithCost = await prisma.salesOrderRow.findMany({
+    where: { order: dateWhere, variantId: { not: null } },
+    select: {
+      qtyOrdered: true,
+      unitPrice: true,
+      variantId: true,
+      order: { select: { createdAt: true, currency: true } },
+    },
+  });
+
+  const variantIds = [...new Set(rowsWithCost.map((r) => r.variantId).filter(Boolean))] as string[];
+  const variants = variantIds.length
+    ? await prisma.variant.findMany({
+        where: { id: { in: variantIds } },
+        select: { id: true, purchasePrice: true },
+      })
+    : [];
+  const costMap = Object.fromEntries(variants.map((v) => [v.id, Number(v.purchasePrice || 0)]));
+
   const totalRevenue = rows.reduce((s: number, r: any) => s + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0);
+  const totalCogs = rowsWithCost.reduce((s, r) => {
+    const cost = r.variantId ? costMap[r.variantId] || 0 : 0;
+    return s + Number(r.qtyOrdered) * cost;
+  }, 0);
+  const totalProfit = totalRevenue - totalCogs;
+  const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
   const revenueByCurrency: Record<string, number> = {};
   for (const r of rows) {
     const cur = (r.order as any).currency || 'USD';
@@ -67,6 +93,9 @@ router.get('/sales/summary', async (req, res) => {
 
   res.json({
     totalRevenue,
+    totalCogs,
+    totalProfit,
+    profitMargin,
     revenueByCurrency: Object.entries(revenueByCurrency).map(([currency, revenue]) => ({ currency, revenue })),
     orderCount,
     avgOrderValue,

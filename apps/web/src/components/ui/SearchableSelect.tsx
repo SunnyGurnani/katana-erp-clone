@@ -16,6 +16,10 @@ type Props = {
   options?: SearchableOption[];
   placeholder?: string;
   emptyOptionLabel?: string;
+  /** Show "Create new …" when search has no exact match (Katana-style). */
+  creatable?: boolean;
+  onCreateNew?: (query: string) => void;
+  createLabel?: (query: string) => string;
   disabled?: boolean;
   className?: string;
   id?: string;
@@ -28,6 +32,9 @@ export function SearchableSelect({
   options,
   placeholder = "Search…",
   emptyOptionLabel,
+  creatable,
+  onCreateNew,
+  createLabel,
   disabled,
   className,
   id,
@@ -56,6 +63,13 @@ export function SearchableSelect({
 
   const visible = useMemo(() => filtered.slice(0, MAX_VISIBLE), [filtered]);
   const truncated = filtered.length > visible.length;
+
+  const trimmedQuery = query.trim();
+  const showCreate =
+    creatable &&
+    !!onCreateNew &&
+    trimmedQuery.length > 0 &&
+    !list.some((o) => o.label.toLowerCase() === trimmedQuery.toLowerCase());
 
   useEffect(() => {
     if (!open) {
@@ -193,7 +207,22 @@ export function SearchableSelect({
                 {emptyOptionLabel}
               </button>
             )}
-            {visible.length === 0 && (
+            {showCreate && (
+              <button
+                type="button"
+                role="option"
+                className="w-full px-3 py-2 text-left text-sm font-medium text-blue-600 hover:bg-blue-50 border-b border-gray-100"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onCreateNew!(trimmedQuery);
+                  setOpen(false);
+                  setQuery("");
+                }}
+              >
+                {createLabel ? createLabel(trimmedQuery) : `Create new '${trimmedQuery}'`}
+              </button>
+            )}
+            {visible.length === 0 && !showCreate && (
               <div className="px-3 py-2 text-sm text-gray-400">No matches</div>
             )}
             {visible.map((o) => (

@@ -9,6 +9,7 @@ import { useToast } from "@/components/ui/Toast";
 import { ActionMenu } from "@/components/shared/ActionMenu";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { Pencil, Trash2 } from "lucide-react";
+import { UnitOfMeasureField } from "@/components/shared/UnitOfMeasureField";
 
 const blank = { name: "", sku: "", unit: "pcs", unitCost: "", reorderPoint: "", trackLotsAndExpiry: false };
 
@@ -73,7 +74,13 @@ export default function MaterialsPage() {
         <div className="space-y-3">
           <div><label className="label">Name *</label><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
           <div><label className="label">SKU</label><input className="input" value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} /></div>
-          <div><label className="label">Unit</label><input className="input" value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} /></div>
+          <UnitOfMeasureField
+            label="Unit of measure"
+            labelClassName="label"
+            inputClassName="input"
+            value={form.unit}
+            onChange={(unit) => setForm((f) => ({ ...f, unit }))}
+          />
           <div><label className="label">Unit Cost</label><input className="input" type="number" value={form.unitCost} onChange={e => setForm(f => ({ ...f, unitCost: e.target.value }))} /></div>
           <div><label className="label">Reorder Point</label><input className="input" type="number" value={form.reorderPoint} onChange={e => setForm(f => ({ ...f, reorderPoint: e.target.value }))} /></div>
           <label className="flex items-center gap-2 text-sm">

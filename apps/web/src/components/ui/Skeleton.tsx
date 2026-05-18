@@ -1,9 +1,9 @@
 export function SkeletonRow({ cols = 5 }: { cols?: number }) {
   return (
-    <tr>
+    <tr className="page-transition">
       {Array.from({ length: cols }).map((_, i) => (
         <td key={i} className="px-4 py-3">
-          <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: `${60 + (i * 13) % 30}%` }} />
+          <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: `${60 + (i * 13) % 30}%`, animationDelay: `${i * 50}ms` }} />
         </td>
       ))}
     </tr>

@@ -7,7 +7,6 @@ import { z } from 'zod';
 
 const router = Router();
 router.use(authenticate);
-router.use(requireOperatorForMutations);
 
 const ENTITY_TYPES = [
   'product', 'variant', 'material', 'supplier', 'customer',
@@ -45,6 +44,8 @@ router.get('/', async (req, res) => {
     options: d.options ? JSON.parse(d.options) : null,
   })), total, page, pageSize));
 });
+
+router.use(requireOperatorForMutations);
 
 // POST /custom-fields
 router.post('/', async (req, res) => {

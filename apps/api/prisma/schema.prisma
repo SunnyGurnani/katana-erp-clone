@@ -121,6 +121,8 @@ model Product {
   purchasePrice   Decimal?  @map("purchase_price") @db.Decimal(18, 4)
   imageUrl        String?   @map("image_url")
   trackLotsAndExpiry Boolean @default(false) @map("track_lots_and_expiry")
+  hasVariants     Boolean   @default(false) @map("has_variants")
+  variantOptions  Json?     @map("variant_options")
   variants        Variant[]
   boms            BOM[]
   manufacturingOrders ManufacturingOrder[]
@@ -159,6 +161,7 @@ model Material {
   reorderPoint  Decimal? @map("reorder_point") @db.Decimal(18, 4)
   leadTimeDays  Int?     @map("lead_time_days")
   imageUrl      String?  @map("image_url")
+  bomRows       BOMRow[]
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
   @@map("materials")
@@ -370,9 +373,10 @@ model BOMRow {
   id         String   @id @default(uuid())
   bomId      String   @map("bom_id")
   bom        BOM      @relation(fields: [bomId], references: [id], onDelete: Cascade)
-  materialId String?  @map("material_id")
-  variantId  String?  @map("variant_id")
-  qty        Decimal  @db.Decimal(18, 4)
+  materialId String?   @map("material_id")
+  material   Material? @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  variantId  String?   @map("variant_id")
+  qty        Decimal   @db.Decimal(18, 4)
   unitCost   Decimal? @map("unit_cost") @db.Decimal(18, 4)
   notes      String?
   createdAt  DateTime @default(now()) @map("created_at")
@@ -661,14 +665,18 @@ model DemandForecast {
 }
 
 model Factory {
-  id        String   @id @default(uuid())
-  name      String
-  currency  String   @default("USD")
-  timezone  String   @default("UTC")
-  address   String?
-  logoUrl   String?  @map("logo_url")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id                String   @id @default(uuid())
+  name              String
+  currency          String   @default("USD")
+  timezone          String   @default("UTC")
+  address           String?
+  logoUrl           String?  @map("logo_url")
+  workingHoursStart String?  @map("working_hours_start")
+  workingHoursEnd   String?  @map("working_hours_end")
+  workingDays       String?  @map("working_days")
+  defaultLocationId String?  @map("default_location_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
   @@map("factory")
 }
 
@@ -1024,4 +1032,32 @@ model Attachment {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   @@map("attachments")
+}
+
+// ─── Settings (Katana parity) ─────────────────────────────────────────────────
+
+model MeasurementUnit {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@map("measurement_units")
+}
+
+model ItemCategory {
+  id         String   @id @default(uuid())
+  name       String
+  entityType String   @map("entity_type") // product | material
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  @@unique([name, entityType])
+  @@map("item_categories")
+}
+
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@map("app_settings")
 }

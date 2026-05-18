@@ -1,19 +1,23 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
-import { DataTable, Column } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { ActionMenu } from "@/components/shared/ActionMenu";
-import { Pencil, Trash2, Plus, ArrowLeft } from "lucide-react";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { VariantConfigModal, type VariantOptionConfig } from "@/components/products/VariantConfigModal";
+import { UnitOfMeasureField } from "@/components/shared/UnitOfMeasureField";
+import { formatQty } from "@/lib/formatQty";
+import { Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 interface BOM {
   id: string;
   name: string;
   qty: number;
+  variantId?: string | null;
   notes?: string;
   rows: BOMRow[];
   operations: ProductOperation[];
@@ -26,6 +30,22 @@ interface BOMRow {
   qty: number;
   unitCost?: number;
   notes?: string;
+  material?: { id: string; name: string; purchasePrice?: number | string; unitOfMeasure?: string };
+}
+
+function rowUnitCost(r: BOMRow, materialById: Map<string, any>): number {
+  if (r.unitCost != null && Number(r.unitCost) > 0) return Number(r.unitCost);
+  const fromRow = r.material?.purchasePrice;
+  if (fromRow != null && Number(fromRow) > 0) return Number(fromRow);
+  if (r.materialId) {
+    const m = materialById.get(r.materialId);
+    if (m?.purchasePrice != null && Number(m.purchasePrice) > 0) return Number(m.purchasePrice);
+  }
+  return 0;
+}
+
+function rowStockCost(r: BOMRow, materialById: Map<string, any>): number {
+  return rowUnitCost(r, materialById) * Number(r.qty);
 }
 
 interface ProductOperation {
@@ -46,14 +66,28 @@ export default function ProductDetailPage() {
   const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState("general");
   const [productForm, setProductForm] = useState({
-    name: "", sku: "", description: "", category: "", salesPrice: "", purchasePrice: "", 
+    name: "", sku: "", description: "", category: "", unitOfMeasure: "pcs",
+    salesPrice: "", purchasePrice: "", 
     trackLots: false, trackExpiry: false
   });
   const [bomRowOpen, setBomRowOpen] = useState(false);
-  const [bomRowForm, setBomRowForm] = useState({ ...bomRowBlank, id: "" });
+  const [bomRowForm, setBomRowForm] = useState({ id: "", materialId: "", qty: "", unitCost: "", notes: "" });
   const [operationOpen, setOperationOpen] = useState(false);
   const [operationForm, setOperationForm] = useState({ ...operationBlank, id: "" });
-  const [selectedBom, setSelectedBom] = useState<string | null>(null);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+
+  const variantBlank = { name: "", sku: "", salesPrice: "", purchasePrice: "" };
+  const [variantOpen, setVariantOpen] = useState(false);
+  const [variantForm, setVariantForm] = useState({ ...variantBlank, id: "" });
+  const [variantConfigOpen, setVariantConfigOpen] = useState(false);
+  const [skuDrafts, setSkuDrafts] = useState<Record<string, string>>({});
+  const [materialCreateOpen, setMaterialCreateOpen] = useState(false);
+  const [materialCreateQuery, setMaterialCreateQuery] = useState("");
+  const [newMaterialForm, setNewMaterialForm] = useState({
+    name: "",
+    unit: "kg",
+    purchasePrice: "",
+  });
 
   // Queries
   const { data: product, isLoading } = useQuery({
@@ -66,6 +100,7 @@ export default function ProductDetailPage() {
         sku: data.sku || "",
         description: data.description || "",
         category: data.category || "",
+        unitOfMeasure: data.unitOfMeasure || "pcs",
         salesPrice: data.salesPrice || "",
         purchasePrice: data.purchasePrice || "",
         trackLots: !!data.trackLots,
@@ -115,7 +150,18 @@ export default function ProductDetailPage() {
 
   // Mutations
   const updateProduct = useMutation({
-    mutationFn: (data: any) => api.put(`/products/${id}`, data),
+    mutationFn: (data: typeof productForm) =>
+      api.put(`/products/${id}`, {
+        name: data.name,
+        sku: data.sku || undefined,
+        description: data.description || null,
+        category: data.category || null,
+        unitOfMeasure: (data.unitOfMeasure || "pcs").trim() || "pcs",
+        salesPrice: data.salesPrice !== "" ? Number(data.salesPrice) : undefined,
+        purchasePrice: data.purchasePrice !== "" ? Number(data.purchasePrice) : undefined,
+        trackLots: data.trackLots,
+        trackExpiry: data.trackExpiry,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["product", id] });
       addToast("Product updated", "success");
@@ -123,14 +169,27 @@ export default function ProductDetailPage() {
   });
 
   const saveBomRow = useMutation({
-    mutationFn: (data: any) => data.id ? 
-      api.patch(`/bom-rows/${data.id}`, data) : 
-      api.post("/bom-rows", { ...data, bomId: selectedBom }),
+    mutationFn: (data: any) => {
+      const material = data.materialId ? materialById.get(data.materialId) : null;
+      const unitCost =
+        data.unitCost !== "" && data.unitCost != null
+          ? Number(data.unitCost)
+          : material?.purchasePrice != null
+            ? Number(material.purchasePrice)
+            : undefined;
+      const payload = {
+        ...data,
+        bomId: activeBom?.id,
+        unitCost,
+        qty: Number(data.qty),
+      };
+      return data.id ? api.patch(`/bom-rows/${data.id}`, payload) : api.post("/bom-rows", payload);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["boms", id] });
       addToast("BOM row saved", "success");
       setBomRowOpen(false);
-      setBomRowForm({ ...bomRowBlank, id: "" });
+      setBomRowForm({ id: "", materialId: "", qty: "", unitCost: "", notes: "" });
     },
   });
 
@@ -145,7 +204,7 @@ export default function ProductDetailPage() {
   const saveOperation = useMutation({
     mutationFn: (data: any) => data.id ? 
       api.patch(`/product-operations/${data.id}`, data) : 
-      api.post("/product-operations", { ...data, bomId: selectedBom }),
+      api.post("/product-operations", { ...data, bomId: activeBom?.id }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["boms", id] });
       addToast("Operation saved", "success");
@@ -162,117 +221,163 @@ export default function ProductDetailPage() {
     },
   });
 
-  // Get active BOM
-  const activeBom = boms.find((b: BOM) => b.id === selectedBom) || boms[0];
+  const saveVariant = useMutation({
+    mutationFn: (data: any) => data.id ? 
+      api.patch(`/variants/${data.id}`, data) : 
+      api.post("/variants", { ...data, productId: id }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["product", id] });
+      addToast("Variant saved", "success");
+      setVariantOpen(false);
+      setVariantForm({ ...variantBlank, id: "" });
+    },
+  });
 
-  if (isLoading) return <div className="p-4">Loading...</div>;
+  const deleteVariant = useMutation({
+    mutationFn: (variantId: string) => api.delete(`/variants/${variantId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["product", id] });
+      addToast("Variant deleted", "success");
+    },
+  });
+
+  const createBom = useMutation({
+    mutationFn: (variantId: string | null) => 
+      api.post("/recipes", { productId: id, variantId, name: "Recipe", qty: 1 }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["boms", id] });
+      addToast("Recipe created", "success");
+    },
+  });
+
+  const setHasVariants = useMutation({
+    mutationFn: (hasVariants: boolean) =>
+      api.patch(`/products/${id}`, { hasVariants }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["product", id] }),
+  });
+
+  const generateVariants = useMutation({
+    mutationFn: (options: VariantOptionConfig[]) =>
+      api.post(`/products/${id}/variants/generate`, { options, replaceExisting: false }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["product", id] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+      addToast("Variants generated", "success");
+      setVariantConfigOpen(false);
+    },
+    onError: () => addToast("Failed to generate variants", "error"),
+  });
+
+  const patchVariantSku = useMutation({
+    mutationFn: ({ variantId, sku }: { variantId: string; sku: string }) =>
+      api.patch(`/variants/${variantId}`, { sku: sku || null }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["product", id] }),
+  });
+
+  const createMaterial = useMutation({
+    mutationFn: (data: { name: string; unit: string; purchasePrice: string }) =>
+      api.post("/materials", {
+        name: data.name,
+        unitOfMeasure: data.unit,
+        purchasePrice: data.purchasePrice ? Number(data.purchasePrice) : undefined,
+      }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["materials"] });
+      const created = res.data;
+      setBomRowForm((f) => ({
+        ...f,
+        materialId: created.id,
+        unitCost: created.purchasePrice?.toString() || f.unitCost,
+      }));
+      setMaterialCreateOpen(false);
+      addToast("Material created", "success");
+    },
+    onError: () => addToast("Failed to create material", "error"),
+  });
+
+  const hasVariantsEnabled =
+    product?.hasVariants || (product?.variants?.length ?? 0) > 0;
+
+  const materialOptions = useMemo(
+    () => (materials as any[]).map((m) => ({ value: m.id, label: m.name })),
+    [materials],
+  );
+
+  const commitSku = useCallback(
+    (variantId: string, sku: string) => {
+      patchVariantSku.mutate({ variantId, sku });
+      setSkuDrafts((d) => {
+        const next = { ...d };
+        delete next[variantId];
+        return next;
+      });
+    },
+    [patchVariantSku],
+  );
+
+  const handleVariantsCheckbox = (checked: boolean) => {
+    if (checked) {
+      setHasVariants.mutate(true, {
+        onSuccess: () => setVariantConfigOpen(true),
+      });
+    } else {
+      if ((product?.variants?.length ?? 0) > 0) {
+        if (!confirm("Disable variants? Existing variant rows will remain.")) return;
+      }
+      setHasVariants.mutate(false);
+    }
+  };
+
+  // Get active Variant and BOM
+  const activeVariantId = selectedVariantId || (product?.variants?.[0]?.id) || null;
+  const activeBom = boms.find((b: BOM) => activeVariantId ? b.variantId === activeVariantId : !b.variantId) || 
+                    boms.find((b: BOM) => !b.variantId) ||
+                    (boms.length > 0 ? boms[0] : undefined);
+
+  if (isLoading) return (
+    <div className="p-8 space-y-6 page-transition">
+      <div className="h-8 w-1/3 bg-gray-200 rounded animate-pulse" />
+      <div className="h-4 w-1/4 bg-gray-200 rounded animate-pulse" />
+      <div className="h-64 w-full bg-gray-100 rounded animate-pulse mt-8" />
+    </div>
+  );
   if (!product) return <div className="p-4">Product not found</div>;
 
   const tabs = [
-    { id: "general", label: "General Info" },
-    { id: "bom", label: "Recipe / BOM" },
-    { id: "operations", label: "Production Operations" },
-  ];
-
-  const bomRowColumns: Column[] = [
-    { 
-      key: "material", 
-      header: "Material/Variant", 
-      render: (r: BOMRow) => {
-        if (r.materialId) return materialById.get(r.materialId)?.name || "—";
-        if (r.variantId) {
-          const v = variantById.get(r.variantId);
-          if (!v) return "—";
-          const pn = v.product?.name || "";
-          return pn ? `${pn} / ${v.name}` : v.name;
-        }
-        return "—";
-      },
-    },
-    { key: "qty", header: "Quantity", render: (r: BOMRow) => Number(r.qty).toFixed(2) },
-    { key: "unitCost", header: "Unit Cost", render: (r: BOMRow) => r.unitCost ? `$${Number(r.unitCost).toFixed(2)}` : "—" },
-    { key: "notes", header: "Notes", render: (r: BOMRow) => r.notes || "—" },
-    {
-      key: "actions",
-      header: "",
-      render: (r: BOMRow) => (
-        <ActionMenu actions={[
-          { label: "Edit", icon: <Pencil size={13} />, onClick: () => {
-            setBomRowForm({ 
-              id: r.id, 
-              materialId: r.materialId || "", 
-              variantId: r.variantId || "", 
-              qty: r.qty.toString(), 
-              unitCost: r.unitCost?.toString() || "", 
-              notes: r.notes || "" 
-            });
-            setBomRowOpen(true);
-          }},
-          { label: "Delete", icon: <Trash2 size={13} />, variant: "danger", onClick: () => {
-            if (confirm("Delete this BOM row?")) deleteBomRow.mutate(r.id);
-          }},
-        ]} />
-      )
-    },
-  ];
-
-  const operationColumns: Column[] = [
-    { key: "rank", header: "Step", render: (r: ProductOperation, i: number) => (r.rank != null && r.rank > 0 ? r.rank : i + 1) },
-    { key: "name", header: "Operation", render: (r: ProductOperation) => <span className="font-medium">{r.name}</span> },
-    { key: "durationMinutes", header: "Duration (min)", render: (r: ProductOperation) => r.durationMinutes || "—" },
-    { key: "costPerHour", header: "Cost/hr", render: (r: ProductOperation) => r.costPerHour ? `$${Number(r.costPerHour).toFixed(2)}` : "—" },
-    { key: "notes", header: "Notes", render: (r: ProductOperation) => r.notes || "—" },
-    {
-      key: "actions",
-      header: "",
-      render: (r: ProductOperation) => (
-        <ActionMenu actions={[
-          { label: "Edit", icon: <Pencil size={13} />, onClick: () => {
-            setOperationForm({ 
-              id: r.id, 
-              name: r.name, 
-              rank: r.rank.toString(), 
-              durationMinutes: r.durationMinutes?.toString() || "", 
-              costPerHour: r.costPerHour?.toString() || "", 
-              notes: r.notes || "" 
-            });
-            setOperationOpen(true);
-          }},
-          { label: "Delete", icon: <Trash2 size={13} />, variant: "danger", onClick: () => {
-            if (confirm("Delete this operation?")) deleteOperation.mutate(r.id);
-          }},
-        ]} />
-      )
-    },
+    { id: "general", label: "General info" },
+    { id: "bom", label: "Product recipe / BOM" },
+    { id: "operations", label: "Production operations" },
+    { id: "supply", label: "Supply details" },
   ];
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="bg-white border-b px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard/items" className="text-gray-500 hover:text-gray-700">
-            <ArrowLeft size={20} />
-          </Link>
+    <div className="h-full flex flex-col bg-white">
+      {/* Header — Katana style */}
+      <div className="border-b border-gray-200 px-6 py-3">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-gray-900">{product.name}</h1>
-            <p className="text-sm text-gray-500">Product Details</p>
+            <p className="text-[11px] text-gray-400 font-medium">Product</p>
+            <h1 className="text-lg font-bold text-gray-900">{product.name}</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-yellow-600 font-medium">
+              {updateProduct.isPending ? "Saving..." : "All changes saved"}
+            </span>
+            <Link href="/dashboard/items" className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </Link>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white border-b px-4">
-        <div className="flex -mb-px">
+      {/* Tabs — Katana dark pill style */}
+      <div className="border-b border-gray-200 px-6 py-2 bg-gray-50/80">
+        <div className="flex gap-1.5">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-3 text-sm border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? "border-brand-600 text-gray-900 font-semibold"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
+              className={activeTab === tab.id ? "ktab-active" : "ktab-inactive"}
             >
               {tab.label}
             </button>
@@ -281,96 +386,241 @@ export default function ProductDetailPage() {
       </div>
 
       {/* Tab Content */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto">
         {activeTab === "general" && (
-          <div className="max-w-2xl">
-            <h2 className="text-lg font-semibold mb-4">General Information</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="label">Name *</label>
-                <input 
-                  className="input" 
-                  value={productForm.name} 
-                  onChange={e => setProductForm(f => ({ ...f, name: e.target.value }))} 
-                />
-              </div>
-              <div>
-                <label className="label">SKU</label>
-                <input 
-                  className="input" 
-                  value={productForm.sku} 
-                  onChange={e => setProductForm(f => ({ ...f, sku: e.target.value }))} 
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="label">Description</label>
-                <textarea 
-                  className="input" 
-                  rows={3}
-                  value={productForm.description} 
-                  onChange={e => setProductForm(f => ({ ...f, description: e.target.value }))} 
-                />
-              </div>
-              <div>
-                <label className="label">Category</label>
-                <input 
-                  className="input" 
-                  value={productForm.category} 
-                  onChange={e => setProductForm(f => ({ ...f, category: e.target.value }))} 
-                />
-              </div>
-              <div>
-                <label className="label">Unit of Measure</label>
-                <select className="input" defaultValue="pcs">
-                  <option value="pcs">pcs</option>
-                  <option value="kg">kg</option>
-                  <option value="lbs">lbs</option>
-                  <option value="m">m</option>
-                  <option value="ft">ft</option>
-                </select>
-              </div>
-              <div>
-                <label className="label">Sales Price</label>
-                <input 
-                  className="input" 
-                  type="number" 
-                  step="0.01"
-                  value={productForm.salesPrice} 
-                  onChange={e => setProductForm(f => ({ ...f, salesPrice: e.target.value }))} 
-                />
-              </div>
-              <div>
-                <label className="label">Purchase Price</label>
-                <input 
-                  className="input" 
-                  type="number" 
-                  step="0.01"
-                  value={productForm.purchasePrice} 
-                  onChange={e => setProductForm(f => ({ ...f, purchasePrice: e.target.value }))} 
-                />
-              </div>
-              <div className="col-span-2 space-y-2">
-                <label className="flex items-center gap-2 text-sm">
+          <div className="px-6 py-5">
+            {/* Two-column layout like Katana */}
+            <div className="grid grid-cols-2 gap-x-16">
+              {/* Left Column — Product fields */}
+              <div className="space-y-5">
+                <div>
+                  <label className="klabel">Product name</label>
                   <input 
-                    type="checkbox" 
-                    checked={productForm.trackLots} 
-                    onChange={e => setProductForm(f => ({ ...f, trackLots: e.target.checked }))} 
+                    className="kinput font-medium" 
+                    placeholder="Type product name"
+                    value={productForm.name} 
+                    onChange={e => setProductForm(f => ({ ...f, name: e.target.value }))} 
                   />
-                  Enable lot number tracking
-                </label>
-                <label className="flex items-center gap-2 text-sm">
+                </div>
+                <div>
+                  <label className="klabel">Category</label>
                   <input 
-                    type="checkbox" 
-                    checked={productForm.trackExpiry} 
-                    onChange={e => setProductForm(f => ({ ...f, trackExpiry: e.target.checked }))} 
+                    className="kinput" 
+                    placeholder="Select or create category"
+                    value={productForm.category} 
+                    onChange={e => setProductForm(f => ({ ...f, category: e.target.value }))} 
                   />
-                  Enable expiry date tracking
-                </label>
+                </div>
+                <div className="w-1/2">
+                  <UnitOfMeasureField
+                    label="Unit of measure"
+                    value={productForm.unitOfMeasure}
+                    onChange={(unitOfMeasure) => setProductForm((f) => ({ ...f, unitOfMeasure }))}
+                  />
+                </div>
+                <div>
+                  <label className="klabel">SKU / Internal reference</label>
+                  <input 
+                    className="kinput" 
+                    value={productForm.sku} 
+                    onChange={e => setProductForm(f => ({ ...f, sku: e.target.value }))} 
+                  />
+                </div>
+              </div>
+
+              {/* Right Column — Usability & Tracking */}
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">Usability</h3>
+                  <div className="flex items-center gap-6">
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-brand-600" defaultChecked /> Sell
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-brand-600" defaultChecked /> Buy
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-brand-600" defaultChecked /> Make
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-brand-600" /> Kit/bundle
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">Product tracking</h3>
+                  <div className="flex items-center gap-6">
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input type="radio" name="tracking" className="w-4 h-4 text-brand-600" defaultChecked={!productForm.trackLots && !productForm.trackExpiry} onChange={() => setProductForm(f => ({ ...f, trackLots: false, trackExpiry: false }))} /> No tracking
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input type="radio" name="tracking" className="w-4 h-4 text-brand-600" defaultChecked={productForm.trackLots} onChange={() => setProductForm(f => ({ ...f, trackLots: true, trackExpiry: false }))} /> Batch / lot numbers
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input type="radio" name="tracking" className="w-4 h-4 text-brand-600" defaultChecked={productForm.trackExpiry} onChange={() => setProductForm(f => ({ ...f, trackLots: false, trackExpiry: true }))} /> Serial numbers
+                    </label>
+                  </div>
+                </div>
+
+                {/* Default prices */}
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div>
+                    <label className="klabel">Default sales price</label>
+                    <input 
+                      className="kinput" 
+                      type="number" step="0.01"
+                      placeholder="Type sales price"
+                      value={productForm.salesPrice} 
+                      onChange={e => setProductForm(f => ({ ...f, salesPrice: e.target.value }))} 
+                    />
+                  </div>
+                  <div>
+                    <label className="klabel">Default purchase price</label>
+                    <input 
+                      className="kinput" 
+                      type="number" step="0.01"
+                      placeholder="Type purchase price"
+                      value={productForm.purchasePrice} 
+                      onChange={e => setProductForm(f => ({ ...f, purchasePrice: e.target.value }))} 
+                    />
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="mt-6">
+
+            {/* Variant toggle — Katana style */}
+            <div className="mt-8 border-t border-gray-200 pt-5">
+              <p className="text-sm text-blue-700 font-medium mb-2">Does this product come in different colors, sizes or similar?</p>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  className="w-4 h-4 rounded border-gray-300 text-brand-600"
+                  checked={hasVariantsEnabled}
+                  onChange={(e) => handleVariantsCheckbox(e.target.checked)}
+                />
+                Yes, this product has multiple variants
+              </label>
+              {hasVariantsEnabled && (
+                <button
+                  type="button"
+                  className="text-sm text-blue-600 hover:text-blue-800 mt-2 font-medium block"
+                  onClick={() => setVariantConfigOpen(true)}
+                >
+                  Configure variant options…
+                </button>
+              )}
+            </div>
+
+            {/* Inline Variant Table — Katana style (on General Info tab) */}
+            {(product.variants?.length > 0) && (
+              <div className="mt-5">
+                <div className="border border-gray-200 rounded-md overflow-hidden">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Variant code / SKU</th>
+                        <th>Default sales price</th>
+                        <th>Ingredients cost</th>
+                        <th>Operations cost</th>
+                        <th>In stock</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {product.variants.map((v: any) => (
+                        <tr key={v.id}>
+                          <td>
+                            <input
+                              className="kinput text-sm py-1 max-w-[140px]"
+                              value={skuDrafts[v.id] ?? v.sku ?? ""}
+                              placeholder={v.name}
+                              onChange={(e) =>
+                                setSkuDrafts((d) => ({ ...d, [v.id]: e.target.value }))
+                              }
+                              onBlur={() => {
+                                const draft = skuDrafts[v.id];
+                                if (draft !== undefined && draft !== (v.sku || "")) {
+                                  commitSku(v.id, draft);
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  (e.target as HTMLInputElement).blur();
+                                }
+                              }}
+                            />
+                            <span className="text-xs text-gray-400 block mt-0.5">{v.name}</span>
+                          </td>
+                          <td>{v.salesPrice ? `$${Number(v.salesPrice).toFixed(2)}` : "—"}</td>
+                          <td className="text-gray-400">0 <span className="text-xs">CAD</span></td>
+                          <td className="text-gray-400">0 <span className="text-xs">CAD</span></td>
+                          <td>{v.inStock || "0 pcs"}</td>
+                          <td>
+                            <ActionMenu actions={[
+                              { label: "Edit", icon: <Pencil size={13} />, onClick: () => {
+                                setVariantForm({ id: v.id, name: v.name, sku: v.sku || "", salesPrice: v.salesPrice?.toString() || "", purchasePrice: v.purchasePrice?.toString() || "" });
+                                setVariantOpen(true);
+                              }},
+                              { label: "Delete", icon: <Trash2 size={13} />, variant: "danger", onClick: () => {
+                                if (confirm("Delete this variant?")) deleteVariant.mutate(v.id);
+                              }},
+                            ]} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button 
+                  className="text-sm text-blue-600 hover:text-blue-800 mt-2 font-medium"
+                  onClick={() => { setVariantForm({ ...variantBlank, id: "" }); setVariantOpen(true); }}
+                >
+                  + Add variant
+                </button>
+              </div>
+            )}
+
+            {hasVariantsEnabled && (product.variants?.length === 0 || !product.variants) && (
+              <div className="mt-3 flex gap-4">
+                <button 
+                  type="button"
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                  onClick={() => setVariantConfigOpen(true)}
+                >
+                  Configure & generate variants
+                </button>
+                <button 
+                  type="button"
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                  onClick={() => { setVariantForm({ ...variantBlank, id: "" }); setVariantOpen(true); }}
+                >
+                  + Add variant manually
+                </button>
+              </div>
+            )}
+
+            {/* Additional info — Katana style */}
+            <div className="mt-8 border-t border-gray-200 pt-5">
+              <label className="klabel">Additional info</label>
+              <div className="border border-gray-200 rounded-md mt-1">
+                <div className="flex gap-1 px-3 py-2 border-b border-gray-200 bg-gray-50">
+                  <button className="p-1 text-gray-500 hover:text-gray-700 text-sm font-bold">B</button>
+                  <button className="p-1 text-gray-500 hover:text-gray-700 text-sm italic">I</button>
+                  <button className="p-1 text-gray-500 hover:text-gray-700 text-sm underline">U</button>
+                </div>
+                <textarea 
+                  className="w-full px-3 py-2 text-sm border-0 focus:outline-none resize-none min-h-[60px]"
+                  placeholder="Type comment here"
+                  value={productForm.description}
+                  onChange={e => setProductForm(f => ({ ...f, description: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {/* Save button */}
+            <div className="mt-6 flex justify-end">
               <button 
-                className="btn btn-primary"
+                className="btn btn-primary px-6"
                 onClick={() => updateProduct.mutate(productForm)}
                 disabled={updateProduct.isPending}
               >
@@ -381,96 +631,226 @@ export default function ProductDetailPage() {
         )}
 
         {activeTab === "bom" && (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Recipe / Bill of Materials</h2>
+          <div className="px-6 py-5">
+            <div className="flex items-center justify-between mb-1">
+              <div>
+                <h2 className="text-base font-bold text-gray-900">Ingredients</h2>
+                <p className="text-[12px] text-gray-500">per 1 {productForm.unitOfMeasure || product.unitOfMeasure || "unit"} of product</p>
+              </div>
               {activeBom && (
-                <button 
-                  className="btn btn-primary"
-                  onClick={() => setBomRowOpen(true)}
-                >
-                  <Plus size={15} />Add Ingredient
-                </button>
+                <div className="flex items-center gap-3">
+                  <button className="text-sm text-blue-600 hover:text-blue-800 font-medium" onClick={() => setBomRowOpen(true)}>+ Add row</button>
+                </div>
               )}
             </div>
 
-            {boms.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <p>No BOMs defined for this product.</p>
+            {product?.variants?.length > 0 && (
+              <div className="mb-4 mt-3">
+                <select 
+                  className="kinput max-w-xs"
+                  value={activeVariantId || ""}
+                  onChange={e => setSelectedVariantId(e.target.value)}
+                >
+                  {product.variants.map((v: any) => (
+                    <option key={v.id} value={v.id}>{v.name} {v.sku ? `(${v.sku})` : ""}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {!activeBom ? (
+              <div className="text-center py-10 text-gray-400">
+                <p className="text-sm">No recipe defined for this variant.</p>
+                <button 
+                  className="btn btn-primary mt-3" 
+                  onClick={() => createBom.mutate(activeVariantId)}
+                  disabled={createBom.isPending}
+                >
+                  {createBom.isPending ? "Creating..." : "Create Recipe"}
+                </button>
               </div>
             ) : (
-              <div className="space-y-4">
-                {boms.length > 1 && (
-                  <div>
-                    <label className="label">Select BOM</label>
-                    <select 
-                      className="input max-w-xs"
-                      value={selectedBom || activeBom?.id || ""}
-                      onChange={e => setSelectedBom(e.target.value)}
-                    >
-                      {boms.map((bom: BOM) => (
-                        <option key={bom.id} value={bom.id}>{bom.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {activeBom && (
-                  <div className="bg-white rounded-lg border">
-                    <div className="p-4 border-b">
-                      <h3 className="font-medium">{activeBom.name}</h3>
-                      <p className="text-sm text-gray-500">Quantity: {activeBom.qty}</p>
-                    </div>
-                    <div className="p-4">
-                      <DataTable 
-                        columns={bomRowColumns}
-                        data={activeBom.rows || []}
-                        emptyMessage="No ingredients in this BOM"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
+              <>
+                <div className="border border-gray-200 rounded-md overflow-hidden mt-3">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Item</th>
+                        <th>Quantity</th>
+                        <th>Notes</th>
+                        <th className="text-right">Stock cost</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(activeBom.rows || []).length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="text-center text-gray-400 py-4">
+                            <span className="text-sm">Search or create a material or a product</span>
+                          </td>
+                        </tr>
+                      ) : (
+                        (activeBom.rows || []).map((r: BOMRow) => (
+                          <tr key={r.id}>
+                            <td className="font-medium">{r.materialId ? materialById.get(r.materialId)?.name || "—" : "—"}</td>
+                            <td>
+                              {formatQty(
+                                r.qty,
+                                r.materialId ? materialById.get(r.materialId)?.unitOfMeasure : undefined,
+                              )}
+                            </td>
+                            <td className="text-gray-500">{r.notes || "—"}</td>
+                            <td className="text-right">
+                              ${rowStockCost(r, materialById).toFixed(2)} <span className="text-xs text-gray-400">CAD</span>
+                            </td>
+                            <td>
+                              <ActionMenu actions={[
+                                { label: "Edit", icon: <Pencil size={13} />, onClick: () => {
+                                  setBomRowForm({ id: r.id, materialId: r.materialId || "", qty: r.qty.toString(), unitCost: r.unitCost?.toString() || "", notes: r.notes || "" });
+                                  setBomRowOpen(true);
+                                }},
+                                { label: "Delete", icon: <Trash2 size={13} />, variant: "danger", onClick: () => {
+                                  if (confirm("Delete this BOM row?")) deleteBomRow.mutate(r.id);
+                                }},
+                              ]} />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <button className="text-sm text-blue-600 hover:text-blue-800 mt-2 font-medium" onClick={() => setBomRowOpen(true)}>+ Add row</button>
+                <div className="flex justify-end mt-4 border-t border-gray-200 pt-3">
+                  <p className="text-sm text-gray-600">Total cost: <span className="font-semibold">
+                    {((activeBom.rows || []) as BOMRow[]).reduce((sum, r) => sum + rowStockCost(r, materialById), 0).toFixed(2)} CAD
+                  </span></p>
+                </div>
+              </>
             )}
           </div>
         )}
 
         {activeTab === "operations" && (
-          <div>
+          <div className="px-6 py-5">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Production Operations</h2>
-              {activeBom && (
+              <h2 className="text-base font-bold text-gray-900">Operation steps</h2>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <span className="text-blue-600 font-medium">Operations are in sequence</span>
+                </label>
+              </div>
+            </div>
+
+            {!activeBom ? (
+              <div className="text-center py-10 text-gray-400">
+                <p className="text-sm">No recipe defined — create a recipe first.</p>
+              </div>
+            ) : (
+              <>
+                <div className="border border-gray-200 rounded-md overflow-hidden">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Operation</th>
+                        <th>Type</th>
+                        <th>Resource</th>
+                        <th>Cost parameter</th>
+                        <th>Time</th>
+                        <th>Cost</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(activeBom.operations || []).length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="text-center text-gray-400 py-4">
+                            <span className="text-sm">e.g. cutting, assembly</span>
+                          </td>
+                        </tr>
+                      ) : (
+                        (activeBom.operations || []).map((r: ProductOperation) => (
+                          <tr key={r.id}>
+                            <td className="font-medium">{r.name}</td>
+                            <td className="text-blue-600">Process</td>
+                            <td className="text-gray-400">—</td>
+                            <td>{r.costPerHour ? `$${Number(r.costPerHour).toFixed(2)}/hr` : "Cost per hour"}</td>
+                            <td>{r.durationMinutes ? `${r.durationMinutes} min` : "—"}</td>
+                            <td className="text-right">{r.costPerHour && r.durationMinutes ? `$${(Number(r.costPerHour) * Number(r.durationMinutes) / 60).toFixed(2)}` : "—"}</td>
+                            <td>
+                              <ActionMenu actions={[
+                                { label: "Edit", icon: <Pencil size={13} />, onClick: () => {
+                                  setOperationForm({ id: r.id, name: r.name, rank: r.rank.toString(), durationMinutes: r.durationMinutes?.toString() || "", costPerHour: r.costPerHour?.toString() || "", notes: r.notes || "" });
+                                  setOperationOpen(true);
+                                }},
+                                { label: "Delete", icon: <Trash2 size={13} />, variant: "danger", onClick: () => {
+                                  if (confirm("Delete this operation?")) deleteOperation.mutate(r.id);
+                                }},
+                              ]} />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
                 <button 
-                  className="btn btn-primary"
+                  className="text-sm text-blue-600 hover:text-blue-800 mt-2 font-medium"
                   onClick={() => {
                     const nextRank = (activeBom.operations?.length || 0) + 1;
                     setOperationForm({ ...operationBlank, rank: nextRank.toString(), id: "" });
                     setOperationOpen(true);
                   }}
                 >
-                  <Plus size={15} />Add Operation
+                  + Add row
                 </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {activeTab === "supply" && (
+          <div className="px-6 py-5">
+            <div className="space-y-5">
+              <div>
+                <label className="klabel">Default supplier</label>
+                <input className="kinput" placeholder="Select or create supplier" />
+              </div>
+              <div>
+                <p className="text-sm text-blue-700 font-medium mb-2">Do you buy this item in a different unit of measure?</p>
+                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                  <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-brand-600" />
+                  Yes, I purchase in a different unit
+                </label>
+              </div>
+              {product?.variants?.length > 0 && (
+                <div className="mt-6">
+                  <h3 className="text-sm font-bold text-gray-900 mb-3">Variants</h3>
+                  <div className="border border-gray-200 rounded-md overflow-hidden">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Variant</th>
+                          <th>Default lead time</th>
+                          <th>MOQ</th>
+                          <th>Default purchase price</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {product.variants.map((v: any) => (
+                          <tr key={v.id}>
+                            <td className="font-medium">{product.name} / {v.name}</td>
+                            <td className="text-gray-400">14 calendar days</td>
+                            <td className="text-gray-400">—</td>
+                            <td>{v.purchasePrice ? `$${Number(v.purchasePrice).toFixed(2)}` : "0 CAD"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
             </div>
-
-            {!activeBom ? (
-              <div className="text-center py-8 text-gray-500">
-                <p>No BOMs defined for this product.</p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-lg border">
-                <div className="p-4 border-b">
-                  <h3 className="font-medium">Operations for {activeBom.name}</h3>
-                </div>
-                <div className="p-4">
-                  <DataTable 
-                    columns={operationColumns}
-                    data={activeBom.operations || []}
-                    emptyMessage="No operations defined"
-                  />
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -480,29 +860,28 @@ export default function ProductDetailPage() {
         <div className="space-y-3">
           <div>
             <label className="label">Material</label>
-            <select 
-              className="input"
+            <SearchableSelect
               value={bomRowForm.materialId}
-              onChange={e => setBomRowForm(f => ({ ...f, materialId: e.target.value, variantId: "" }))}
-            >
-              <option value="">— Select Material —</option>
-              {materials.map((m: any) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">OR Variant</label>
-            <select 
-              className="input"
-              value={bomRowForm.variantId}
-              onChange={e => setBomRowForm(f => ({ ...f, variantId: e.target.value, materialId: "" }))}
-            >
-              <option value="">— Select Variant —</option>
-              {variantOptionsList.map((v: any) => (
-                <option key={v.id} value={v.id}>{v.product?.name ? `${v.product.name} / ${v.name}` : v.name}</option>
-              ))}
-            </select>
+              onChange={(materialId) => {
+                const m = materialById.get(materialId);
+                setBomRowForm((f) => ({
+                  ...f,
+                  materialId,
+                  unitCost:
+                    f.unitCost ||
+                    (m?.purchasePrice != null ? String(m.purchasePrice) : ""),
+                }));
+              }}
+              options={materialOptions}
+              placeholder="Search materials…"
+              creatable
+              createLabel={(q) => `Create new '${q}'`}
+              onCreateNew={(q) => {
+                setMaterialCreateQuery(q);
+                setNewMaterialForm({ name: q, unit: "kg", purchasePrice: "" });
+                setMaterialCreateOpen(true);
+              }}
+            />
           </div>
           <div>
             <label className="label">Quantity *</label>
@@ -601,6 +980,119 @@ export default function ProductDetailPage() {
             disabled={saveOperation.isPending || !operationForm.name}
           >
             {saveOperation.isPending ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </Modal>
+
+      <VariantConfigModal
+        open={variantConfigOpen}
+        onClose={() => setVariantConfigOpen(false)}
+        initialOptions={(product?.variantOptions as VariantOptionConfig[]) ?? null}
+        onGenerate={(opts) => generateVariants.mutate(opts)}
+        isPending={generateVariants.isPending}
+      />
+
+      {/* Quick-create material from BOM (Katana-style) */}
+      <Modal
+        open={materialCreateOpen}
+        onClose={() => setMaterialCreateOpen(false)}
+        title="New material"
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="label">Name *</label>
+            <input
+              className="input"
+              value={newMaterialForm.name}
+              onChange={(e) => setNewMaterialForm((f) => ({ ...f, name: e.target.value }))}
+            />
+          </div>
+          <div>
+            <UnitOfMeasureField
+              label="Unit of measure"
+              labelClassName="label"
+              inputClassName="input"
+              value={newMaterialForm.unit}
+              onChange={(unit) => setNewMaterialForm((f) => ({ ...f, unit }))}
+            />
+          </div>
+          <div>
+            <label className="label">Default purchase price</label>
+            <input
+              className="input"
+              type="number"
+              step="0.01"
+              value={newMaterialForm.purchasePrice}
+              onChange={(e) =>
+                setNewMaterialForm((f) => ({ ...f, purchasePrice: e.target.value }))
+              }
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-5">
+          <button type="button" className="btn btn-ghost" onClick={() => setMaterialCreateOpen(false)}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => createMaterial.mutate(newMaterialForm)}
+            disabled={createMaterial.isPending || !newMaterialForm.name.trim()}
+          >
+            {createMaterial.isPending ? "Saving…" : "Done"}
+          </button>
+        </div>
+      </Modal>
+
+      {/* Variant Modal */}
+      <Modal open={variantOpen} onClose={() => setVariantOpen(false)} title={variantForm.id ? "Edit Variant" : "Add Variant"}>
+        <div className="space-y-3">
+          <div>
+            <label className="label">Variant Name *</label>
+            <input 
+              className="input"
+              value={variantForm.name}
+              onChange={e => setVariantForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="e.g., Red / Large"
+            />
+          </div>
+          <div>
+            <label className="label">SKU</label>
+            <input 
+              className="input"
+              value={variantForm.sku}
+              onChange={e => setVariantForm(f => ({ ...f, sku: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label">Sales Price</label>
+            <input 
+              className="input" 
+              type="number"
+              step="0.01"
+              value={variantForm.salesPrice}
+              onChange={e => setVariantForm(f => ({ ...f, salesPrice: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label">Purchase Price / Cost</label>
+            <input 
+              className="input" 
+              type="number"
+              step="0.01"
+              value={variantForm.purchasePrice}
+              onChange={e => setVariantForm(f => ({ ...f, purchasePrice: e.target.value }))}
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-5">
+          <button className="btn btn-ghost" onClick={() => setVariantOpen(false)}>Cancel</button>
+          <button 
+            className="btn btn-primary" 
+            onClick={() => saveVariant.mutate(variantForm)}
+            disabled={saveVariant.isPending || !variantForm.name}
+          >
+            {saveVariant.isPending ? "Saving..." : "Save"}
           </button>
         </div>
       </Modal>

@@ -3,32 +3,50 @@
 @tailwind utilities;
 
 @layer base {
-  body { @apply bg-gray-100 text-gray-900 antialiased; }
+  body { @apply bg-white text-gray-900 antialiased; }
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .page-transition {
+    animation: fade-in 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
 }
 
 @layer components {
+  /* Katana-style pill tabs */
+  .ktab { @apply px-3.5 py-1.5 text-[13px] font-medium rounded-md cursor-pointer transition-all duration-150 whitespace-nowrap; }
+  .ktab-active { @apply ktab bg-navy-800 text-white; }
+  .ktab-inactive { @apply ktab text-gray-500 hover:bg-gray-100 hover:text-gray-700; }
+
+  /* Katana-style underline input */
+  .kinput { @apply w-full border-0 border-b border-gray-300 rounded-none px-0 py-2 text-sm bg-transparent focus:border-brand-600 focus:outline-none focus:ring-0 placeholder-gray-400 transition-colors duration-150; }
+  .klabel { @apply block text-[11px] font-normal text-gray-500 mb-0.5; }
   /* Buttons */
-  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 cursor-pointer; }
-  .btn-primary { @apply btn bg-navy-800 text-white hover:bg-navy-900; }
-  .btn-ghost { @apply btn border border-gray-300 bg-white text-gray-700 hover:bg-gray-50; }
-  .btn-danger { @apply btn bg-red-600 text-white hover:bg-red-700; }
-  .icon-btn { @apply p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors; }
+  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 disabled:opacity-50 cursor-pointer shadow-sm; }
+  .btn-primary { @apply btn bg-navy-800 text-white hover:bg-navy-900 hover:shadow-md active:scale-[0.98]; }
+  .btn-ghost { @apply btn border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-none; }
+  .btn-danger { @apply btn bg-red-600 text-white hover:bg-red-700 hover:shadow-md active:scale-[0.98]; }
+  .icon-btn { @apply p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-all duration-200; }
 
   /* Form */
-  .input { @apply w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white; }
-  .label { @apply block text-xs font-medium text-gray-600 mb-1; }
+  .input { @apply w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 bg-white placeholder-gray-400 transition-all duration-200; }
+  .input:hover:not(:focus) { @apply border-gray-300; }
+  .label { @apply block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide; }
 
   /* Card */
-  .card { @apply rounded-lg border border-gray-200 bg-white; }
+  .card { @apply rounded-xl border border-gray-200/80 bg-white shadow-sm; }
 
   /* General badge */
   .badge { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600; }
-  .badge-green { @apply badge bg-green-100 text-green-800; }
-  .badge-red { @apply badge bg-red-100 text-red-800; }
-  .badge-yellow { @apply badge bg-yellow-100 text-yellow-800; }
-  .badge-blue { @apply badge bg-blue-100 text-blue-800; }
+  .badge-green { @apply badge bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20; }
+  .badge-red { @apply badge bg-red-50 text-red-700 ring-1 ring-red-600/20; }
+  .badge-yellow { @apply badge bg-amber-50 text-amber-700 ring-1 ring-amber-600/20; }
+  .badge-blue { @apply badge bg-blue-50 text-blue-700 ring-1 ring-blue-600/20; }
   .badge-gray { @apply badge bg-gray-100 text-gray-600; }
-  .badge-purple { @apply badge bg-purple-100 text-purple-700; }
+  .badge-purple { @apply badge bg-purple-50 text-purple-700 ring-1 ring-purple-600/20; }
 
   /* TABLE — Katana style: no uppercase headers, thin borders, compact */
   .table { @apply w-full text-[13px]; }
@@ -36,7 +54,7 @@
   .table th { @apply px-3 py-2.5 text-left text-[11px] font-medium text-gray-500 tracking-normal; }
   .table td { @apply px-3 py-2.5 text-gray-700 border-b border-gray-100; }
   .table tbody tr:last-child td { @apply border-b-0; }
-  .table tbody tr { @apply hover:bg-blue-50/40 transition-colors; }
+  .table tbody tr { @apply hover:bg-blue-50/40 transition-colors duration-150; }
 
   /* Katana-style status cells — full cell bg color */
   .status-cell { @apply px-3 py-2.5 text-[12px] font-medium text-center whitespace-nowrap; }
@@ -69,3 +87,4 @@
   .status-expired { @apply status-cell bg-gray-200 text-gray-500; }
   .status-confirmed { @apply status-cell bg-[#1565C0] text-white; }
 }
+

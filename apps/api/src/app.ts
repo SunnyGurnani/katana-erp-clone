@@ -79,6 +79,9 @@ import variantBinsRouter from './routes/variantBins';
 import recipesRouter from './routes/recipes';
 import bomRowsRouter from './routes/bomRows';
 import productOperationsRouter from './routes/productOperations';
+import unitsOfMeasureRouter from './routes/unitsOfMeasure';
+import itemCategoriesRouter from './routes/itemCategories';
+import appSettingsRouter from './routes/appSettings';
 
 const app = express();
 const v1 = '/api/v1';
@@ -207,6 +210,9 @@ app.use(`${v1}/variant-bins`, variantBinsRouter);
 app.use(`${v1}/recipes`, recipesRouter);
 app.use(`${v1}/bom-rows`, bomRowsRouter);
 app.use(`${v1}/product-operations`, productOperationsRouter);
+app.use(`${v1}/units-of-measure`, unitsOfMeasureRouter);
+app.use(`${v1}/categories`, itemCategoriesRouter);
+app.use(`${v1}/app-settings`, appSettingsRouter);
 
 app.use(errorHandler);
 

@@ -131,6 +131,13 @@ router.patch('/:id', async (req, res) => {
   res.json(item);
 });
 
+router.put('/:id', async (req, res) => {
+  const data = currencySchema.partial().parse(req.body);
+  if (data.isBase) await prisma.currency.updateMany({ where: { isBase: true }, data: { isBase: false } });
+  const item = await prisma.currency.update({ where: { id: req.params.id }, data });
+  res.json(item);
+});
+
 router.delete('/:id', async (req, res) => {
   await prisma.currency.delete({ where: { id: req.params.id } });
   res.status(204).send();

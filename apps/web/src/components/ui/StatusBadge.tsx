@@ -2,7 +2,7 @@ const badgeMap: Record<string, string> = {
   draft: "badge-gray", confirmed: "badge-blue", partial: "badge-yellow",
   vendor_confirmed: "badge-green", vendor_rejected: "badge-red", done: "badge-green",
   received: "badge-green", fulfilled: "badge-green", cancelled: "badge-red",
-  in_progress: "badge-yellow", planned: "badge-purple", done: "badge-green",
+  in_progress: "badge-yellow", planned: "badge-purple",
   committed: "badge-green", available: "badge-green", sold: "badge-gray",
   active: "badge-green", inactive: "badge-red", completed: "badge-green",
   sent: "badge-blue", accepted: "badge-green", rejected: "badge-red",
@@ -72,7 +72,6 @@ const statusCellMap: Record<string, StatusConfig> = {
   confirmed:      { cellClass: "status-confirmed", label: "Confirmed" },
   vendor_confirmed: { cellClass: "status-accepted", label: "Vendor confirmed" },
   vendor_rejected: { cellClass: "status-rejected", label: "Vendor rejected" },
-  done:           { cellClass: "status-done", label: "Done" },
 };
 
 /** Full-cell colored status for use in table columns — Katana style */

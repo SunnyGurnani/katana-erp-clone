@@ -184,12 +184,10 @@ export default function PODetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6">
-        <table className="table">
-          <tbody>
-            <SkeletonRows rows={6} />
-          </tbody>
-        </table>
+      <div className="p-8 space-y-6 page-transition">
+        <div className="flex justify-between"><div className="h-8 w-1/3 bg-gray-200 rounded animate-pulse" /><div className="h-8 w-24 bg-gray-200 rounded animate-pulse" /></div>
+        <div className="grid grid-cols-4 gap-4 mt-8"><div className="h-10 bg-gray-100 rounded animate-pulse" /><div className="h-10 bg-gray-100 rounded animate-pulse" /><div className="h-10 bg-gray-100 rounded animate-pulse" /></div>
+        <div className="h-64 w-full bg-gray-100 rounded animate-pulse mt-8" />
       </div>
     );
   }
@@ -311,192 +309,124 @@ export default function PODetailPage() {
   }
 
   return (
-    <div className="px-5 py-4 space-y-4">
-      <div className="flex items-start gap-3">
-        <Link href="/dashboard/buy" className="icon-btn">
-          <ArrowLeft size={16} />
-        </Link>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-gray-500 mb-0.5">Purchase order</p>
-          <h1 className="text-xl font-semibold text-gray-900 truncate">
-            {po.poNumber}
-            {po.supplier?.name ? <span className="text-gray-700 font-medium"> {po.supplier.name}</span> : null}
-          </h1>
-        </div>
-        <div className="pt-0.5">
-          <StatusBadge status={po.status} />
-        </div>
-        <button className="btn btn-ghost text-sm h-9" onClick={downloadPdf}>
-          <FileDown size={14} />
-          PDF
-        </button>
-        <button className="btn btn-ghost text-sm h-9" onClick={openEditModal}>
-          <Save size={14} />
-          Edit
-        </button>
-        <button
-          className="btn btn-ghost text-sm h-9 text-red-600"
-          onClick={() => {
-            if (window.confirm("Delete this purchase order?")) deletePO.mutate();
-          }}
-        >
-          <Trash2 size={14} />
-          Delete
-        </button>
-        {canConfirmFromDraft && (
-          <button
-            type="button"
-            className="btn btn-ghost text-sm h-9"
-            disabled={updatePO.isPending}
-            onClick={() => {
-              updatePO.mutate({ status: "confirmed" });
-            }}
-          >
-            Confirm
-          </button>
-        )}
-        {canSendVendorInvite && (
-          <button
-            className="btn btn-ghost h-9 border border-navy-800 text-navy-800 hover:bg-navy-50"
-            disabled={sendToVendor.isPending}
-            onClick={() => sendToVendor.mutate()}
-            type="button"
-          >
-            <Mail size={15} />
-            {sendToVendor.isPending ? "Sending…" : "Email supplier"}
-          </button>
-        )}
-        {vendorPortalLink && (
-          <button
-            className="btn btn-ghost h-9 text-sm"
-            type="button"
-            onClick={() => {
-              void navigator.clipboard.writeText(vendorPortalLink);
-              addToast("Supplier link copied", "success");
-            }}
-          >
-            <Copy size={14} />
-            Copy supplier link
-          </button>
-        )}
-        {canReceive && (
-          <button className="btn btn-primary h-9" onClick={openReceiveModal}>
-            <PackageCheck size={15} />
-            Receive
-          </button>
-        )}
-        {canClosePO && (
-          <button
-            type="button"
-            className="btn btn-ghost text-sm h-9 text-amber-800 border border-amber-200"
-            disabled={updatePO.isPending}
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Close this purchase order? It will move to Done. Closed orders cannot receive additional stock.",
-                )
-              ) {
-                updatePO.mutate(
-                  { status: "done" },
-                  {
-                    onSuccess: () => addToast("Purchase order closed", "success"),
-                  },
-                );
-              }
-            }}
-          >
-            Close
-          </button>
-        )}
-      </div>
-
-      {st === "vendor_rejected" && (po as { vendorResponseComment?: string | null }).vendorResponseComment ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          <p className="font-semibold text-amber-900">Supplier message</p>
-          <p className="mt-1 whitespace-pre-wrap">{(po as { vendorResponseComment?: string }).vendorResponseComment}</p>
-          <p className="mt-2 text-xs text-amber-800/90">Update the PO if needed, set status back to Confirmed, then send the link again.</p>
-        </div>
-      ) : null}
-
-      <div className="card">
-        <div className="px-5 py-4 border-b border-gray-200">
-          <h2 className="text-sm font-semibold text-gray-800">Order details</h2>
-        </div>
-        <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2">
-            <label className="label">Supplier</label>
-            <div className="flex gap-2 items-start">
-              <div className="flex-1 min-w-0">
-                <SearchableSelect
-                  value={po.supplier?.id || ""}
-                  onChange={(v) => updatePO.mutate({ supplierId: v || null })}
-                  options={supOpts}
-                  placeholder="Search suppliers…"
-                  emptyOptionLabel="— No supplier —"
-                  disabled={!canEditHeader || updatePO.isPending}
-                  aria-label="Supplier"
-                />
-              </div>
-              {po.supplier?.id && (
-                <Link href="/dashboard/buy/suppliers" className="icon-btn mt-1 shrink-0" title="Suppliers">
-                  <ExternalLink size={16} />
-                </Link>
+    <div className="space-y-0">
+      {/* Katana-style PO detail header */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-[11px] text-gray-400 font-medium">Purchase order</p>
+              <h1 className="text-lg font-bold text-gray-900">
+                {po.poNumber}
+                {po.supplier?.name ? <span className="text-gray-700 font-medium"> {po.supplier.name}</span> : null}
+              </h1>
+            </div>
+            <div className="flex items-center gap-2">
+              {canConfirmFromDraft && (
+                <button className="btn btn-ghost text-sm" disabled={updatePO.isPending} onClick={() => updatePO.mutate({ status: "confirmed" })}>Confirm</button>
               )}
+              {canSendVendorInvite && (
+                <button className="btn btn-ghost text-sm" disabled={sendToVendor.isPending} onClick={() => sendToVendor.mutate()}>
+                  <Mail size={14} />{sendToVendor.isPending ? "Sending…" : "Email supplier"}
+                </button>
+              )}
+              {canClosePO && (
+                <button className="btn btn-ghost text-sm" disabled={updatePO.isPending}
+                  onClick={() => { if (window.confirm("Close this purchase order?")) updatePO.mutate({ status: "done" }, { onSuccess: () => addToast("Purchase order closed", "success") }); }}>Close</button>
+              )}
+              {canReceive && (
+                <button className="btn btn-primary text-sm" onClick={openReceiveModal}><PackageCheck size={14} />Receive</button>
+              )}
+              <StatusBadge status={po.status} />
+              <span className="text-sm text-yellow-600 font-medium ml-1">{updatePO.isPending ? "Saving..." : "All changes saved"}</span>
+              <button className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" onClick={downloadPdf}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M6 14h12"/><path d="M10 18h4"/></svg>
+              </button>
+              <button className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" onClick={openEditModal}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+              </button>
+              <Link href="/dashboard/buy" className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </Link>
             </div>
           </div>
-          <div>
-            <label className="label">Expected arrival</label>
-            {canEditHeader ? (
-              <input
-                className="input"
-                type="date"
-                disabled={updatePO.isPending}
-                value={po.expectedAt ? po.expectedAt.slice(0, 10) : ""}
-                onChange={(e) => updatePO.mutate({ expectedAt: e.target.value || null })}
-              />
-            ) : (
-              <div className="input bg-gray-50 text-gray-800 min-h-[40px] flex items-center">
-                {po.expectedAt ? po.expectedAt.slice(0, 10) : "—"}
+
+          {st === "vendor_rejected" && (po as { vendorResponseComment?: string | null }).vendorResponseComment ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 mb-4">
+              <p className="font-semibold text-amber-900">Supplier message</p>
+              <p className="mt-1 whitespace-pre-wrap">{(po as { vendorResponseComment?: string }).vendorResponseComment}</p>
+            </div>
+          ) : null}
+
+          {/* Katana-style field grid with underline inputs */}
+          <div className="grid grid-cols-3 gap-x-8 gap-y-4">
+            <div className="col-span-2">
+              <label className="klabel">Supplier</label>
+              <div className="flex gap-2 items-start">
+                <div className="flex-1 min-w-0">
+                  <SearchableSelect
+                    value={po.supplier?.id || ""}
+                    onChange={(v) => updatePO.mutate({ supplierId: v || null })}
+                    options={supOpts}
+                    placeholder="Search suppliers…"
+                    emptyOptionLabel="— No supplier —"
+                    disabled={!canEditHeader || updatePO.isPending}
+                    aria-label="Supplier"
+                  />
+                </div>
+                {po.supplier?.id && (
+                  <Link href="/dashboard/buy/suppliers" className="icon-btn mt-1 shrink-0" title="Suppliers">
+                    <ExternalLink size={16} />
+                  </Link>
+                )}
               </div>
-            )}
-          </div>
-          <div>
-            <label className="label">Created</label>
-            <input
-              className="input bg-gray-50 text-gray-600"
-              readOnly
-              value={po.createdAt ? new Date(po.createdAt).toISOString().slice(0, 10) : "—"}
-            />
-          </div>
-          <div>
-            <label className="label">Order #</label>
-            <input className="input bg-gray-50 text-gray-600" readOnly value={po.poNumber || "—"} />
-          </div>
-          <div>
-            <label className="label">Order currency</label>
-            <SearchableSelect
-              value={po.currency || "USD"}
-              onChange={(code) => updatePO.mutate({ currency: code })}
-              options={currencyOpts.length ? currencyOpts : [{ value: "USD", label: "USD — US Dollar" }]}
-              placeholder="Search currency…"
-              disabled={!canEditHeader || updatePO.isPending}
-              aria-label="Currency"
-            />
-          </div>
-          <div>
-            <label className="label">Ship to</label>
-            <SearchableSelect
-              value={po.locationId || ""}
-              onChange={(v) => updatePO.mutate({ locationId: v || null })}
-              options={locOpts}
-              placeholder="Search locations…"
-              emptyOptionLabel="— Select location —"
-              disabled={!canEditHeader || updatePO.isPending}
-              aria-label="Ship to location"
-            />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="klabel">Expected arrival</label>
+                {canEditHeader ? (
+                  <input className="kinput" type="date" disabled={updatePO.isPending} value={po.expectedAt ? po.expectedAt.slice(0, 10) : ""} onChange={(e) => updatePO.mutate({ expectedAt: e.target.value || null })} />
+                ) : (
+                  <p className="text-sm border-b border-gray-300 pb-2">{po.expectedAt ? po.expectedAt.slice(0, 10) : "—"}</p>
+                )}
+              </div>
+              <div>
+                <label className="klabel">Created date</label>
+                <p className="text-sm border-b border-gray-300 pb-2">{po.createdAt ? new Date(po.createdAt).toISOString().slice(0, 10) : "—"}</p>
+              </div>
+            </div>
+            <div>
+              <label className="klabel">Order #</label>
+              <p className="text-sm font-medium border-b border-gray-300 pb-2">{po.poNumber || "—"}</p>
+            </div>
+            <div>
+              <label className="klabel">Order currency</label>
+              <SearchableSelect
+                value={po.currency || "USD"}
+                onChange={(code) => updatePO.mutate({ currency: code })}
+                options={currencyOpts.length ? currencyOpts : [{ value: "USD", label: "USD — US Dollar" }]}
+                placeholder="Search currency…"
+                disabled={!canEditHeader || updatePO.isPending}
+                aria-label="Currency"
+              />
+            </div>
+            <div>
+              <label className="klabel">Ship to</label>
+              <SearchableSelect
+                value={po.locationId || ""}
+                onChange={(v) => updatePO.mutate({ locationId: v || null })}
+                options={locOpts}
+                placeholder="Search locations…"
+                emptyOptionLabel="— Select location —"
+                disabled={!canEditHeader || updatePO.isPending}
+                aria-label="Ship to location"
+              />
+            </div>
           </div>
         </div>
       </div>
+
+      <div className="px-6 py-4 space-y-4">
 
       <div className="card overflow-visible">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
@@ -801,6 +731,8 @@ export default function PODetailPage() {
           </table>
         </div>
       )}
+
+      </div>{/* close px-6 py-4 content wrapper */}
 
       <Modal open={receiveOpen} onClose={() => setReceiveOpen(false)} title="Receive Stock">
         <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">

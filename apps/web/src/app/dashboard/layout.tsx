@@ -3,7 +3,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       <TopNav />
-      <main className="flex-1 overflow-y-auto">{children}</main>
+      <main className="flex-1 overflow-y-auto page-transition">{children}</main>
     </div>
   );
 }

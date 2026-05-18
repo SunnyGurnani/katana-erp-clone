@@ -11,9 +11,10 @@ router.get('/stats', async (_req, res) => {
   const thirtyDaysAgo = new Date(today);
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  const [productCount, materialCount, supplierCount, customerCount, openPos, openMos, openSos, recentMovements] = await Promise.all([
+  const [productCount, materialCount, locationCount, supplierCount, customerCount, openPos, openMos, openSos, factory, recentMovements] = await Promise.all([
     prisma.product.count(),
     prisma.material.count(),
+    prisma.location.count(),
     prisma.supplier.count(),
     prisma.customer.count(),
     prisma.purchaseOrder.count({
@@ -21,10 +22,16 @@ router.get('/stats', async (_req, res) => {
     }),
     prisma.manufacturingOrder.count({ where: { status: { in: ['draft', 'released', 'in_progress', 'planned'] } } }),
     prisma.salesOrder.count({ where: { status: { in: ['draft', 'confirmed', 'partial'] } } }),
+    prisma.factory.findFirst(),
     prisma.inventoryMovement.findMany({ take: 10, orderBy: { createdAt: 'desc' } }),
   ]);
 
-  const lowStockCount = await prisma.inventoryLevel.count({ where: { reorderPoint: { not: null, gt: 0 } } }).catch(() => 0);
+  // NOTE: raw SQL column names (on_hand, reorder_point) are tied to Prisma @map() directives in InventoryLevel
+  const lowStockResult = await prisma.$queryRaw<[{ count: number }]>`
+    SELECT COUNT(*)::int AS count FROM inventory_levels
+    WHERE reorder_point IS NOT NULL AND reorder_point > 0 AND on_hand <= reorder_point
+  `.catch(() => [{ count: 0 }]);
+  const lowStockCount = Number(lowStockResult[0]?.count ?? 0);
 
   // Aggregate revenue/spend — SalesOrder and PurchaseOrder don't have totalPrice/totalCost columns;
   // compute from rows instead (qtyOrdered * unitPrice)
@@ -41,7 +48,8 @@ router.get('/stats', async (_req, res) => {
   const poSpend30d = poRows.reduce((sum: number, r: any) => sum + Number(r.qtyOrdered) * Number(r.unitPrice || 0), 0);
 
   res.json({
-    productCount, materialCount, supplierCount, customerCount,
+    productCount, materialCount, locationCount, supplierCount, customerCount,
+    factoryConfigured: Boolean(factory?.defaultLocationId && factory?.name),
     lowStockCount,
     openPurchaseOrders: openPos,
     openSalesOrders: openSos,

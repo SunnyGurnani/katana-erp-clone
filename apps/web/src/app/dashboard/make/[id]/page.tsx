@@ -8,10 +8,11 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { ChildTable, ColumnDef, FieldDef } from "@/components/shared/ChildTable";
-import { ArrowLeft, Play, CheckCircle, Save, Trash2 } from "lucide-react";
+import { Play, CheckCircle, Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { locationOptions } from "@/lib/catalogOptions";
+import { formatQty } from "@/lib/formatQty";
 
 const recipeRowFields: FieldDef[] = [
   { key: "materialId", label: "Material ID" },
@@ -79,7 +80,16 @@ export default function MODetailPage() {
           return r.materialId || r.variantId || "—";
         },
       },
-      { key: "qtyPlanned", header: "Qty Planned" },
+      {
+        key: "qtyPlanned",
+        header: "Qty Planned",
+        render: (r: any) => {
+          const m = r.material || (r.materialId ? materialById.get(r.materialId) : undefined);
+          const v = r.variant || (r.variantId ? variantById.get(r.variantId) : undefined);
+          const uom = m?.unitOfMeasure || v?.product?.unitOfMeasure || "pcs";
+          return formatQty(r.qtyPlanned, uom);
+        },
+      },
     ],
     [materialById, variantById]
   );
@@ -108,7 +118,13 @@ export default function MODetailPage() {
     onError: () => addToast("Error deleting MO", "error"),
   });
 
-  if (isLoading) return <div className="p-6"><table className="table"><tbody><SkeletonRows rows={6} /></tbody></table></div>;
+  if (isLoading) return (
+    <div className="p-8 space-y-6 page-transition">
+      <div className="flex justify-between"><div className="h-8 w-1/3 bg-gray-200 rounded animate-pulse" /><div className="h-8 w-24 bg-gray-200 rounded animate-pulse" /></div>
+      <div className="grid grid-cols-4 gap-4 mt-8"><div className="h-10 bg-gray-100 rounded animate-pulse" /><div className="h-10 bg-gray-100 rounded animate-pulse" /><div className="h-10 bg-gray-100 rounded animate-pulse" /></div>
+      <div className="h-64 w-full bg-gray-100 rounded animate-pulse mt-8" />
+    </div>
+  );
   if (!mo) return <div className="p-6 text-gray-500">MO not found.</div>;
 
   const canProduce = ["draft", "released", "in_progress"].includes(mo.status);
@@ -118,60 +134,118 @@ export default function MODetailPage() {
     setEditOpen(true);
   }
 
+  const productName = mo.bom?.variant?.product?.name || mo.bom?.name || "—";
+  const variantLabel = mo.bom?.variant?.sku ? `[${mo.bom.variant.sku}] ${productName}` : productName;
+  const moUom = mo.bom?.variant?.product?.unitOfMeasure || "pcs";
+
   return (
-    <div className="px-4 py-3 space-y-4">
-      <div className="flex items-center gap-3">
-        <Link href="/dashboard/make" className="icon-btn"><ArrowLeft size={16} /></Link>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold text-gray-900">MO {mo.moNumber}</h1>
-          <p className="text-sm text-gray-500">{mo.bom?.name || mo.bom?.variant?.product?.name || "—"}</p>
+    <div className="space-y-0">
+      {/* Katana-style MO detail header */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-[11px] text-gray-400 font-medium">Manufacturing order</p>
+              <h1 className="text-lg font-bold text-gray-900">{mo.moNumber} {variantLabel}</h1>
+            </div>
+            <div className="flex items-center gap-2">
+              {canProduce && <button className="btn btn-primary text-sm" onClick={() => setProduceOpen(true)}>Produce</button>}
+              {mo.status !== "done" && <button className="btn btn-ghost text-sm" onClick={() => markDone.mutate()}>Mark Done</button>}
+              <StatusBadge status={mo.status} />
+              <span className="text-sm text-yellow-600 font-medium ml-1">{updateMO.isPending ? "Saving..." : "All changes saved"}</span>
+              <button className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" onClick={openEditModal}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+              </button>
+              <Link href="/dashboard/make" className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </Link>
+            </div>
+          </div>
+
+          {/* Katana-style field grid */}
+          <div className="grid grid-cols-3 gap-x-8 gap-y-4">
+            <div>
+              <label className="klabel">Manufacturing order #</label>
+              <p className="text-sm font-medium border-b border-gray-300 pb-2">{mo.moNumber}</p>
+            </div>
+            <div>
+              <label className="klabel">Production deadline</label>
+              <p className="text-sm border-b border-gray-300 pb-2">{mo.scheduledAt ? new Date(mo.scheduledAt).toLocaleDateString() : "—"}</p>
+            </div>
+            <div>
+              <label className="klabel">Created date</label>
+              <p className="text-sm border-b border-gray-300 pb-2">{mo.createdAt ? new Date(mo.createdAt).toLocaleDateString() : "—"}</p>
+            </div>
+            <div>
+              <label className="klabel">Product</label>
+              <p className="text-sm font-medium border-b border-gray-300 pb-2">{variantLabel}</p>
+            </div>
+            <div>
+              <label className="klabel">Planned quantity</label>
+              <p className="text-sm font-medium border-b border-gray-300 pb-2">{formatQty(mo.qty, moUom)}</p>
+            </div>
+            <div>
+              <label className="klabel">Actual quantity</label>
+              <p className="text-sm border-b border-gray-300 pb-2">{formatQty(mo.completedQty || 0, moUom)}</p>
+            </div>
+            <div>
+              <label className="klabel">Total Cost</label>
+              <p className="text-sm border-b border-gray-300 pb-2">—</p>
+            </div>
+          </div>
         </div>
-        <StatusBadge status={mo.status} />
-        <button className="btn btn-ghost text-sm" onClick={openEditModal}><Save size={14} />Edit</button>
-        {mo.status !== "done" && <button className="btn btn-ghost text-sm" onClick={() => markDone.mutate()}><CheckCircle size={14} />Mark Done</button>}
-        <button className="btn btn-ghost text-sm text-red-600" onClick={() => { if (window.confirm("Delete this MO?")) deleteMO.mutate(); }}><Trash2 size={14} />Delete</button>
-        {canProduce && <button className="btn btn-primary" onClick={() => setProduceOpen(true)}><Play size={15} />Produce</button>}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="card p-4"><p className="text-gray-500 text-xs mb-1">Qty to Produce</p><p className="text-2xl font-bold text-gray-900">{mo.qty}</p></div>
-        <div className="card p-4"><p className="text-gray-500 text-xs mb-1">Completed</p><p className="text-2xl font-bold text-gray-900">{mo.completedQty || 0}</p></div>
-        <div className="card p-4"><p className="text-gray-500 text-xs mb-1">Scheduled</p><p className="font-medium text-sm">{mo.scheduledAt ? new Date(mo.scheduledAt).toLocaleDateString() : "—"}</p></div>
-        <div className="card p-4"><p className="text-gray-500 text-xs mb-1">Completed At</p><p className="font-medium text-sm">{mo.completedAt ? new Date(mo.completedAt).toLocaleDateString() : "—"}</p></div>
+      {/* Ingredients section — Katana style */}
+      <div className="px-6 py-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-bold text-gray-900">Ingredients</h2>
+          <span className="text-sm text-blue-600 cursor-pointer hover:underline">Open product BOM ↗</span>
+        </div>
+        <ChildTable
+          title=""
+          parentId={id}
+          parentKey="moId"
+          endpoint="/mo-recipe-rows"
+          columns={recipeRowCols}
+          formFields={recipeRowFields}
+          queryKey="mo-recipe-rows"
+        />
       </div>
 
-      <ChildTable
-        title="Recipe Rows"
-        parentId={id}
-        parentKey="moId"
-        endpoint="/mo-recipe-rows"
-        columns={recipeRowCols}
-        formFields={recipeRowFields}
-        queryKey="mo-recipe-rows"
-      />
+      {/* Operations section — Katana style */}
+      <div className="px-6 py-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-bold text-gray-900">Operations</h2>
+          <span className="text-sm text-blue-600 cursor-pointer hover:underline">Open product operations ↗</span>
+        </div>
+        <ChildTable
+          title=""
+          parentId={id}
+          parentKey="moId"
+          endpoint="/mo-operation-rows"
+          columns={opRowCols}
+          formFields={opRowFields}
+          queryKey="mo-operation-rows"
+        />
+      </div>
 
-      <ChildTable
-        title="Operation Rows"
-        parentId={id}
-        parentKey="moId"
-        endpoint="/mo-operation-rows"
-        columns={opRowCols}
-        formFields={opRowFields}
-        queryKey="mo-operation-rows"
-      />
-
-      <ChildTable
-        title="Production Records"
-        parentId={id}
-        parentKey="moId"
-        endpoint="/mo-productions"
-        columns={prodCols}
-        formFields={[]}
-        queryKey="mo-productions"
-        canCreate={false}
-        canEdit={false}
-        canDelete={false}
-      />
+      {/* Production Records */}
+      <div className="px-6 py-4">
+        <h2 className="text-base font-bold text-gray-900 mb-3">Production Records</h2>
+        <ChildTable
+          title=""
+          parentId={id}
+          parentKey="moId"
+          endpoint="/mo-productions"
+          columns={prodCols}
+          formFields={[]}
+          queryKey="mo-productions"
+          canCreate={false}
+          canEdit={false}
+          canDelete={false}
+        />
+      </div>
 
       <Modal open={produceOpen} onClose={() => setProduceOpen(false)} title="Complete Production">
         <div className="space-y-3">

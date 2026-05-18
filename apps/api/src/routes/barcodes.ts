@@ -8,6 +8,40 @@ import PDFDocument from 'pdfkit';
 
 const router = Router();
 router.use(authenticate);
+
+const barcodeSettingsSchema = z.object({
+  enabled: z.boolean(),
+  skuAsBarcode: z.boolean(),
+});
+
+async function getBarcodeSettings() {
+  const row = await prisma.appSetting.findUnique({ where: { key: 'barcode_settings' } });
+  if (!row) return { enabled: true, skuAsBarcode: false };
+  return row.value as { enabled: boolean; skuAsBarcode: boolean };
+}
+
+async function setBarcodeSettings(value: { enabled: boolean; skuAsBarcode: boolean }) {
+  return prisma.appSetting.upsert({
+    where: { key: 'barcode_settings' },
+    create: { key: 'barcode_settings', value },
+    update: { value },
+  });
+}
+
+// GET /barcodes — barcode module settings
+router.get('/', async (_req, res) => {
+  res.json(await getBarcodeSettings());
+});
+
+// PATCH /barcodes — update settings
+router.patch('/', requireOperatorForMutations, async (req, res) => {
+  const patch = barcodeSettingsSchema.partial().parse(req.body);
+  const current = await getBarcodeSettings();
+  const merged = { ...current, ...patch };
+  await setBarcodeSettings(merged);
+  res.json(merged);
+});
+
 router.use(requireOperatorForMutations);
 
 async function lookupByIdentifier(identifier: string) {

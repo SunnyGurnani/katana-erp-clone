@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { Suspense, useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -64,7 +64,7 @@ function getSalesItemsStatus(so: any): string {
 
 export const dynamic = "force-dynamic";
 
-export default function SalesOrdersPage() {
+function SalesOrdersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const qc = useQueryClient();
@@ -279,5 +279,13 @@ export default function SalesOrdersPage() {
         </div>
       </Modal>
     </>
+  );
+}
+
+export default function SalesOrdersPageWrapper() {
+  return (
+    <Suspense fallback={<div className="px-4 py-8 text-sm text-gray-500">Loading sales orders…</div>}>
+      <SalesOrdersPage />
+    </Suspense>
   );
 }

@@ -1,8 +1,20 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import axios from "axios";
 import { login } from "@/lib/auth";
 import { useToast } from "@/components/ui/Toast";
+
+function loginErrorMessage(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const apiErr = err.response?.data as { error?: string } | undefined;
+    if (apiErr?.error) return apiErr.error;
+    if (!err.response) {
+      return "Cannot reach the API. Check that the backend is running and NEXT_PUBLIC_API_URL matches its port.";
+    }
+  }
+  return "Invalid credentials";
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,8 +29,8 @@ export default function LoginPage() {
     try {
       await login(email, password);
       router.push("/dashboard");
-    } catch {
-      addToast("Invalid credentials", "error");
+    } catch (err) {
+      addToast(loginErrorMessage(err), "error");
     } finally {
       setLoading(false);
     }

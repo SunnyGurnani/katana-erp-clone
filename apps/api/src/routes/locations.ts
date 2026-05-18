@@ -19,5 +19,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => { const l = await prisma.location.create({ data: schema.parse(req.body) }); res.status(201).json(l); });
 router.get('/:id', async (req, res) => { const l = await prisma.location.findUnique({ where: { id: req.params.id } }); if (!l) return res.status(404).json({ error: 'Not found' }); res.json(l); });
 router.patch('/:id', async (req, res) => { const l = await prisma.location.update({ where: { id: req.params.id }, data: schema.partial().parse(req.body) }); res.json(l); });
+router.put('/:id', async (req, res) => { const l = await prisma.location.update({ where: { id: req.params.id }, data: schema.partial().parse(req.body) }); res.json(l); });
+router.delete('/:id', async (req, res) => { await prisma.location.delete({ where: { id: req.params.id } }); res.status(204).send(); });
 
 export default router;
