@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { ListToolbar } from "@/components/layout/ListToolbar";
@@ -12,6 +12,7 @@ import { ActionMenu } from "@/components/shared/ActionMenu";
 import { ChildTable, ColumnDef, FieldDef } from "@/components/shared/ChildTable";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { Pencil, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { UnitOfMeasureField } from "@/components/shared/UnitOfMeasureField";
 
 const blank = { name: "", sku: "", description: "", category: "", unitOfMeasure: "pcs", unitCost: "", salePrice: "", reorderPoint: "", trackLotsAndExpiry: false };
@@ -53,6 +54,7 @@ const opFields: FieldDef[] = [
 
 export default function ProductsPage() {
   const qc = useQueryClient();
+  const router = useRouter();
   const { addToast } = useToast();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ ...blank, id: "" });
@@ -78,7 +80,16 @@ export default function ProductsPage() {
     onError: () => addToast("Error deleting product", "error"),
   });
 
-  function openNew() { setForm({ ...blank, id: "" }); setOpen(true); }
+  const createProductDraft = useMutation({
+    mutationFn: () => api.post("/products", { name: "New product", unitOfMeasure: "pcs" }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["products"] });
+      router.push(`/dashboard/items/products/${res.data.id}`);
+    },
+    onError: () => addToast("Error creating product", "error"),
+  });
+
+  function openNew() { createProductDraft.mutate(); }
   function openEdit(p: any) {
     setForm({
       id: p.id,
@@ -104,7 +115,7 @@ export default function ProductsPage() {
 
   const columns: Column[] = [
     { key: "name", header: "Name", sortable: true, render: (r: any) => (
-      <button className="font-medium text-brand-600 hover:underline text-left" onClick={e => { e.stopPropagation(); setExpanded(expanded === r.id ? null : r.id); setBomId(null); }}>{r.name}</button>
+      <Link className="font-medium text-brand-600 hover:underline text-left" href={`/dashboard/items/products/${r.id}`}>{r.name}</Link>
     )},
     { key: "sku", header: "Variant code / SKU", render: (r: any) => <span className="font-mono text-xs text-gray-700">{r.variants?.map((v: any) => v.sku).filter(Boolean).join(", ") || "—"}</span> },
     { key: "category", header: "Category", render: (r: any) => r.category || "—" },
@@ -135,7 +146,7 @@ export default function ProductsPage() {
     }},
     { key: "actions", header: "", filterable: false, render: (r: any) => (
       <ActionMenu actions={[
-        { label: "Edit", icon: <Pencil size={13} />, onClick: () => openEdit(r) },
+        { label: "Edit", icon: <Pencil size={13} />, onClick: () => router.push(`/dashboard/items/products/${r.id}`) },
         { label: "Delete", icon: <Trash2 size={13} />, variant: "danger", onClick: () => { if (window.confirm("Delete this product?")) deleteProduct.mutate(r.id); } },
       ]} />
     )},

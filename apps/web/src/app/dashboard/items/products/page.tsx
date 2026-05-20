@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { ListToolbar } from "@/components/layout/ListToolbar";
@@ -17,6 +18,7 @@ const blank = { name: "", sku: "", description: "", category: "", unitOfMeasure:
 
 export default function ProductsPage() {
   const qc = useQueryClient();
+  const router = useRouter();
   const { addToast } = useToast();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ ...blank, id: "" });
@@ -45,10 +47,16 @@ export default function ProductsPage() {
     onError: () => addToast("Error deleting product", "error"),
   });
 
-  function openNew() { 
-    setForm({ ...blank, id: "" }); 
-    setOpen(true); 
-  }
+  const createProductDraft = useMutation({
+    mutationFn: () => api.post("/products", { name: "New product", unitOfMeasure: "pcs" }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["products"] });
+      router.push(`/dashboard/items/products/${res.data.id}`);
+    },
+    onError: () => addToast("Error creating product", "error"),
+  });
+
+  function openNew() { createProductDraft.mutate(); }
 
   function openEdit(p: any) {
     setForm({
@@ -127,9 +135,9 @@ export default function ProductsPage() {
           { 
             label: "View Details", 
             icon: <Eye size={13} />, 
-            onClick: () => window.open(`/dashboard/items/products/${r.id}`, '_blank') 
+            onClick: () => router.push(`/dashboard/items/products/${r.id}`) 
           },
-          { label: "Edit", icon: <Pencil size={13} />, onClick: () => openEdit(r) },
+          { label: "Edit", icon: <Pencil size={13} />, onClick: () => router.push(`/dashboard/items/products/${r.id}`) },
           { 
             label: "Delete", 
             icon: <Trash2 size={13} />, 

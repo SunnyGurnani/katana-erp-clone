@@ -23,7 +23,7 @@ echo [OK] Node.js !NODE_VER!
 :: --- npm ---
 where npm >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [ERROR] npm not found (should come with Node.js).
+    echo [ERROR] npm not found ^(should come with Node.js^).
     pause
     exit /b 1
 )
@@ -92,7 +92,7 @@ if %PG_OK% equ 0 (
     echo        Or use WSL:  sudo apt install postgresql
     echo        Then create a database and set DATABASE_URL in apps\api\.env
     echo.
-    set /p CONTINUE=Continue anyway? (y/N): 
+    set /p CONTINUE=Continue anyway? ^(y/N^): 
     if /i not "!CONTINUE!"=="y" exit /b 1
 ) else (
     echo [OK] PostgreSQL - !PG_NOTE!

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { ListToolbar } from "@/components/layout/ListToolbar";
@@ -9,12 +10,14 @@ import { useToast } from "@/components/ui/Toast";
 import { ActionMenu } from "@/components/shared/ActionMenu";
 import { ExportToolbar } from "@/components/shared/ExportToolbar";
 import { Pencil, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { UnitOfMeasureField } from "@/components/shared/UnitOfMeasureField";
 
 const blank = { name: "", sku: "", unit: "pcs", unitCost: "", reorderPoint: "", trackLotsAndExpiry: false };
 
 export default function MaterialsPage() {
   const qc = useQueryClient();
+  const router = useRouter();
   const { addToast } = useToast();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ ...blank, id: "" });
@@ -33,7 +36,16 @@ export default function MaterialsPage() {
     onError: () => addToast("Error deleting material", "error"),
   });
 
-  function openNew() { setForm({ ...blank, id: "" }); setOpen(true); }
+  const createMaterialDraft = useMutation({
+    mutationFn: () => api.post("/materials", { name: "New material", unitOfMeasure: "pcs" }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["materials"] });
+      router.push(`/dashboard/items/materials/${res.data.id}`);
+    },
+    onError: () => addToast("Error creating material", "error"),
+  });
+
+  function openNew() { createMaterialDraft.mutate(); }
   function openEdit(m: any) {
     setForm({
       id: m.id,
@@ -48,7 +60,7 @@ export default function MaterialsPage() {
   }
 
   const columns: Column[] = [
-    { key: "name", header: "Name", sortable: true, render: (r: any) => <span className="font-medium">{r.name}</span> },
+    { key: "name", header: "Name", sortable: true, render: (r: any) => <Link className="font-medium text-brand-600 hover:underline" href={`/dashboard/items/materials/${r.id}`}>{r.name}</Link> },
     { key: "sku", header: "SKU", render: (r: any) => <span className="font-mono text-xs">{r.sku || "—"}</span> },
     { key: "unit", header: "Unit", render: (r: any) => r.unitOfMeasure || r.unit || "—" },
     { key: "unitCost", header: "Unit cost", sortable: true, render: (r: any) => <span className="font-medium">${Number(r.purchasePrice || r.unitCost || 0).toFixed(2)}</span> },
@@ -56,7 +68,7 @@ export default function MaterialsPage() {
     { key: "tracking", header: "Tracking", render: (r: any) => (r.trackLotsAndExpiry ? "Lots + Expiry" : "—") },
     { key: "actions", header: "", filterable: false, render: (r: any) => (
       <ActionMenu actions={[
-        { label: "Edit", icon: <Pencil size={13} />, onClick: () => openEdit(r) },
+        { label: "Edit", icon: <Pencil size={13} />, onClick: () => router.push(`/dashboard/items/materials/${r.id}`) },
         { label: "Delete", icon: <Trash2 size={13} />, variant: "danger", onClick: () => { if (window.confirm("Delete this material?")) deleteMaterial.mutate(r.id); } },
       ]} />
     )},
